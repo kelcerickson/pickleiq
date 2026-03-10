@@ -220,7 +220,7 @@ const PARTNERS = [
 //  - DUPR proximity: within 0.3 of your rating
 //  - Errors: combined errors should trend toward ≤10/match
 
-const COACH_SYS = `You are PICKL — an elite AI pickleball coach embedded in the PickleIQ app. Your coaching philosophy:
+const COACH_SYS = `You are PICKL — an elite AI pickleball coach embedded in the PickleIntel app. Your coaching philosophy:
 PATIENCE & CONTROL: Prioritize high-percentage shots. Earn the right to attack — never force pace from a weak position. Reset when in doubt.
 NVZ DOMINANCE: The kitchen is where points are won. Push players to arrive at the NVZ together, maintain pressure with precise dinking, and only speed up when the ball is above net height.
 FUNDAMENTALS FIRST: Drill the boring stuff relentlessly. Footwork, paddle prep, and consistent 3rd shot drops beat flashy shot-making at every level.
@@ -231,30 +231,23 @@ Be specific, direct, reference the player's actual stats, and give concrete dril
 
 // ── COMPONENTS ───────────────────────────────────────────────────────────────
 const Logo = () => {
-  // Q geometry — ring center (cx,cy), radius, stroke width
-  const cx=12, cy=13, R=8, sw=2;
-  // Inner edge of ring = R - sw/2 = 9. Holes sit at radius ~5 from center (well inside)
-  const holes = [[cx,cy],[cx-3.2,cy-3.2],[cx+3.2,cy-3.2],[cx-3.2,cy+3.2],[cx+3.2,cy+3.2]];
+  const cx=11, cy=11, r=9;
+  // 3 holes: top-center, bottom-left, bottom-right
+  const holes=[[cx,cy-3.8],[cx-3.3,cy+2.2],[cx+3.3,cy+2.2]];
   return(
-    <div style={{display:"flex",alignItems:"center",gap:0,lineHeight:1}}>
-      <span style={{fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:"0.06em",color:"white",fontStretch:"condensed"}}>PICKLE</span>
-      {/* I — slightly narrower by tightening letter-spacing */}
-      <span style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:"0em",color:C.pickle}}>I</span>
-      {/* Q — extra canvas so tail isn't clipped */}
-      <svg width="22" height="26" viewBox="0 0 24 28" style={{display:"block",marginTop:1}}>
-        {/* Q ring — thin stroke so holes are clearly separate */}
-        <circle cx={cx} cy={cy} r={R} fill="none" stroke={C.pickle} strokeWidth={sw}/>
-        {/* Navy halo behind each hole — creates visual gap from ring */}
-        {holes.map(([x,y],i)=>(
-          <circle key={`h${i}`} cx={x} cy={y} r="2" fill={C.navy}/>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        {/* Solid ball silhouette */}
+        <circle cx={cx} cy={cy} r={r} fill={C.pickle}/>
+        {/* Punched-out holes */}
+        {holes.map(([hx,hy],i)=>(
+          <circle key={i} cx={hx} cy={hy} r={1.5} fill={C.navy}/>
         ))}
-        {/* Lime holes */}
-        {holes.map(([x,y],i)=>(
-          <circle key={`d${i}`} cx={x} cy={y} r="1.2" fill={C.pickle}/>
-        ))}
-        {/* Q tail */}
-        <line x1={cx+5.5} y1={cy+5.5} x2={cx+9} y2={cy+11} stroke={C.pickle} strokeWidth="2" strokeLinecap="round"/>
       </svg>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:20,letterSpacing:"0.08em",lineHeight:1}}>
+        <span style={{color:"white"}}>PICKLE</span>
+        <span style={{color:C.pickle}}>INTEL</span>
+      </div>
     </div>
   );
 };
@@ -2364,7 +2357,7 @@ const FAQS = [
   { q:"What is the Synergy Score?",
     a:"Synergy Score (0–100) measures how well you and a partner perform together. It's built from 5 equally weighted components: Joint NVZ Arrival, NVZ Win Rate, Role Clarity, Error Avoidance, and DUPR-Adjusted Win Rate." },
   { q:"Who can see my stats and match data?",
-    a:"Your stats are private by default — only you can see them. PickleIQ does not share individual match data, shot analytics, or performance metrics with other players, clubs, or third parties. Aggregate anonymized data may be used to improve the app." },
+    a:"Your stats are private by default — only you can see them. PickleIntel does not share individual match data, shot analytics, or performance metrics with other players, clubs, or third parties. Aggregate anonymized data may be used to improve the app." },
   { q:"How do I upgrade to Pro?",
     a:"Go to your Profile page and click 'Upgrade to Pro →' in the Membership section. Pro unlocks automated video analysis and unlimited PICKL AI coaching for $12.99/month." },
   { q:"Can I connect my DUPR account?",
@@ -2423,7 +2416,7 @@ const HelpModal = ({onClose}) => {
         {tab==="faq"&&(
           <div style={{flex:1,overflowY:"auto",padding:"20px 26px"}}>
             <p style={{fontSize:13,color:C.textMid,marginBottom:18}}>
-              Common questions about PickleIQ features and metrics.
+              Common questions about PickleIntel features and metrics.
             </p>
             {FAQS.map((f,i)=>(
               <div key={i} style={{borderBottom:`1px solid ${C.border}`,marginBottom:0}}>
@@ -2455,7 +2448,7 @@ const HelpModal = ({onClose}) => {
                   Thanks for the feedback!
                 </div>
                 <div style={{fontSize:13,color:C.textMid,marginBottom:24}}>
-                  We read everything and use it to make PickleIQ better.
+                  We read everything and use it to make PickleIntel better.
                 </div>
                 <button onClick={()=>{setFeedSent(false);setFeedback("");}} style={{
                   background:C.navy,border:"none",borderRadius:10,padding:"10px 24px",
@@ -2529,10 +2522,10 @@ const HelpModal = ({onClose}) => {
               display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>Email Support</div>
-                <div style={{fontSize:13,color:C.blue}}>support@pickliq.app</div>
+                <div style={{fontSize:13,color:C.blue}}>support@pickleintel.app</div>
                 <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Response within 1 business day</div>
               </div>
-              <a href="mailto:support@pickliq.app" style={{
+              <a href="mailto:support@pickleintel.app" style={{
                 background:C.navy,border:"none",borderRadius:10,padding:"10px 18px",
                 fontFamily:"'Outfit'",fontWeight:700,fontSize:13,color:C.pickle,
                 cursor:"pointer",textDecoration:"none",whiteSpace:"nowrap",flexShrink:0}}>
