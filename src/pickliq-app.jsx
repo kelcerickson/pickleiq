@@ -211,11 +211,11 @@ const GOALS = {
 // Serve Neutralization Rate = % of serves/returns where opponent cannot hit an offensive shot
 // trend = change over last 4 weeks (positive = improving, negative = declining)
 const CORE_KPIS = [
-  { id:"winRate",   label:"Win Rate",             value:"—",   numVal:0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8" },
-  { id:"errors",    label:"Errors / Match",        value:"—",   numVal:0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
-  { id:"serveNeut", label:"Serve Neutralization",  value:"—",   numVal:0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
-  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal:0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
-  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal:0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
+  { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8" },
+  { id:"errors",    label:"Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
+  { id:"serveNeut", label:"Serve Neutralization",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
+  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
+  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
 ];
 
 // Legacy ALL_KPIS kept for modal/customization compatibility
@@ -228,7 +228,7 @@ const ALL_SHOTS_LIST = [
   { id:"lob",   label:"Lob",   pct:9,  color:C.purple },
   { id:"smash", label:"Smash", pct:5,  color:C.rose },
   { id:"reset", label:"Reset", pct:18, color:C.mint },
-  { id:"serve", label:"Serve", pct:42, color:C.amber },
+  { id:"serve", label:"Serve", pct:0, color:C.amber },
 ];
 
 const MATCHES = [];
@@ -575,7 +575,7 @@ const TopNav=({page,setPage})=>{
               display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:11,color:"#94A3B8",textTransform:"uppercase",letterSpacing:"0.07em"}}>DUPR</span>
               <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,color:C.pickle}}>—</span>
-              <span style={{fontSize:11,color:C.mint}}>▲ +0.12</span>
+              <span style={{fontSize:10,color:C.mint,fontWeight:700}}></span>
             </div>
             <div style={{width:36,height:36,borderRadius:"50%",
               background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
@@ -843,6 +843,7 @@ const Dashboard=({setPage})=>{
           <div style={{textAlign:"right"}}>
             <span onClick={()=>setPage("team")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>View team analytics →</span>
           </div>
+          )}
         </Card>
 
       </div>
@@ -1760,13 +1761,12 @@ const Profile=({setPage})=>{
 
       {/* ── Edit Profile Modal ── */}
       {showEditModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.72)",backdropFilter:"blur(8px)",
-          zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",
-          padding:isMobile?"8px":"16px",overflowY:"auto"}}>
-          <div style={{background:C.cardBg,borderRadius:isMobile?"16px":"20px",width:"100%",maxWidth:640,
-            maxHeight:isMobile?"95vh":"92vh",overflowY:"auto",
-            boxShadow:"0 24px 80px rgba(0,0,0,0.25)",
-            margin:"auto",flexShrink:0}}>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(10,22,40,0.72)",backdropFilter:"blur(8px)",
+          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",
+          padding:"16px"}}>
+          <div style={{background:C.cardBg,borderRadius:"20px",width:"100%",maxWidth:520,
+            maxHeight:"88vh",overflowY:"auto",
+            boxShadow:"0 24px 80px rgba(0,0,0,0.4)"}}>
             <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
               borderRadius:"20px 20px 0 0",padding:"22px 28px",
               display:"flex",justifyContent:"space-between",alignItems:"center"}}>
