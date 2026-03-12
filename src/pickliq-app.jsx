@@ -2315,13 +2315,22 @@ const LogMatchContent=()=>{
   const [result,setResult]           = useState("W");
   const [notes,setNotes]             = useState("");
 
-  // Performance stats
-  const [nvzArrival,setNvzArrival]   = useState(70);
-  const [nvzWin,setNvzWin]           = useState(55);
-  const [serve,setServe]             = useState(60);
-  const [errors,setErrors]           = useState(9);
-  const [jointNvz,setJointNvz]       = useState(65);
+  // Performance stats — +/− counters, converted to % on save
+  const [nvzArrived,setNvzArrived]   = useState(0);  // tapped + each arrival
+  const [nvzMissed,setNvzMissed]     = useState(0);  // tapped − each miss
+  const [nvzWon,setNvzWon]           = useState(0);  // kitchen rallies won
+  const [nvzLost,setNvzLost]         = useState(0);  // kitchen rallies lost
+  const [servNeut,setServNeut]       = useState(0);  // neutralized
+  const [servFailed,setServFailed]   = useState(0);  // failed to neutralize
+  const [errors,setErrors]           = useState(0);  // unforced errors
   const [partnerRole,setPartnerRole] = useState("Balanced");
+  // Derived totals + percentages
+  const nvzTotal   = nvzArrived + nvzMissed;
+  const nvzKitchen = nvzWon + nvzLost;
+  const servTotal  = servNeut + servFailed;
+  const nvzArrival = nvzTotal>0   ? Math.round(nvzArrived/nvzTotal*100)   : 0;
+  const nvzWin     = nvzKitchen>0 ? Math.round(nvzWon/nvzKitchen*100)     : 0;
+  const serve      = servTotal>0  ? Math.round(servNeut/servTotal*100)     : 0;
 
   // Shot log
   const [shots,setShots]             = useState(INIT_SHOTS);
@@ -2342,8 +2351,8 @@ const LogMatchContent=()=>{
             {l:"Partner",     v:partner||"—"},
             {l:"Score",       v:score||"—"},
             {l:"Result",      v:result==="W"?"Win 🏆":"Loss"},
-            {l:"NVZ Arrival", v:`${nvzArrival}%`},
-            {l:"NVZ Win Rate",v:`${nvzWin}%`},
+            {l:"NVZ Arrival", v:nvzArrival>0?nvzArrival+"%":"—"},
+            {l:"NVZ Win Rate",v:nvzWin>0?nvzWin+"%":"—"},
             ...(shotsLogged?[{l:"Pts Won",v:totalWins},{l:"Pts Lost",v:totalMisses}]:[]),
           ].map(({l,v})=>(
             <div key={l} style={{background:C.pageBg,borderRadius:8,padding:"8px 12px"}}>
@@ -2353,7 +2362,7 @@ const LogMatchContent=()=>{
           ))}
         </div>
       </div>
-      <button onClick={()=>{setSaved(false);setShots(INIT_SHOTS);setShotsOpen(false);}} style={{
+      <button onClick={()=>{setSaved(false);setShots(INIT_SHOTS);setShotsOpen(false);setNvzArrived(0);setNvzMissed(0);setNvzWon(0);setNvzLost(0);setServNeut(0);setServFailed(0);setErrors(0);setOpponent('');setPartner('');setScore('');setNotes('');}} style={{
         background:C.pickle,border:"none",borderRadius:12,padding:"12px 28px",
         fontFamily:"'Outfit'",fontWeight:700,fontSize:15,color:C.navy,cursor:"pointer"}}>
         Log Another Match
@@ -2427,37 +2436,194 @@ const LogMatchContent=()=>{
         </Card>
 
         {/* ── Section 2: Performance Stats ── */}
-        <Card>
-          <SLabel>Performance Stats</SLabel>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:isMobile?16:"0 32px"}}>
-            <div>
-              <SliderField label="NVZ Arrival" value={nvzArrival} onChange={setNvzArrival}
-                color={C.mint} hint="% of rallies you reached the kitchen"/>
-              <SliderField label="NVZ Win Rate" value={nvzWin} onChange={setNvzWin}
-                color={C.blue} hint="% of kitchen rallies you won"/>
-              <SliderField label="Serve Neutralization" value={serve} onChange={setServe}
-                color={C.amber} hint="% of serves / returns opponent couldn't attack"/>
-            </div>
-            <div>
-              <SliderField label="Unforced Errors" value={errors} onChange={setErrors}
-                min={0} max={30} unit="" color={C.rose} hint="total this match"/>
-              <SliderField label="Joint NVZ Arrival" value={jointNvz} onChange={setJointNvz}
-                color={C.mint} hint="% of rallies both players reached the kitchen"/>
-              <div style={{marginBottom:14}}>
-                <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:8}}>Your Role This Match</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  {["Resetter","Driver","Attacker","Balanced"].map(r=>(
-                    <button key={r} onClick={()=>setPartnerRole(r)} style={{
-                      padding:"9px",borderRadius:10,fontWeight:600,fontSize:13,cursor:"pointer",
-                      fontFamily:"'Outfit'",transition:"all 0.15s",
-                      background:partnerRole===r?C.navy:C.pageBg,
-                      border:`2px solid ${partnerRole===r?C.navy:C.border}`,
-                      color:partnerRole===r?"white":C.textMid}}>{r}</button>
-                  ))}
+        <Card style={{padding:0,overflow:"hidden"}}>
+          {/* Header */}
+          <div style={{padding:"18px 22px",borderBottom:`2px solid ${C.border}`}}>
+            <SLabel style={{marginBottom:0}}>Performance Stats</SLabel>
+          </div>
+
+          {/* Column headers — mirrors shot log */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
+            padding:"9px 22px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
+            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>Metric</div>
+            <div style={{fontSize:11,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✓ Yes</div>
+            <div style={{fontSize:11,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✕ No</div>
+          </div>
+
+          {/* NVZ Arrival */}
+          {(()=>{
+            const hasData=nvzArrived>0||nvzMissed>0;
+            return(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
+                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
+                background:hasData?`${C.pickle}08`:C.cardBg}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>NVZ Arrival</div>
+                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
+                    {nvzTotal>0 ? <span style={{fontFamily:"'DM Mono'",color:C.mint,fontWeight:700}}>{nvzArrival}%</span> : "Arrived at kitchen?"}
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:nvzArrived>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{nvzArrived}</span>
+                  <button onClick={()=>setNvzArrived(nvzArrived+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${nvzArrived>0?C.mint:C.border}`,
+                    background:nvzArrived>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setNvzMissed(Math.max(0,nvzMissed-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:nvzMissed>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{nvzMissed}</span>
+                  <button onClick={()=>setNvzMissed(nvzMissed+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${nvzMissed>0?C.rose:C.border}`,
+                    background:nvzMissed>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                 </div>
               </div>
+            );
+          })()}
+
+          {/* NVZ Win Rate */}
+          {(()=>{
+            const hasData=nvzWon>0||nvzLost>0;
+            return(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
+                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
+                background:hasData?`${C.pickle}08`:C.cardBg}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>NVZ Win Rate</div>
+                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
+                    {nvzKitchen>0 ? <span style={{fontFamily:"'DM Mono'",color:C.blue,fontWeight:700}}>{nvzWin}%</span> : "Won the kitchen rally?"}
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setNvzWon(Math.max(0,nvzWon-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:nvzWon>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{nvzWon}</span>
+                  <button onClick={()=>setNvzWon(nvzWon+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${nvzWon>0?C.mint:C.border}`,
+                    background:nvzWon>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setNvzLost(Math.max(0,nvzLost-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:nvzLost>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{nvzLost}</span>
+                  <button onClick={()=>setNvzLost(nvzLost+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${nvzLost>0?C.rose:C.border}`,
+                    background:nvzLost>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Serve Neutralization */}
+          {(()=>{
+            const hasData=servNeut>0||servFailed>0;
+            return(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
+                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
+                background:hasData?`${C.pickle}08`:C.cardBg}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>Serve Neutralization</div>
+                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
+                    {servTotal>0 ? <span style={{fontFamily:"'DM Mono'",color:C.amber,fontWeight:700}}>{serve}%</span> : "Opponent couldn't attack?"}
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setServNeut(Math.max(0,servNeut-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:servNeut>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{servNeut}</span>
+                  <button onClick={()=>setServNeut(servNeut+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${servNeut>0?C.mint:C.border}`,
+                    background:servNeut>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setServFailed(Math.max(0,servFailed-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:servFailed>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{servFailed}</span>
+                  <button onClick={()=>setServFailed(servFailed+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${servFailed>0?C.rose:C.border}`,
+                    background:servFailed>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Unforced Errors — single counter */}
+          {(()=>{
+            const hasData=errors>0;
+            return(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
+                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
+                background:hasData?`${C.rose}08`:C.cardBg}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>Unforced Errors</div>
+                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>Tap + each time you make one</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <button onClick={()=>setErrors(Math.max(0,errors-1))}
+                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                    color:errors>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{errors}</span>
+                  <button onClick={()=>setErrors(errors+1)}
+                    style={{width:32,height:32,borderRadius:8,
+                    border:`1px solid ${errors>0?C.rose:C.border}`,
+                    background:errors>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+                <div/>{/* empty third column */}
+              </div>
+            );
+          })()}
+
+          {/* Role selector */}
+          <div style={{padding:"14px 22px"}}>
+            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
+              letterSpacing:"0.07em",fontWeight:600,marginBottom:10}}>Your Role This Match</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+              {["Resetter","Driver","Attacker","Balanced"].map(r=>(
+                <button key={r} onClick={()=>setPartnerRole(r)} style={{
+                  padding:"9px 6px",borderRadius:10,fontWeight:600,fontSize:12,cursor:"pointer",
+                  fontFamily:"'Outfit'",transition:"all 0.15s",
+                  background:partnerRole===r?C.navy:C.pageBg,
+                  border:`2px solid ${partnerRole===r?C.navy:C.border}`,
+                  color:partnerRole===r?"white":C.textMid}}>{r}</button>
+              ))}
             </div>
           </div>
+
         </Card>
 
         {/* ── Section 3: Shot Log (optional, collapsible) ── */}
