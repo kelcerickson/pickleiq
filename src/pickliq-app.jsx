@@ -1763,9 +1763,11 @@ const Profile=({setPage})=>{
 
       {/* ── Edit Profile Modal ── */}
       {showEditModal&&(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(10,22,40,0.72)",backdropFilter:"blur(8px)",
-          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",
-          padding:"16px"}}>
+        <div onClick={function(e){if(e.target===e.currentTarget)setShowEditModal(false);}}
+          style={{position:"fixed",top:0,left:0,width:"100vw",height:"100vh",
+            background:"rgba(10,22,40,0.72)",backdropFilter:"blur(8px)",
+            zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",
+            padding:"16px",boxSizing:"border-box"}}>
           <div style={{background:C.cardBg,borderRadius:"20px",width:"100%",maxWidth:520,
             maxHeight:"88vh",overflowY:"auto",
             boxShadow:"0 24px 80px rgba(0,0,0,0.4)"}}>
