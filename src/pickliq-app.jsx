@@ -801,48 +801,50 @@ const Dashboard=({setPage})=>{
         {/* Best Partner — auto calculated */}
         <Card style={{padding:"16px 18px"}}>
           <SectionLabelInline>Best Partner</SectionLabelInline>
-          {!bestPartner ? (
+          {bestPartner ? (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,marginTop:6}}>
+                <div style={{width:44,height:44,borderRadius:"50%",
+                  background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,flexShrink:0}}>
+                  {bestPartner.name.split(" ").map(function(w){return w[0]}).join("")}
+                </div>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700,color:C.text}}>{bestPartner.name}</div>
+                  <div style={{fontSize:11,color:C.textLight}}>{bestPartner.matches} matches · {bestPartner.wins}W {bestPartner.matches-bestPartner.wins}L</div>
+                </div>
+                <div style={{marginLeft:"auto",textAlign:"right"}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em"}}>Synergy</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:32,color:C.mint,lineHeight:1}}>{bestPartner.synergy}</div>
+                </div>
+              </div>
+              <div style={{height:5,background:C.border,borderRadius:3,marginBottom:12}}>
+                <div style={{height:"100%",width:bestPartner.synergy+"%",background:`linear-gradient(90deg,${C.pickle},${C.mint})`,borderRadius:3}}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:10}}>
+                {[
+                  {label:"Team NVZ",  value:bestPartner.nvz+"%",          color:C.mint},
+                  {label:"Win Rate",  value:Math.round(bestPartner.wins/bestPartner.matches*100)+"%", color:C.pickle},
+                  {label:"Errors",    value:bestPartner.errors,            color:C.rose},
+                  {label:"Role",      value:bestPartner.role,              color:C.purple},
+                ].map(function(s){ return (
+                  <div key={s.label} style={{background:C.pageBg,borderRadius:8,padding:"8px 10px"}}>
+                    <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{s.label}</div>
+                    <div style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:s.color}}>{s.value}</div>
+                  </div>
+                );})}
+              </div>
+              <div style={{textAlign:"right"}}>
+                <span onClick={function(){setPage("team")}} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>View team analytics →</span>
+              </div>
+            </div>
+          ) : (
             <div style={{textAlign:"center",padding:"24px 8px"}}>
               <div style={{fontSize:24,marginBottom:8}}>👥</div>
               <div style={{fontSize:12,color:C.textMid,fontWeight:600}}>No partners yet</div>
-              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Partners are built from your match history</div>
+              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Partners build from your match history</div>
             </div>
-          ) : (
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,marginTop:6}}>
-            <div style={{width:44,height:44,borderRadius:"50%",
-              background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,flexShrink:0}}>
-              {bestPartner.name.split(" ").map(w=>w[0]).join("")}
-            </div>
-            <div>
-              <div style={{fontSize:15,fontWeight:700,color:C.text}}>{bestPartner.name}</div>
-              <div style={{fontSize:11,color:C.textLight}}>{bestPartner.matches} matches · {bestPartner.wins}W {bestPartner.matches-bestPartner.wins}L</div>
-            </div>
-            <div style={{marginLeft:"auto",textAlign:"right"}}>
-              <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em"}}>Synergy</div>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:32,color:C.mint,lineHeight:1}}>{bestPartner.synergy}</div>
-            </div>
-          </div>
-          <div style={{height:5,background:C.border,borderRadius:3,marginBottom:12}}>
-            <div style={{height:"100%",width:`${bestPartner.synergy}%`,background:`linear-gradient(90deg,${C.pickle},${C.mint})`,borderRadius:3}}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:10}}>
-            {[
-              {label:"Team NVZ",  value:`${bestPartner.nvz}%`,    color:C.mint},
-              {label:"Win Rate",  value:`${Math.round(bestPartner.wins/bestPartner.matches*100)}%`, color:C.pickle},
-              {label:"Errors",    value:bestPartner.errors,        color:C.rose},
-              {label:"Role",      value:bestPartner.role,          color:C.purple},
-            ].map(s=>(
-              <div key={s.label} style={{background:C.pageBg,borderRadius:8,padding:"8px 10px"}}>
-                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{s.label}</div>
-                <div style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:s.color}}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{textAlign:"right"}}>
-            <span onClick={()=>setPage("team")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>View team analytics →</span>
-          </div>
           )}
         </Card>
 
