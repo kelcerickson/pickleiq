@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://orifhmwlasencdgmeouu.supabase.co";
@@ -2051,7 +2051,7 @@ const Profile=({setPage})=>{
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}}>
             <KPICard label="DUPR"      value={dupr?String(dupr):"—"} color={C.blue}   colorL={C.blueL}/>
             <KPICard label="Win Rate"  value={CORE_KPIS[0].value} color={C.mint}   colorL={C.mintL}/>
-            <KPICard label="Matches"   value={String(typeof totalMatches!=="undefined"?totalMatches:0)} color={C.amber}  colorL={C.amberL}/>
+            <KPICard label="Matches"   value="—" color={C.amber}  colorL={C.amberL}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
             {[
