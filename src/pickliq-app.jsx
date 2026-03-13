@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://orifhmwlasencdgmeouu.supabase.co";
@@ -176,7 +176,8 @@ const SHOT_CATS = [
     { name:"Reset BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Priority drill: reset BH from mid-court pressure" },
     { name:"Reset FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands developing — good progress" }]},
   { id:"scramble",label:"Scramble",   color:C.rose,   icon:"🏃", shots:[
-    { name:"Scramble BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Prioritize getting ball back over winning the point" }]},
+    { name:"Scramble BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Prioritize getting ball back over winning the point" },
+    { name:"Scramble FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Great recovery tool — use topspin to get depth" }]},
   { id:"serve",   label:"Serve",      color:C.amber,  icon:"🎾", shots:[
     { name:"Serve",     attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Solid. Target deep to backhand corner more" }]},
   { id:"return",  label:"Return",     color:C.mint,   icon:"↩️", shots:[
@@ -401,7 +402,7 @@ const KPIModal = ({selected,onSave,onClose,title="Customize KPIs"})=>{
           <span style={{fontFamily:"'Bebas Neue'",fontSize:22,letterSpacing:"0.06em",color:C.navy}}>{title}</span>
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,color:C.textLight,cursor:"pointer"}}>✕</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:20}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10,marginBottom:20}}>
           {ALL_KPIS.map(k=>(
             <div key={k.id} onClick={()=>tog(k.id)} style={{
               background:loc.includes(k.id)?k.colorL:C.pageBg,
@@ -696,7 +697,7 @@ const Dashboard=({setPage})=>{
             {[
               {label:"🏆 Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.wins||0} pts won`,      color:C.mint,  bg:C.mintL},
               {label:"⚠️ Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.misses||0} errors`,   color:C.rose,  bg:C.roseL},
-              {label:"📈 Most Improved", shot:mostImproved, metric:`+${mostImproved?mostImproved.winHistory[3]-mostImproved.winHistory[0]:0} this month`, color:C.blue, bg:C.blueL},
+              {label:"📈 Most Improved", shot:mostImproved, metric:(()=>{const h=mostImproved?.winHistory||[0,0,0,0];const wks=h.filter(v=>v>0).length;const d=h[3]-h[0];return wks<2?"Need 2+ weeks":(d>=0?"+":"")+d+" pts";})(), color:C.blue, bg:C.blueL},
             ].map(({label,shot,metric,color,bg})=>(
               <div key={label} style={{background:bg,border:`1px solid ${color}25`,borderRadius:10,padding:"10px 12px",
                 display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -779,7 +780,7 @@ const Dashboard=({setPage})=>{
             </div>
             <Badge text={lastMatch.result==="W"?"WIN":"LOSS"} color={lastMatch.result==="W"?C.mint:C.rose}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             {[
               {label:"NVZ Arrival",v:lastMatch.nvz_arrival||lastMatch.stats?.nvzArrival||0,color:C.mint},
               {label:"NVZ Win",    v:lastMatch.nvz_win||lastMatch.stats?.nvzWin||0,    color:C.blue},
@@ -822,7 +823,7 @@ const Dashboard=({setPage})=>{
               <div style={{height:5,background:C.border,borderRadius:3,marginBottom:12}}>
                 <div style={{height:"100%",width:bestPartner.synergy+"%",background:`linear-gradient(90deg,${C.pickle},${C.mint})`,borderRadius:3}}/>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8,marginBottom:10}}>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:8,marginBottom:10}}>
                 {[
                   {label:"Team NVZ",  value:bestPartner.nvz+"%",          color:C.mint},
                   {label:"Win Rate",  value:Math.round(bestPartner.wins/bestPartner.matches*100)+"%", color:C.pickle},
@@ -900,12 +901,20 @@ const MatchHistoryContent=()=>{
   const s=selMatch?.stats || {nvzArrival:0,nvzWin:0,serveNeut:0,errors:0,serve:0,ret:0};
   const shots=ALL_SHOTS_LIST.filter(sh=>selShots.includes(sh.id));
   const MATCH_KPIS=[
-    { id:"winRate",    label:"Win Rate",            value:sel.result==="W"?"WIN":"LOSS", numVal:sel.result==="W"?100:0,  target:65,  unit:"%", higherIsBetter:true,  color:sel.result==="W"?C.mint:C.rose, colorL:sel.result==="W"?C.mintL:C.roseL, trendLabel:"this match" },
+    { id:"winRate",    label:"Win Rate",            value:selMatch?.result==="W"?"WIN":"LOSS", numVal:selMatch?.result==="W"?100:0,  target:65,  unit:"%", higherIsBetter:true,  color:selMatch?.result==="W"?C.mint:C.rose, colorL:selMatch?.result==="W"?C.mintL:C.roseL, trendLabel:"this match" },
     { id:"errors",     label:"Errors",              value:s.errors,   numVal:s.errors,   target:8,   unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
     { id:"serveNeut",  label:"Serve Neutralization",value:`${s.serveNeut}%`, numVal:s.serveNeut, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
     { id:"nvzArrival", label:"NVZ Arrival",         value:`${s.nvzArrival}%`,numVal:s.nvzArrival,target:80,  unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
     { id:"nvzWin",     label:"NVZ Win Rate",        value:`${s.nvzWin}%`,    numVal:s.nvzWin,    target:65,  unit:"%", higherIsBetter:true,  color:C.blue,   colorL:C.blueL },
   ];
+  if(!selMatch) return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"60px 20px",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>🎾</div>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Matches Yet</div>
+      <div style={{fontSize:14,color:C.textMid,maxWidth:380,lineHeight:1.6}}>Log your first match to see history and analytics here.</div>
+    </div>
+  );
   return(
     <div>
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
@@ -915,8 +924,8 @@ const MatchHistoryContent=()=>{
           {MATCHES.map(m=>(
             <div key={m.id} className="row" onClick={()=>setSel(m)} style={{
               padding:"13px 18px",borderBottom:`1px solid ${C.border}`,
-              background:sel.id===m.id?C.pageBg:C.cardBg,
-              borderLeft:`3px solid ${sel.id===m.id?C.pickle:"transparent"}`}}>
+              background:selMatch?.id===m.id?C.pageBg:C.cardBg,
+              borderLeft:`3px solid ${selMatch?.id===m.id?C.pickle:"transparent"}`}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                 <span style={{fontSize:11,color:C.textLight}}>{m.date}</span>
                 <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
@@ -932,12 +941,12 @@ const MatchHistoryContent=()=>{
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div>
-                <SectionLabelInline>{sel.date} · w/ {sel.partner}</SectionLabelInline>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em"}}>vs {sel.opponent}</div>
+                <SectionLabelInline>{selMatch?.date} · w/ {selMatch?.partner}</SectionLabelInline>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em"}}>vs {selMatch?.opponent}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{fontSize:13,color:C.textMid}}>{sel.score}</span>
-                <Badge text={sel.result==="W"?"WIN":"LOSS"} color={sel.result==="W"?C.mint:C.rose}/>
+                <span style={{fontSize:13,color:C.textMid}}>{selMatch?.score}</span>
+                <Badge text={selMatch?.result==="W"?"WIN":"LOSS"} color={selMatch?.result==="W"?C.mint:C.rose}/>
 
               </div>
             </div>
@@ -946,7 +955,7 @@ const MatchHistoryContent=()=>{
             </div>
 
             {/* Shot split by partner */}
-            <SLabel>Shot Distribution · You vs {sel.partner}</SLabel>
+            <SLabel>Shot Distribution · You vs {selMatch?.partner}</SLabel>
             <div style={{display:"flex",gap:16,marginBottom:12}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:C.blue}}/>
@@ -954,10 +963,10 @@ const MatchHistoryContent=()=>{
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:C.textLight}}/>
-                <span style={{fontSize:11,color:C.textMid}}>{sel.partner}</span>
+                <span style={{fontSize:11,color:C.textMid}}>{selMatch?.partner}</span>
               </div>
             </div>
-            {(sel.shotSplit||[]).map(sh=>(
+            {(selMatch?.shotSplit||[]).map(sh=>(
               <div key={sh.label} style={{marginBottom:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
                   <div style={{display:"flex",alignItems:"center",gap:7}}>
@@ -983,7 +992,7 @@ const MatchHistoryContent=()=>{
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
                   <span style={{fontSize:10,color:C.blue}}>You {sh.myPct}%</span>
-                  <span style={{fontSize:10,color:C.textLight}}>{sel.partner.split(" ")[0]} {sh.partnerPct}%</span>
+                  <span style={{fontSize:10,color:C.textLight}}>{selMatch?.partner?.split(" ")[0]} {sh.partnerPct}%</span>
                 </div>
               </div>
             ))}
@@ -1000,11 +1009,46 @@ const MatchHistoryContent=()=>{
 // ── PARTNERS CONTENT ────────────────────────────────────────────────────────
 const PartnersContent=()=>{
   const isMobile = useIsMobile();
-  const [ap,setAp]=useState(PARTNERS[0]);
+  const [ap,setAp]=useState(null);
   const [selShots,setSelShots]=useState(["dink","drive","lob"]);
   const [showS,setShowS]=useState(false);
+  const [dbMatches,setDbMatches]=useState([]);
   const shots=ALL_SHOTS_LIST.filter(s=>selShots.includes(s.id));
-  const getTeamKPIs=(p)=>[
+
+  useEffect(()=>{
+    sb.query("matches",{order:"created_at.desc"})
+      .then(rows=>{
+        setDbMatches((rows||[]).map(m=>({
+          partner: m.partner||"",
+          result:  m.result==="W"?"W":"L",
+          nvz_arrival: m.nvz_arrival||0,
+          errors: m.errors||0,
+        })));
+      }).catch(()=>{});
+  },[]);
+
+  const partnerMap={};
+  dbMatches.forEach(m=>{
+    const name=m.partner;
+    if(!name||name==="—"||name==="") return;
+    if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,errSum:0};
+    partnerMap[name].matches++;
+    if(m.result==="W") partnerMap[name].wins++;
+    partnerMap[name].nvzSum += m.nvz_arrival||0;
+    partnerMap[name].errSum += parseFloat(m.errors||0);
+  });
+  const livePartners=Object.values(partnerMap).map(p=>({
+    ...p,
+    synergy: Math.round((p.wins/p.matches)*60+Math.min(20,(p.nvzSum/p.matches)/4)),
+    nvz: Math.round(p.nvzSum/p.matches)||0,
+    nvzWin: 0,
+    errors: +(p.errSum/p.matches).toFixed(1)||0,
+    role:"—", matchHistory:[],
+  })).sort((a,b)=>b.synergy-a.synergy);
+
+  useEffect(()=>{ if(livePartners.length>0&&!ap) setAp(livePartners[0]); },[dbMatches]);
+
+  const getTeamKPIs=(p)=>!p?[]:[
     { id:"winRate",    label:"Win Rate Together",    value:`${Math.round(p.wins/p.matches*100)}%`, numVal:Math.round(p.wins/p.matches*100), target:65, unit:"%", higherIsBetter:true,  color:C.pickle, colorL:"#F5FAE8" },
     { id:"errors",     label:"Team Errors / Match",  value:p.errors,  numVal:p.errors,  target:8,  unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
     { id:"serveNeut",  label:"Serve Neutralization", value:"Phase 2",  numVal:null,      target:70, unit:"%", higherIsBetter:true,  color:C.amber,  colorL:C.amberL, trendLabel:"Auto-tracked in Phase 2" },
@@ -1013,7 +1057,17 @@ const PartnersContent=()=>{
   ];
   const tkpis=getTeamKPIs(ap);
 
-
+  // Empty state — no partners yet
+  if(livePartners.length===0) return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"60px 20px",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>👥</div>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Partners Yet</div>
+      <div style={{fontSize:14,color:C.textMid,maxWidth:380,lineHeight:1.6}}>
+        Partner analytics build automatically from your match history. Log a match with a partner name and they'll appear here.
+      </div>
+    </div>
+  );
 
   return(
     <div>
@@ -1021,11 +1075,11 @@ const PartnersContent=()=>{
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><SLabel>Partner Combinations</SLabel></div>
-          {PARTNERS.map(p=>(
+          {livePartners.map(p=>(
             <div key={p.name} className="row" onClick={()=>setAp(p)} style={{
               padding:"14px 18px",borderBottom:`1px solid ${C.border}`,
-              background:ap.name===p.name?C.pageBg:C.cardBg,
-              borderLeft:`3px solid ${ap.name===p.name?C.pickle:"transparent"}`}}>
+              background:ap&&ap.name===p.name?C.pageBg:C.cardBg,
+              borderLeft:`3px solid ${ap&&ap.name===p.name?C.pickle:"transparent"}`}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
                 <div style={{width:36,height:36,borderRadius:"50%",
                   background:`linear-gradient(135deg,${C.blue},${C.mint})`,
@@ -1077,7 +1131,7 @@ const PartnersContent=()=>{
               {tkpis.map(k=><KPICard key={k.id} {...k}/>)}
             </div>
           </Card>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:16}}>
             <Card>
               <SLabel>Role Identification</SLabel>
               {[{name:"You",role:"—",pct:0,color:C.blue},{name:ap.name,role:ap.role,pct:0,color:C.mint}].map(r=>(
@@ -1392,7 +1446,13 @@ const Shots = () => {
           <div style={{ fontSize:11, color:C.blue, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>📈 Most Improved (4wk)</div>
           <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{mostImproved?.name}</div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.blue }}>+{mostImproved?.winHistory[3]-mostImproved?.winHistory[0]} pts</span>
+            {(()=>{
+              const h=mostImproved?.winHistory||[0,0,0,0];
+              const weeksWithData=h.filter(v=>v>0).length;
+              const delta=h[3]-h[0];
+              if(weeksWithData<2) return <span style={{fontFamily:"'DM Mono'",fontSize:13,color:C.textLight,fontStyle:"italic"}}>Log matches across 2+ weeks to see trend</span>;
+              return <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.blue }}>{delta>=0?"+":""}{delta} pts</span>;
+            })()}
             <div style={{ flex:1 }}><Sparkline data={mostImproved?.winHistory||[]} color={C.blue} width={90} height={36} showDots={false}/></div>
           </div>
         </Card>
@@ -1593,15 +1653,29 @@ const Coach=()=>{
           {role:"user",content:msg}
         ])
       ];
+      const apiKey = (typeof window !== "undefined" && window.VITE_ANTHROPIC_KEY) ? window.VITE_ANTHROPIC_KEY : "";
       const res=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",headers:{"Content-Type":"application/json"},
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key": apiKey,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:COACH_SYS,messages:apiMsgs})
       });
+      if(!res.ok) throw new Error(await res.text());
       const data=await res.json();
       const reply=data.content?.map(b=>b.text||"").join("")||"Try again.";
       setMsgs(prev=>[...prev.filter(m=>!m.typing),{role:"assistant",content:reply,ts:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}]);
-    }catch{
-      setMsgs(prev=>[...prev.filter(m=>!m.typing),{role:"assistant",content:"Connection issue — try again.",ts:""}]);
+    }catch(e){
+      console.error("Coach:",e.message);
+      const noKey = !e.message || e.message.includes("401") || e.message.includes("missing");
+      setMsgs(prev=>[...prev.filter(m=>!m.typing),{role:"assistant",
+        content: noKey
+          ? "⚠️ API key needed to use the coach. In Vercel: Settings → Environment Variables → add VITE_ANTHROPIC_KEY with your Anthropic API key, then redeploy."
+          : "Connection issue — try again.",
+        ts:""}]);
     }finally{setLoading(false);}
   };
 
@@ -1826,7 +1900,7 @@ const Profile=({setPage})=>{
                 </div>
               ))}
               {/* Selects */}
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,marginBottom:16}}>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:16,marginBottom:16}}>
                 {[
                 ].map(f=>(
                   <div key={f.key}>
@@ -2049,7 +2123,7 @@ const Profile=({setPage})=>{
       </Card>
 
       {/* ── Section 2: Stats & DUPR Progression ── */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:20,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:20,marginBottom:20}}>
         <Card>
           <SLabel>Season Stats</SLabel>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}}>
@@ -2057,7 +2131,7 @@ const Profile=({setPage})=>{
             <KPICard label="Win Rate"  value={CORE_KPIS[0].value} color={C.mint}   colorL={C.mintL}/>
             <KPICard label="Matches"   value="—" color={C.amber}  colorL={C.amberL}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10}}>
             {[
               {label:"Avg Errors",   value:CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—", color:C.rose},
               {label:"NVZ Arrival",  value:CORE_KPIS[3].value, color:C.mint},
@@ -2279,18 +2353,18 @@ const SliderField=({label,value,onChange,min=0,max=100,unit="%",color=C.mint,hin
 );
 
 const SHOT_LOG_FIELDS = [
+  { cat:"ATP",       shots:["ATP BH","ATP FH"] },
   { cat:"4th Shot",  shots:["4th Shot Backhand","4th Shot Forehand"] },
   { cat:"Counter",   shots:["Counter BH","Counter FH"] },
   { cat:"Dink",      shots:["Dink BH","Dink FH"] },
   { cat:"Drive",     shots:["Drive BH","Drive FH"] },
   { cat:"Drop",      shots:["Drop BH","Drop FH"] },
   { cat:"Erne",      shots:["Erne BH","Erne FH"] },
-  { cat:"ATP",       shots:["ATP BH","ATP FH"] },
   { cat:"Lob",       shots:["Lob BH","Lob FH"] },
   { cat:"Reset",     shots:["Reset BH","Reset FH"] },
-  { cat:"Scramble",  shots:["Scramble BH"] },
-  { cat:"Serve",     shots:["Serve"] },
   { cat:"Return",    shots:["Return BH","Return FH"] },
+  { cat:"Scramble",  shots:["Scramble BH","Scramble FH"] },
+  { cat:"Serve",     shots:["Serve"] },
   { cat:"Slam",      shots:["Slam BH","Slam FH"] },
   { cat:"Speed Up",  shots:["Speed Up BH","Speed Up FH"] },
   { cat:"Volley",    shots:["Volley BH","Volley FH"] },
@@ -2300,12 +2374,95 @@ const INIT_SHOTS = Object.fromEntries(
   SHOT_LOG_FIELDS.flatMap(c=>c.shots.map(s=>[s,{wins:0,misses:0}]))
 );
 
+
+// ── PlayerSearch — typeahead against profile table ──────────────────────────
+function PlayerSearch({ label, value, onChange, placeholder }) {
+  const [query, setQuery]       = useState(value || "");
+  const [results, setResults]   = useState([]);
+  const [open, setOpen]         = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const ref = useRef(null);
+
+  useEffect(()=>{ if(value==="") setQuery(""); }, [value]);
+
+  useEffect(()=>{
+    if(query.trim().length < 2){ setResults([]); return; }
+    const t = setTimeout(async()=>{
+      setLoading(true);
+      try {
+        const rows = await sb.query("profile", {
+          select: "player_name,dupr,location",
+          filter: `player_name=ilike.*${encodeURIComponent(query.trim())}*`,
+        });
+        setResults(Array.isArray(rows) ? rows : []);
+      } catch(e){ setResults([]); }
+      setLoading(false);
+    }, 280);
+    return ()=>clearTimeout(t);
+  }, [query]);
+
+  useEffect(()=>{
+    const handler = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return ()=>document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const select = (name) => { setQuery(name); onChange(name); setOpen(false); setResults([]); };
+  const showNew = query.trim().length >= 2 && !results.find(r=>r.player_name.toLowerCase()===query.trim().toLowerCase());
+
+  return (
+    <div ref={ref} style={{position:"relative"}}>
+      <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
+        letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>{label}</div>
+      <input type="text" value={query} placeholder={placeholder}
+        onChange={e=>{ setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={()=>{ if(query.trim().length>=2) setOpen(true); }}
+        style={{width:"100%",background:C.pageBg,
+          border:`1px solid ${open&&(results.length>0||showNew)?C.pickle:C.border}`,
+          borderRadius:open&&(results.length>0||showNew)?"10px 10px 0 0":"10px",
+          padding:"10px 14px",color:C.text,fontSize:13,
+          fontFamily:"'Outfit'",boxSizing:"border-box",outline:"none"}}/>
+      {open && (results.length > 0 || showNew) && (
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:500,
+          background:C.cardBg,border:`1px solid ${C.pickle}`,borderTop:"none",
+          borderRadius:"0 0 10px 10px",boxShadow:"0 8px 24px rgba(0,0,0,0.18)",
+          maxHeight:200,overflowY:"auto"}}>
+          {loading && <div style={{padding:"10px 14px",fontSize:12,color:C.textLight}}>Searching…</div>}
+          {results.map(r=>(
+            <div key={r.player_name} onClick={()=>select(r.player_name)}
+              style={{padding:"10px 14px",cursor:"pointer",display:"flex",
+                alignItems:"center",justifyContent:"space-between",
+                borderBottom:`1px solid ${C.border}`,transition:"background 0.1s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=C.pageBg}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.player_name}</div>
+                {r.location&&<div style={{fontSize:11,color:C.textLight}}>{r.location}</div>}
+              </div>
+              {r.dupr&&<div style={{fontFamily:"'DM Mono'",fontSize:12,color:C.pickle,fontWeight:700}}>{r.dupr}</div>}
+            </div>
+          ))}
+          {showNew&&(
+            <div onClick={()=>select(query.trim())}
+              style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,
+                color:C.blue,fontSize:13,fontWeight:600,transition:"background 0.1s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=C.pageBg}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:16,fontWeight:700}}>＋</span> Add "{query.trim()}" as new player
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const LogMatchContent=()=>{
   const isMobile = useIsMobile();
   const [showUp,setShowUp]           = useState(false);
   const [saved,setSaved]             = useState(false);
   const [saving,setSaving]           = useState(false);
-  const [shotsOpen,setShotsOpen]     = useState(false);
+  const [shotsOpen,setShotsOpen]     = useState(true);
 
   // Match basics
   const [date,setDate]               = useState(new Date().toISOString().slice(0,10));
@@ -2345,7 +2502,7 @@ const LogMatchContent=()=>{
       <h2 style={{fontFamily:"'Bebas Neue'",fontSize:32,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>Match Logged!</h2>
       <p style={{color:C.textMid,fontSize:14,marginBottom:24}}>Your stats have been recorded and your charts updated.</p>
       <div style={{background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:16,padding:"20px",marginBottom:24,textAlign:"left"}}>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10}}>
           {[
             {l:"Opponent",    v:opponent||"—"},
             {l:"Partner",     v:partner||"—"},
@@ -2385,355 +2542,271 @@ const LogMatchContent=()=>{
 
       <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-        {/* ── Section 1: Match Basics ── */}
-        <Card>
-          <SLabel>Match Info</SLabel>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,marginBottom:16}}>
-            {[
-              {label:"Date",        value:date,     onChange:setDate,     type:"date", span:1},
-              {label:"Score",       value:score,    onChange:setScore,    type:"text", span:1, placeholder:"e.g. 11-7, 9-11, 11-8"},
-              {label:"Opponent(s)", value:opponent, onChange:setOpponent, type:"text", span:1, placeholder:"e.g. Jake & Maria"},
-              {label:"Partner",     value:partner,  onChange:setPartner,  type:"text", span:1, placeholder:"e.g. Sam R."},
-            ].map(f=>(
-              <div key={f.label} style={{gridColumn:`span ${f.span}`}}>
-                <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-                  letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>{f.label}</div>
-                <input type={f.type} value={f.value} onChange={e=>f.onChange(e.target.value)}
-                  placeholder={f.placeholder||""}
-                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
-                    borderRadius:10,padding:"10px 14px",color:C.text,fontSize:13,
-                    fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
-              </div>
-            ))}
-          </div>
+        {/* ── Section 1 + 2 combined: compact single-view card ── */}
+        <Card style={{padding:0,overflow:"visible"}}>
 
-          {/* Win / Loss toggle */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-              letterSpacing:"0.07em",fontWeight:600,marginBottom:8}}>Result</div>
-            <div style={{display:"flex",gap:10}}>
-              {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
-                <button key={v} onClick={()=>setResult(v)} style={{
-                  flex:1,padding:"12px",borderRadius:12,fontWeight:700,fontSize:14,
-                  cursor:"pointer",fontFamily:"'Outfit'",transition:"all 0.15s",
-                  background:result===v?(v==="W"?C.mint:C.rose):C.pageBg,
-                  border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
-                  color:result===v?"white":C.textMid}}>{lbl}</button>
-              ))}
+          {/* Row 1: Date · Score · Result */}
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
+            gap:12,padding:"16px 18px 0"}}>
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Date</div>
+              <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+                style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                  borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                  fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Score</div>
+              <input type="text" value={score} onChange={e=>setScore(e.target.value)}
+                placeholder="e.g. 11-7"
+                style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                  borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                  fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{gridColumn:isMobile?"span 2":"auto"}}>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                  <button key={v} onClick={()=>setResult(v)} style={{
+                    flex:1,padding:"9px 8px",borderRadius:10,fontWeight:700,fontSize:13,
+                    cursor:"pointer",fontFamily:"'Outfit'",transition:"all 0.15s",
+                    background:result===v?(v==="W"?C.mint:C.rose):C.pageBg,
+                    border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
+                    color:result===v?"white":C.textMid}}>{lbl}</button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Notes */}
-          <div>
-            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-              letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Match Notes (optional)</div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2}
-              placeholder="Anything notable — tactics that worked, conditions, how you felt..."
+          {/* Row 2: Opponent · Partner */}
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
+            gap:12,padding:"12px 18px 0"}}>
+            <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
+              placeholder="Search or type name…"/>
+            <PlayerSearch label="Partner" value={partner} onChange={setPartner}
+              placeholder="Search or type name…"/>
+          </div>
+
+          {/* Row 3: Notes (compact, 1 line) */}
+          <div style={{padding:"12px 18px 16px"}}>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes (optional)</div>
+            <input type="text" value={notes} onChange={e=>setNotes(e.target.value)}
+              placeholder="Anything notable — tactics, conditions, how you felt…"
               style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
-                borderRadius:10,padding:"10px 14px",color:C.text,fontSize:13,
-                fontFamily:"'Outfit'",resize:"vertical",boxSizing:"border-box"}}/>
+                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
           </div>
         </Card>
 
-        {/* ── Section 2: Performance Stats ── */}
+        {/* ── Section 2: Performance Stats — 2-column layout ── */}
         <Card style={{padding:0,overflow:"hidden"}}>
-          {/* Header */}
-          <div style={{padding:"18px 22px",borderBottom:`2px solid ${C.border}`}}>
-            <SLabel style={{marginBottom:0}}>Performance Stats</SLabel>
-          </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}>
 
-          {/* Column headers — mirrors shot log */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-            padding:"9px 22px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
-            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>Metric</div>
-            <div style={{fontSize:11,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✓ Yes</div>
-            <div style={{fontSize:11,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✕ No</div>
-          </div>
+            {/* ── LEFT COLUMN: NVZ Arrival + NVZ Win Rate ── */}
+            <div style={{borderRight:isMobile?"none":`1px solid ${C.border}`,borderBottom:isMobile?`1px solid ${C.border}`:"none"}}>
+              <div style={{padding:"7px 14px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px"}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>Metric</div>
+                  <div style={{fontSize:9,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Yes</div>
+                  <div style={{fontSize:9,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ No</div>
+                </div>
+              </div>
+              {[
+                {label:"NVZ Arrival", hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
+                  yv:nvzArrived, yi:()=>setNvzArrived(nvzArrived+1), yd:()=>setNvzArrived(Math.max(0,nvzArrived-1)),
+                  nv:nvzMissed,  ni:()=>setNvzMissed(nvzMissed+1),  nd:()=>setNvzMissed(Math.max(0,nvzMissed-1)), showHint:nvzTotal>0},
+                {label:"NVZ Win Rate", hint:nvzKitchen>0?nvzWin+"%":"Won the rally?", hintColor:C.blue,
+                  yv:nvzWon, yi:()=>setNvzWon(nvzWon+1), yd:()=>setNvzWon(Math.max(0,nvzWon-1)),
+                  nv:nvzLost, ni:()=>setNvzLost(nvzLost+1), nd:()=>setNvzLost(Math.max(0,nvzLost-1)), showHint:nvzKitchen>0},
+              ].map((row,i)=>{
+                const hd=row.yv>0||row.nv>0;
+                return(
+                  <div key={row.label} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                    padding:"8px 14px",borderBottom:`1px solid ${C.border}`,
+                    background:hd?`${C.pickle}08`:C.cardBg}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>{row.label}</div>
+                      <div style={{fontSize:9,color:row.showHint?row.hintColor:C.textLight,fontFamily:row.showHint?"'DM Mono'":"'Outfit'",fontWeight:row.showHint?700:400}}>{row.hint}</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <button onClick={row.yd} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                      <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:row.yv>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{row.yv}</span>
+                      <button onClick={row.yi} style={{width:24,height:24,borderRadius:6,border:`1px solid ${row.yv>0?C.mint:C.border}`,background:row.yv>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <button onClick={row.nd} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                      <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:row.nv>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{row.nv}</span>
+                      <button onClick={row.ni} style={{width:24,height:24,borderRadius:6,border:`1px solid ${row.nv>0?C.rose:C.border}`,background:row.nv>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-          {/* NVZ Arrival */}
-          {(()=>{
-            const hasData=nvzArrived>0||nvzMissed>0;
-            return(
-              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
-                background:hasData?`${C.pickle}08`:C.cardBg}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>NVZ Arrival</div>
-                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
-                    {nvzTotal>0 ? <span style={{fontFamily:"'DM Mono'",color:C.mint,fontWeight:700}}>{nvzArrival}%</span> : "Arrived at kitchen?"}
+            {/* ── RIGHT COLUMN: Serve Neut + Errors + Role ── */}
+            <div>
+              <div style={{padding:"7px 14px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px"}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>Metric</div>
+                  <div style={{fontSize:9,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Yes</div>
+                  <div style={{fontSize:9,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ No</div>
+                </div>
+              </div>
+              {/* Serve Neutralization */}
+              {(()=>{const hd=servNeut>0||servFailed>0; return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                  padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.pickle}08`:C.cardBg}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>Serve Neut.</div>
+                    <div style={{fontSize:9,color:servTotal>0?C.amber:C.textLight,fontFamily:servTotal>0?"'DM Mono'":"'Outfit'",fontWeight:servTotal>0?700:400}}>{servTotal>0?serve+"%":"Couldn't attack?"}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setServNeut(Math.max(0,servNeut-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:servNeut>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{servNeut}</span>
+                    <button onClick={()=>setServNeut(servNeut+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${servNeut>0?C.mint:C.border}`,background:servNeut>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setServFailed(Math.max(0,servFailed-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:servFailed>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{servFailed}</span>
+                    <button onClick={()=>setServFailed(servFailed+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${servFailed>0?C.rose:C.border}`,background:servFailed>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                   </div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:nvzArrived>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{nvzArrived}</span>
-                  <button onClick={()=>setNvzArrived(nvzArrived+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${nvzArrived>0?C.mint:C.border}`,
-                    background:nvzArrived>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setNvzMissed(Math.max(0,nvzMissed-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:nvzMissed>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{nvzMissed}</span>
-                  <button onClick={()=>setNvzMissed(nvzMissed+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${nvzMissed>0?C.rose:C.border}`,
-                    background:nvzMissed>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* NVZ Win Rate */}
-          {(()=>{
-            const hasData=nvzWon>0||nvzLost>0;
-            return(
-              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
-                background:hasData?`${C.pickle}08`:C.cardBg}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>NVZ Win Rate</div>
-                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
-                    {nvzKitchen>0 ? <span style={{fontFamily:"'DM Mono'",color:C.blue,fontWeight:700}}>{nvzWin}%</span> : "Won the kitchen rally?"}
+              );})()}
+              {/* Errors */}
+              {(()=>{const hd=errors>0; return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                  padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.rose}08`:C.cardBg}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>Errors</div>
+                    <div style={{fontSize:9,color:C.textLight}}>Unforced errors</div>
                   </div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setNvzWon(Math.max(0,nvzWon-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:nvzWon>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{nvzWon}</span>
-                  <button onClick={()=>setNvzWon(nvzWon+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${nvzWon>0?C.mint:C.border}`,
-                    background:nvzWon>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setNvzLost(Math.max(0,nvzLost-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:nvzLost>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{nvzLost}</span>
-                  <button onClick={()=>setNvzLost(nvzLost+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${nvzLost>0?C.rose:C.border}`,
-                    background:nvzLost>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Serve Neutralization */}
-          {(()=>{
-            const hasData=servNeut>0||servFailed>0;
-            return(
-              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
-                background:hasData?`${C.pickle}08`:C.cardBg}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>Serve Neutralization</div>
-                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>
-                    {servTotal>0 ? <span style={{fontFamily:"'DM Mono'",color:C.amber,fontWeight:700}}>{serve}%</span> : "Opponent couldn't attack?"}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:errors>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{errors}</span>
+                    <button onClick={()=>setErrors(errors+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${errors>0?C.rose:C.border}`,background:errors>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                   </div>
+                  <div/>
                 </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setServNeut(Math.max(0,servNeut-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:servNeut>0?C.mint:C.textLight,minWidth:24,textAlign:"center"}}>{servNeut}</span>
-                  <button onClick={()=>setServNeut(servNeut+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${servNeut>0?C.mint:C.border}`,
-                    background:servNeut>0?`${C.mint}18`:C.pageBg,fontSize:18,color:C.mint,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setServFailed(Math.max(0,servFailed-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:servFailed>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{servFailed}</span>
-                  <button onClick={()=>setServFailed(servFailed+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${servFailed>0?C.rose:C.border}`,
-                    background:servFailed>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+              );})()}
+              {/* Role */}
+              <div style={{padding:"8px 14px"}}>
+                <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700,marginBottom:6}}>Your Role</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+                  {["Resetter","Driver","Attacker","Balanced"].map(r=>(
+                    <button key={r} onClick={()=>setPartnerRole(r)} style={{
+                      padding:"6px 4px",borderRadius:8,fontWeight:600,fontSize:11,cursor:"pointer",
+                      fontFamily:"'Outfit'",transition:"all 0.15s",
+                      background:partnerRole===r?C.navy:C.pageBg,
+                      border:`2px solid ${partnerRole===r?C.navy:C.border}`,
+                      color:partnerRole===r?"white":C.textMid}}>{r}</button>
+                  ))}
                 </div>
               </div>
-            );
-          })()}
-
-          {/* Unforced Errors — single counter */}
-          {(()=>{
-            const hasData=errors>0;
-            return(
-              <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                alignItems:"center",padding:"11px 22px",borderBottom:`1px solid ${C.border}`,
-                background:hasData?`${C.rose}08`:C.cardBg}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid}}>Unforced Errors</div>
-                  <div style={{fontSize:10,color:C.textLight,marginTop:1}}>Tap + each time you make one</div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <button onClick={()=>setErrors(Math.max(0,errors-1))}
-                    style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
-                    background:C.pageBg,fontSize:18,color:C.textMid,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                    color:errors>0?C.rose:C.textLight,minWidth:24,textAlign:"center"}}>{errors}</span>
-                  <button onClick={()=>setErrors(errors+1)}
-                    style={{width:32,height:32,borderRadius:8,
-                    border:`1px solid ${errors>0?C.rose:C.border}`,
-                    background:errors>0?`${C.rose}18`:C.pageBg,fontSize:18,color:C.rose,cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                </div>
-                <div/>{/* empty third column */}
-              </div>
-            );
-          })()}
-
-          {/* Role selector */}
-          <div style={{padding:"14px 22px"}}>
-            <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-              letterSpacing:"0.07em",fontWeight:600,marginBottom:10}}>Your Role This Match</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-              {["Resetter","Driver","Attacker","Balanced"].map(r=>(
-                <button key={r} onClick={()=>setPartnerRole(r)} style={{
-                  padding:"9px 6px",borderRadius:10,fontWeight:600,fontSize:12,cursor:"pointer",
-                  fontFamily:"'Outfit'",transition:"all 0.15s",
-                  background:partnerRole===r?C.navy:C.pageBg,
-                  border:`2px solid ${partnerRole===r?C.navy:C.border}`,
-                  color:partnerRole===r?"white":C.textMid}}>{r}</button>
-              ))}
             </div>
           </div>
-
         </Card>
 
-        {/* ── Section 3: Shot Log (optional, collapsible) ── */}
-        <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",
-          background:C.cardBg}}>
-          {/* Toggle header */}
+        {/* ── Section 3: Shot Log — open by default, 2-column grid ── */}
+        <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.cardBg}}>
+
+          {/* Collapsible header */}
           <button onClick={()=>setShotsOpen(o=>!o)} style={{
             width:"100%",background:"none",border:"none",cursor:"pointer",
-            padding:"18px 22px",display:"flex",justifyContent:"space-between",
-            alignItems:"center",fontFamily:"'Outfit'",textAlign:"left"}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:C.text}}>
-                Shot Log
-                {shotsLogged&&(
-                  <span style={{marginLeft:10,fontSize:11,fontWeight:600,
-                    color:C.pickle,background:`${C.pickle}18`,
-                    borderRadius:20,padding:"2px 8px"}}>
-                    {totalWins}W · {totalMisses}L logged
-                  </span>
-                )}
-              </div>
-              <div style={{fontSize:12,color:C.textLight,marginTop:2}}>
-                Optional — log shots by category to update your analytics
-              </div>
+            padding:"14px 20px",display:"flex",justifyContent:"space-between",
+            alignItems:"center",fontFamily:"'Outfit'",textAlign:"left",
+            borderBottom:shotsOpen?`1px solid ${C.border}`:"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text}}>Shot Log</div>
+              {shotsLogged&&(
+                <span style={{fontSize:11,fontWeight:600,color:C.pickle,
+                  background:`${C.pickle}18`,borderRadius:20,padding:"2px 8px"}}>
+                  {totalWins}W · {totalMisses}L logged
+                </span>
+              )}
+              <div style={{fontSize:11,color:C.textLight}}>Optional — tap + each time a shot wins or loses a rally</div>
             </div>
-            <div style={{fontSize:18,color:C.textLight,
-              transform:shotsOpen?"rotate(180deg)":"rotate(0deg)",
-              transition:"transform 0.2s",flexShrink:0}}>▼</div>
+            <div style={{display:"flex",alignItems:"center",gap:16,flexShrink:0}}>
+              {shotsLogged&&<>
+                <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:C.mint}}>{totalWins}W</span>
+                <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:C.rose}}>{totalMisses}L</span>
+              </>}
+              <div style={{fontSize:16,color:C.textLight,
+                transform:shotsOpen?"rotate(180deg)":"rotate(0deg)",
+                transition:"transform 0.2s"}}>▼</div>
+            </div>
           </button>
 
           {shotsOpen&&(
-            <div style={{borderTop:`1px solid ${C.border}`}}>
-              {/* Instructions + running totals */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                padding:"12px 22px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
-                <div style={{fontSize:12,color:C.textMid,maxWidth:480}}>
-                  Log the shot that <b>finished the rally</b>. Won the point? tap <span style={{color:C.mint,fontWeight:700}}>+</span> Pts Won. Lost it? tap <span style={{color:C.rose,fontWeight:700}}>+</span> Pts Lost.
-                </div>
-                <div style={{display:"flex",gap:18,flexShrink:0}}>
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontFamily:"'DM Mono'",fontSize:20,fontWeight:700,color:C.mint,lineHeight:1}}>{totalWins}</div>
-                    <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:2}}>Pts Won</div>
-                  </div>
-                  <div style={{width:1,background:C.border}}/>
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontFamily:"'DM Mono'",fontSize:20,fontWeight:700,color:C.rose,lineHeight:1}}>{totalMisses}</div>
-                    <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:2}}>Pts Lost</div>
-                  </div>
-                </div>
+            <div>
+              {/* Column header bar */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px",
+                padding:"7px 16px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>Shot</div>
+                <div style={{fontSize:10,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✓ Won</div>
+                <div style={{fontSize:10,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✕ Lost</div>
               </div>
 
-              {/* Column headers */}
-              <div className="shot-table-row" style={{display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                padding:"9px 22px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
-                <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>Shot</div>
-                <div style={{fontSize:11,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✓ Pts Won</div>
-                <div style={{fontSize:11,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✕ Pts Lost</div>
-              </div>
-
-              {/* Shot rows */}
-              {SHOT_LOG_FIELDS.map((cat,ci)=>(
-                <div key={cat.cat}>
-                  <div style={{padding:"7px 22px",background:C.pageBg,
-                    borderTop:ci>0?`1px solid ${C.border}`:"none"}}>
-                    <span style={{fontSize:10,fontWeight:700,color:C.textLight,
-                      textTransform:"uppercase",letterSpacing:"0.1em"}}>{cat.cat}</span>
+              {/* 2-column grid of shot categories */}
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
+                gap:0,borderBottom:`1px solid ${C.border}`}}>
+                {SHOT_LOG_FIELDS.map((cat,ci)=>(
+                  <div key={cat.cat} style={{
+                    borderRight:(isMobile?(ci%2===0):( ci%3!==2))?`1px solid ${C.border}`:"none",
+                    borderBottom:`1px solid ${C.border}`}}>
+                    {/* Category label */}
+                    <div style={{padding:"5px 14px",background:C.pageBg,
+                      borderBottom:`1px solid ${C.border}`}}>
+                      <span style={{fontSize:9,fontWeight:700,color:C.textLight,
+                        textTransform:"uppercase",letterSpacing:"0.1em"}}>{cat.cat}</span>
+                    </div>
+                    {/* Shot rows within category */}
+                    {cat.shots.map(sName=>{
+                      const w=shots[sName]?.wins||0;
+                      const m=shots[sName]?.misses||0;
+                      const hasData=w>0||m>0;
+                      return(
+                        <div key={sName} style={{
+                          display:"grid",gridTemplateColumns:"1fr 90px 90px",
+                          alignItems:"center",padding:"6px 14px",
+                          borderTop:`1px solid ${C.border}`,
+                          background:hasData?`${C.pickle}08`:C.cardBg}}>
+                          <div style={{fontSize:12,fontWeight:hasData?600:400,
+                            color:hasData?C.text:C.textMid,whiteSpace:"nowrap",
+                            overflow:"hidden",textOverflow:"ellipsis"}}>{sName}</div>
+                          {/* Won counter */}
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                            <button onClick={()=>setShot(sName,"wins",Math.max(0,w-1))}
+                              style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,
+                              background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                            <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,
+                              color:w>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{w}</span>
+                            <button onClick={()=>setShot(sName,"wins",w+1)}
+                              style={{width:24,height:24,borderRadius:6,
+                              border:`1px solid ${w>0?C.mint:C.border}`,
+                              background:w>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                          </div>
+                          {/* Lost counter */}
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                            <button onClick={()=>setShot(sName,"misses",Math.max(0,m-1))}
+                              style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,
+                              background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                            <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,
+                              color:m>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{m}</span>
+                            <button onClick={()=>setShot(sName,"misses",m+1)}
+                              style={{width:24,height:24,borderRadius:6,
+                              border:`1px solid ${m>0?C.rose:C.border}`,
+                              background:m>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {cat.shots.map(sName=>{
-                    const w=shots[sName]?.wins||0;
-                    const m=shots[sName]?.misses||0;
-                    const hasData=w>0||m>0;
-                    return(
-                      <div key={sName} style={{
-                        display:"grid",gridTemplateColumns:"1fr 130px 130px",
-                        alignItems:"center",padding:"9px 22px",
-                        borderTop:`1px solid ${C.border}`,
-                        background:hasData?`${C.pickle}08`:C.cardBg}}>
-                        <div style={{fontSize:13,fontWeight:hasData?600:400,
-                          color:hasData?C.text:C.textMid}}>{sName}</div>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                          <button onClick={()=>setShot(sName,"wins",Math.max(0,w-1))}
-                            style={{width:28,height:28,borderRadius:7,border:`1px solid ${C.border}`,
-                            background:C.pageBg,fontSize:17,color:C.textMid,cursor:"pointer",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,
-                            color:w>0?C.mint:C.textLight,minWidth:22,textAlign:"center"}}>{w}</span>
-                          <button onClick={()=>setShot(sName,"wins",w+1)}
-                            style={{width:28,height:28,borderRadius:7,
-                            border:`1px solid ${w>0?C.mint:C.border}`,
-                            background:w>0?`${C.mint}18`:C.pageBg,fontSize:17,color:C.mint,cursor:"pointer",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                          <button onClick={()=>setShot(sName,"misses",Math.max(0,m-1))}
-                            style={{width:28,height:28,borderRadius:7,border:`1px solid ${C.border}`,
-                            background:C.pageBg,fontSize:17,color:C.textMid,cursor:"pointer",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,
-                            color:m>0?C.rose:C.textLight,minWidth:22,textAlign:"center"}}>{m}</span>
-                          <button onClick={()=>setShot(sName,"misses",m+1)}
-                            style={{width:28,height:28,borderRadius:7,
-                            border:`1px solid ${m>0?C.rose:C.border}`,
-                            background:m>0?`${C.rose}18`:C.pageBg,fontSize:17,color:C.rose,cursor:"pointer",
-                            display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>
