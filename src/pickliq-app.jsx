@@ -48,8 +48,8 @@ const sb = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
-  async upsert(table, data) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+  async upsert(table, data, conflictCol="id") {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
       method: "POST",
       headers: {
         apikey: SUPABASE_KEY,
@@ -1801,7 +1801,7 @@ const Profile=({setPage})=>{
         goals: GOALS.targets,
         priority_shots: GOALS.priorityShots,
       };
-      const result = await sb.upsert("profile", profileData);
+      const result = await sb.upsert("profile", profileData, "id");
       console.log("Profile saved:", result);
       setPlayerName(draft.playerName || "");
       setLocation(draft.location || "");
@@ -2407,15 +2407,46 @@ function PlayerSearch({ label, value, onChange, placeholder }) {
     return ()=>document.removeEventListener("mousedown", handler);
   }, []);
 
+  const [saving, setSaving]     = useState(false);
+  const [saveMsg, setSaveMsg]   = useState("");
+
   const select = (name) => { setQuery(name); onChange(name); setOpen(false); setResults([]); };
   const showNew = query.trim().length >= 2 && !results.find(r=>r.player_name.toLowerCase()===query.trim().toLowerCase());
+
+  const addNewPlayer = async () => {
+    const name = query.trim();
+    if(!name) return;
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      // Check if already exists (race condition guard)
+      const existing = await sb.query("profile", {
+        select: "player_name",
+        filter: `player_name=ilike.${encodeURIComponent(name)}`,
+      });
+      if(Array.isArray(existing) && existing.length > 0) {
+        // Already exists — just select them
+        select(name);
+      } else {
+        // Insert minimal profile row
+        await sb.insert("profile", { player_name: name });
+        setSaveMsg("✓ Saved");
+        select(name);
+      }
+    } catch(e) {
+      console.error("Add player error:", e);
+      // Even if save fails, still set the name so logging works
+      select(name);
+    }
+    setSaving(false);
+  };
 
   return (
     <div ref={ref} style={{position:"relative"}}>
       <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
         letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>{label}</div>
       <input type="text" value={query} placeholder={placeholder}
-        onChange={e=>{ setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onChange={e=>{ setQuery(e.target.value); onChange(e.target.value); setOpen(true); setSaveMsg(""); }}
         onFocus={()=>{ if(query.trim().length>=2) setOpen(true); }}
         style={{width:"100%",background:C.pageBg,
           border:`1px solid ${open&&(results.length>0||showNew)?C.pickle:C.border}`,
@@ -2443,12 +2474,17 @@ function PlayerSearch({ label, value, onChange, placeholder }) {
             </div>
           ))}
           {showNew&&(
-            <div onClick={()=>select(query.trim())}
-              style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,
-                color:C.blue,fontSize:13,fontWeight:600,transition:"background 0.1s"}}
-              onMouseEnter={e=>e.currentTarget.style.background=C.pageBg}
+            <div onClick={addNewPlayer}
+              style={{padding:"10px 14px",cursor:saving?"default":"pointer",display:"flex",
+                alignItems:"center",gap:8,
+                color:saving?C.textLight:C.blue,fontSize:13,fontWeight:600,
+                transition:"background 0.1s",opacity:saving?0.6:1}}
+              onMouseEnter={e=>{ if(!saving) e.currentTarget.style.background=C.pageBg; }}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <span style={{fontSize:16,fontWeight:700}}>＋</span> Add "{query.trim()}" as new player
+              {saving
+                ? <><span style={{fontSize:14}}>⏳</span> Saving…</>
+                : <><span style={{fontSize:16,fontWeight:700}}>＋</span> Add "{query.trim()}" as new player</>
+              }
             </div>
           )}
         </div>
@@ -2462,6 +2498,7 @@ const LogMatchContent=()=>{
   const [showUp,setShowUp]           = useState(false);
   const [saved,setSaved]             = useState(false);
   const [saving,setSaving]           = useState(false);
+  const [saveError,setSaveError]     = useState("");
   const [shotsOpen,setShotsOpen]     = useState(true);
 
   // Match basics
@@ -2519,7 +2556,7 @@ const LogMatchContent=()=>{
           ))}
         </div>
       </div>
-      <button onClick={()=>{setSaved(false);setShots(INIT_SHOTS);setShotsOpen(false);setNvzArrived(0);setNvzMissed(0);setNvzWon(0);setNvzLost(0);setServNeut(0);setServFailed(0);setErrors(0);setOpponent('');setPartner('');setScore('');setNotes('');}} style={{
+      <button onClick={()=>{setSaved(false);setSaveError("");setShots(INIT_SHOTS);setShotsOpen(false);setNvzArrived(0);setNvzMissed(0);setNvzWon(0);setNvzLost(0);setServNeut(0);setServFailed(0);setErrors(0);setOpponent('');setPartner('');setScore('');setNotes('');}} style={{
         background:C.pickle,border:"none",borderRadius:12,padding:"12px 28px",
         fontFamily:"'Outfit'",fontWeight:700,fontSize:15,color:C.navy,cursor:"pointer"}}>
         Log Another Match
@@ -2811,8 +2848,16 @@ const LogMatchContent=()=>{
           )}
         </div>
 
+        {/* ── Save Error ── */}
+        {saveError&&(
+          <div style={{background:`${C.rose}15`,border:`1px solid ${C.rose}40`,borderRadius:10,
+            padding:"10px 14px",fontSize:12,color:C.rose,lineHeight:1.5}}>
+            <b>Save failed:</b> {saveError}
+          </div>
+        )}
+
         {/* ── Save Button ── */}
-        <button onClick={async()=>{
+        <button onClick={async()=>{setSaveError("");
           setSaving(true);
           try {
             // 1. Save match to Supabase
@@ -2852,11 +2897,12 @@ const LogMatchContent=()=>{
                 tip:   shotMeta?.tip   || "",
                 color: cat?.color      || C.blue,
                 icon:  cat?.icon       || "🎾",
-              });
+              }, "name");
             }
             setSaved(true);
           } catch(err) {
-            alert("Save failed: " + err.message);
+            console.error("Save failed:", err);
+            setSaveError(err.message || "Unknown error — please try again.");
           } finally {
             setSaving(false);
           }
