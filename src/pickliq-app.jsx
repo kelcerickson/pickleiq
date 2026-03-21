@@ -1752,8 +1752,26 @@ Recent opponents: ${recentOpponents}
   return(
     <div className="fade-up" style={{display:"flex",flexDirection:"column",height:"calc(100vh - 52px)",maxWidth:860,margin:"0 auto",width:"100%",boxSizing:"border-box",padding:isMobile?"14px 14px 20px":"28px 28px 32px"}}>
       <div style={{padding:"24px 32px 14px",borderBottom:`1px solid ${C.border}`,flexShrink:0,background:C.cardBg}}>
-        <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>AI Coach</h1>
-        <p style={{color:C.textMid,fontSize:13,marginTop:2}}>Patient · NVZ-first · drill-driven coaching</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>AI Coach</h1>
+          {/* Data status pill */}
+          <div style={{display:"flex",alignItems:"center",gap:6,
+            background:ctxReady?`${C.mint}18`:`${C.amber}18`,
+            border:`1px solid ${ctxReady?C.mint:C.amber}40`,
+            borderRadius:20,padding:"4px 12px"}}>
+            <div style={{width:7,height:7,borderRadius:"50%",
+              background:ctxReady?C.mint:C.amber,
+              animation:ctxReady?"none":"pulse 1.2s infinite"}}/>
+            <span style={{fontSize:11,fontWeight:600,color:ctxReady?C.mint:C.amber}}>
+              {ctxReady
+                ? playerCtx.includes("no matches")
+                  ? "No match data yet"
+                  : `Stats loaded · ${playerCtx.match(/Total Matches: (\d+)/)?.[1]||""} matches`
+                : "Loading your stats…"}
+            </span>
+          </div>
+        </div>
+        <p style={{color:C.textMid,fontSize:13,marginTop:4}}>Patient · NVZ-first · drill-driven coaching</p>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"20px 32px",background:C.pageBg}}>
         {msgs.map((m,i)=>{
