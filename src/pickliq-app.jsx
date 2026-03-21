@@ -1027,10 +1027,12 @@ const PartnersContent=()=>{
     sb.query("matches",{order:"created_at.desc"})
       .then(rows=>{
         setDbMatches((rows||[]).map(m=>({
-          partner: m.partner||"",
-          result:  m.result==="W"?"W":"L",
+          partner:     m.partner||"",
+          result:      m.result==="W"?"W":"L",
           nvz_arrival: m.nvz_arrival||0,
-          errors: m.errors||0,
+          nvz_win:     m.nvz_win||0,
+          serve_neut:  m.serve_neut||0,
+          errors:      m.errors||0,
         })));
       }).catch(()=>{});
   },[]);
@@ -1040,19 +1042,22 @@ const PartnersContent=()=>{
     // Support comma-separated partner names from chip UI
     const names=(m.partner||"").split(",").map(s=>s.trim()).filter(s=>s&&s!=="—");
     names.forEach(name=>{
-      if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,errSum:0};
+      if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,nvzWinSum:0,serveSum:0,errSum:0};
       partnerMap[name].matches++;
       if(m.result==="W") partnerMap[name].wins++;
-      partnerMap[name].nvzSum += m.nvz_arrival||0;
-      partnerMap[name].errSum += parseFloat(m.errors||0);
+      partnerMap[name].nvzSum    += m.nvz_arrival||0;
+      partnerMap[name].nvzWinSum += m.nvz_win||0;
+      partnerMap[name].serveSum  += m.serve_neut||0;
+      partnerMap[name].errSum    += parseFloat(m.errors||0);
     });
   });
   const livePartners=Object.values(partnerMap).map(p=>({
     ...p,
-    synergy: Math.round((p.wins/p.matches)*60+Math.min(20,(p.nvzSum/p.matches)/4)),
-    nvz: Math.round(p.nvzSum/p.matches)||0,
-    nvzWin: 0,
-    errors: +(p.errSum/p.matches).toFixed(1)||0,
+    synergy:  Math.round((p.wins/p.matches)*60+Math.min(20,(p.nvzSum/p.matches)/4)),
+    nvz:      Math.round(p.nvzSum/p.matches)||0,
+    nvzWin:   Math.round(p.nvzWinSum/p.matches)||0,
+    serve:    Math.round(p.serveSum/p.matches)||0,
+    errors:   +(p.errSum/p.matches).toFixed(1)||0,
     role:"—", matchHistory:[],
   })).sort((a,b)=>b.synergy-a.synergy);
 
@@ -1061,9 +1066,9 @@ const PartnersContent=()=>{
   const getTeamKPIs=(p)=>!p?[]:[
     { id:"winRate",    label:"Win Rate Together",    value:`${Math.round(p.wins/p.matches*100)}%`, numVal:Math.round(p.wins/p.matches*100), target:65, unit:"%", higherIsBetter:true,  color:C.pickle, colorL:"#F5FAE8" },
     { id:"errors",     label:"Team Errors / Match",  value:p.errors,  numVal:p.errors,  target:8,  unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
-    { id:"serveNeut",  label:"Serve Neutralization", value:"Phase 2",  numVal:null,      target:70, unit:"%", higherIsBetter:true,  color:C.amber,  colorL:C.amberL, trendLabel:"Auto-tracked in Phase 2" },
+    { id:"serveNeut",  label:"Serve Neutralization", value:p.serve>0?`${p.serve}%`:"—", numVal:p.serve||null, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
     { id:"nvzArrival", label:"Team NVZ Arrival",     value:`${p.nvz}%`, numVal:p.nvz,   target:80, unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
-    { id:"nvzWin",     label:"Team NVZ Win Rate",    value:`${p.nvzWin}%`, numVal:p.nvzWin, target:65, unit:"%", higherIsBetter:true, color:C.blue, colorL:C.blueL },
+    { id:"nvzWin",     label:"Team NVZ Win Rate",    value:p.nvzWin>0?`${p.nvzWin}%`:"—", numVal:p.nvzWin||null, target:65, unit:"%", higherIsBetter:true, color:C.blue, colorL:C.blueL },
   ];
   // Safe ap reference — avoids race between livePartners populating and ap useEffect firing
   const safeAp = ap || livePartners[0] || null;
