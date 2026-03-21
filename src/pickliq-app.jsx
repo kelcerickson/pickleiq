@@ -1027,12 +1027,13 @@ const PartnersContent=()=>{
     sb.query("matches",{order:"created_at.desc"})
       .then(rows=>{
         setDbMatches((rows||[]).map(m=>({
-          partner:     m.partner||"",
-          result:      m.result==="W"?"W":"L",
-          nvz_arrival: m.nvz_arrival||0,
-          nvz_win:     m.nvz_win||0,
-          serve_neut:  m.serve_neut||0,
-          errors:      m.errors||0,
+          partner:      m.partner||"",
+          result:       m.result==="W"?"W":"L",
+          nvz_arrival:  m.nvz_arrival||0,
+          nvz_win:      m.nvz_win||0,
+          serve_neut:   m.serve_neut||0,
+          errors:       m.errors||0,
+          partner_role: m.partner_role||"",
         })));
       }).catch(()=>{});
   },[]);
@@ -1042,15 +1043,34 @@ const PartnersContent=()=>{
     // Support comma-separated partner names from chip UI
     const names=(m.partner||"").split(",").map(s=>s.trim()).filter(s=>s&&s!=="—");
     names.forEach(name=>{
-      if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,nvzWinSum:0,serveSum:0,errSum:0};
+      if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,nvzWinSum:0,serveSum:0,errSum:0,roleVotes:{}};
       partnerMap[name].matches++;
       if(m.result==="W") partnerMap[name].wins++;
       partnerMap[name].nvzSum    += m.nvz_arrival||0;
       partnerMap[name].nvzWinSum += m.nvz_win||0;
       partnerMap[name].serveSum  += m.serve_neut||0;
       partnerMap[name].errSum    += parseFloat(m.errors||0);
+      if(m.partner_role) partnerMap[name].roleVotes[m.partner_role] = (partnerMap[name].roleVotes[m.partner_role]||0)+1;
     });
   });
+  // Compute role from logged role votes, falling back to stat-derived heuristic
+  const computeRole = (p) => {
+    // If user logged a role for this partner combination, use the most common one
+    const votes = p.roleVotes || {};
+    const voteEntries = Object.entries(votes);
+    if(voteEntries.length > 0) {
+      return voteEntries.sort((a,b)=>b[1]-a[1])[0][0];
+    }
+    // Fallback: derive from stats
+    const nvzAvg   = p.nvzSum   / p.matches;
+    const serveAvg = p.serveSum / p.matches;
+    const errAvg   = p.errSum   / p.matches;
+    if(nvzAvg >= 75 && errAvg <= 5)  return "Resetter";
+    if(serveAvg >= 70)               return "Driver";
+    if(errAvg > 8)                   return "Attacker";
+    return "Balanced";
+  };
+
   const livePartners=Object.values(partnerMap).map(p=>({
     ...p,
     synergy:  Math.round((p.wins/p.matches)*60+Math.min(20,(p.nvzSum/p.matches)/4)),
@@ -1058,7 +1078,8 @@ const PartnersContent=()=>{
     nvzWin:   Math.round(p.nvzWinSum/p.matches)||0,
     serve:    Math.round(p.serveSum/p.matches)||0,
     errors:   +(p.errSum/p.matches).toFixed(1)||0,
-    role:"—", matchHistory:[],
+    role:     computeRole(p),
+    matchHistory:[],
   })).sort((a,b)=>b.synergy-a.synergy);
 
   useEffect(()=>{ if(livePartners.length>0&&!ap) setAp(livePartners[0]); },[dbMatches]);
@@ -1149,147 +1170,107 @@ const PartnersContent=()=>{
               {tkpis.map(k=><KPICard key={k.id} {...k}/>)}
             </div>
           </Card>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:16}}>
+          {/* ── Role + PICKL Insight row ── */}
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+
+            {/* Role Identification */}
             <Card>
               <SLabel>Role Identification</SLabel>
-              {[{name:"You",role:"—",pct:0,color:C.blue},{name:safeAp?.name||"",role:safeAp?.role||"—",pct:0,color:C.mint}].map(r=>(
-                <div key={r.name} style={{background:C.pageBg,borderRadius:12,padding:"14px",marginBottom:10}}>
-                  <div style={{fontSize:11,color:C.textLight,marginBottom:3}}>{r.name}</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:r.color,letterSpacing:"0.04em",marginBottom:8}}>{r.role}</div>
-                  <div style={{height:5,background:C.border,borderRadius:3}}>
-                    <div style={{height:"100%",width:`${r.pct}%`,background:r.color,borderRadius:3}}/>
-                  </div>
-                </div>
-              ))}
-            </Card>
-            <Card style={{padding:"18px 20px"}}>
-              <SLabel>Team Shot Split</SLabel>
-              {/* Legend */}
-              <div style={{display:"flex",gap:16,marginBottom:16}}>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{width:12,height:12,borderRadius:3,background:C.blue}}/>
-                  <span style={{fontSize:12,color:C.textMid}}>Alex (you)</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{width:12,height:12,borderRadius:3,background:C.textLight}}/>
-                  <span style={{fontSize:12,color:C.textMid}}>{safeAp?.name}</span>
-                </div>
-              </div>
-              {/* Chart rows */}
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {(safeAp?.shotSplit||[]).map(sh=>{
-                  const myW  = Math.round(sh.totalPct * sh.myPct / 100);
-                  const prtW = Math.round(sh.totalPct * sh.partnerPct / 100);
-                  return(
-                    <div key={sh.id}>
-                      {/* Row header */}
-                      <div style={{display:"flex",justifyContent:"space-between",
-                        alignItems:"baseline",marginBottom:5}}>
-                        <div style={{display:"flex",alignItems:"center",gap:7}}>
-                          <div style={{width:8,height:8,borderRadius:2,background:sh.color,flexShrink:0}}/>
-                          <span style={{fontSize:13,fontWeight:600,color:C.text}}>{sh.label}</span>
-                        </div>
-                        <span style={{fontFamily:"'DM Mono'",fontSize:12,color:C.textLight}}>
-                          {sh.totalPct}% of all shots
-                        </span>
-                      </div>
-                      {/* Stacked bar: you | partner */}
-                      <div style={{display:"flex",height:22,borderRadius:6,overflow:"hidden",
-                        background:C.pageBg,border:`1px solid ${C.border}`}}>
-                        {/* Alex segment */}
-                        <div style={{width:`${sh.myPct}%`,background:C.blue,
-                          display:"flex",alignItems:"center",justifyContent:"center",
-                          transition:"width 0.5s ease"}}>
-                          {sh.myPct>=18&&(
-                            <span style={{fontSize:10,fontWeight:700,color:"white",
-                              fontFamily:"'DM Mono'"}}>{sh.myPct}%</span>
-                          )}
-                        </div>
-                        {/* Partner segment */}
-                        <div style={{width:`${sh.partnerPct}%`,background:C.textLight,
-                          display:"flex",alignItems:"center",justifyContent:"center",
-                          transition:"width 0.5s ease"}}>
-                          {sh.partnerPct>=18&&(
-                            <span style={{fontSize:10,fontWeight:700,color:"white",
-                              fontFamily:"'DM Mono'"}}>{sh.partnerPct}%</span>
-                          )}
-                        </div>
-                      </div>
-                      {/* Sub labels */}
-                      <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
-                        <span style={{fontSize:10,color:C.blue}}>
-                          You: {myW}% of team shots
-                        </span>
-                        <span style={{fontSize:10,color:C.textLight}}>
-                          {(safeAp?.name||"Partner").split(" ")[0]}: {prtW}% of team shots
-                        </span>
-                      </div>
+              {(()=>{
+                const roleDescs = {
+                  Resetter:  {desc:"Patient kitchen player. Gets to NVZ consistently, keeps errors low.", icon:"🔄"},
+                  Driver:    {desc:"Transition player. Neutralizes opponents with serve & drive pressure.", icon:"💥"},
+                  Attacker:  {desc:"Aggressive finisher. Looks for speed-ups, slams, and erné opportunities.", icon:"⚡"},
+                  Balanced:  {desc:"All-around player. Adapts to situation rather than committing to one style.", icon:"⚖️"},
+                };
+                const yourRole = safeAp?.role || "Balanced";
+                const rd = roleDescs[yourRole] || roleDescs.Balanced;
+                return(<>
+                  <div style={{background:C.pageBg,borderRadius:12,padding:"14px",marginBottom:10}}>
+                    <div style={{fontSize:11,color:C.textLight,marginBottom:4}}>You</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <span style={{fontSize:20}}>{rd.icon}</span>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.blue,letterSpacing:"0.04em"}}>{yourRole}</div>
+                      <span style={{fontSize:9,color:C.blue,background:`${C.blue}18`,borderRadius:4,
+                        padding:"2px 6px",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+                        {safeAp?.roleVotes&&Object.keys(safeAp.roleVotes).length>0?"from match logs":"from stats"}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </div>
-          <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,borderRadius:16,padding:"18px 20px"}}>
-            <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-              <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,
-                background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-                display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
-              <div>
-                <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:6}}>PICKL Team Insight</div>
-                <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.6}}>
-                  "Log more matches together to build partnership insights."
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Head-to-Head Match History ── */}
-          <Card style={{marginTop:20}}>
-            <SLabel>Match History Together</SLabel>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <div style={{display:"flex",gap:16}}>
-                <div>
-                  <div style={{fontFamily:"'DM Mono'",fontSize:26,fontWeight:700,color:C.text}}>
-                    {safeAp?.wins}<span style={{fontSize:16,color:C.textLight}}>/{safeAp?.matches}</span>
+                    <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>{rd.desc}</div>
                   </div>
-                  <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.06em"}}>Wins Together</div>
-                </div>
-                <div style={{width:1,background:C.border}}/>
-                <div>
-                  <div style={{fontFamily:"'DM Mono'",fontSize:26,fontWeight:700,
-                    color:Math.round((safeAp?.wins||0)/(safeAp?.matches||1)*100)>=50?C.mint:C.rose}}>
-                    {Math.round((safeAp?.wins||0)/(safeAp?.matches||1)*100)}%
-                  </div>
-                  <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.06em"}}>Win Rate</div>
-                </div>
-              </div>
-            </div>
-            {/* Match rows */}
-            <div style={{display:"flex",flexDirection:"column",gap:0}}>
-              {(safeAp?.matchHistory||[]).map((m,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:12,
-                  padding:"9px 0",borderBottom:i<(safeAp?.matchHistory||[]).length-1?`1px solid ${C.border}`:"none"}}>
-                  <div style={{width:28,height:28,borderRadius:8,flexShrink:0,
-                    background:m.result==="W"?`${C.mint}20`:`${C.rose}20`,
-                    display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    <span style={{fontSize:12,fontWeight:800,
-                      color:m.result==="W"?C.mint:C.rose}}>{m.result}</span>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:C.text,
-                      whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                      vs {m.opponent}
+                  <div style={{background:C.pageBg,borderRadius:12,padding:"14px",opacity:0.6}}>
+                    <div style={{fontSize:11,color:C.textLight,marginBottom:4}}>{safeAp?.name}</div>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.textLight,letterSpacing:"0.04em",marginBottom:4}}>—</div>
+                    <div style={{fontSize:11,color:C.textLight,lineHeight:1.5}}>
+                      Partner role tracking requires multi-player accounts — coming soon.
                     </div>
-                    <div style={{fontSize:11,color:C.textLight}}>{m.date}</div>
                   </div>
-                  <div style={{fontFamily:"'DM Mono'",fontSize:12,color:C.textMid,
-                    flexShrink:0,textAlign:"right"}}>{m.score}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
+                </>);
+              })()}
+            </Card>
 
+            {/* PICKL Team Insight — dynamic based on real stats */}
+            {(()=>{
+              const winRate  = Math.round((safeAp?.wins||0)/(safeAp?.matches||1)*100);
+              const nvz      = safeAp?.nvz||0;
+              const serve    = safeAp?.serve||0;
+              const errors   = safeAp?.errors||0;
+              const nvzWin   = safeAp?.nvzWin||0;
+              const matches  = safeAp?.matches||0;
+              const name     = safeAp?.name?.split(" ")[0]||"your partner";
+
+              // Build contextual insight from actual stats
+              let insight = "";
+              if(matches < 3) {
+                insight = `You've played ${matches} match${matches===1?"":"es"} with ${name}. Log a few more together and PICKL will give you specific partnership coaching based on your real stats.`;
+              } else {
+                const lines = [];
+                if(winRate >= 75) lines.push(`You and ${name} are winning ${winRate}% together — an elite partnership rate. Focus on consistency rather than changing what's working.`);
+                else if(winRate >= 50) lines.push(`${winRate}% win rate with ${name} is solid but beatable. Look at which match types you lose — opponents who pressure your transition game?`);
+                else lines.push(`${winRate}% win rate with ${name} suggests a tactical mismatch somewhere. Consider who covers the middle and whether your roles complement each other.`);
+
+                if(nvz >= 80) lines.push(`Your NVZ arrival at ${nvz}% is excellent — you're getting to the kitchen and forcing opponents to dink.`);
+                else if(nvz < 65) lines.push(`NVZ arrival at ${nvz}% is your biggest lever. Prioritize getting to the kitchen faster — your win rate will follow.`);
+
+                if(errors <= 4) lines.push(`Only ${errors} unforced errors per match is elite-level discipline.`);
+                else if(errors >= 8) lines.push(`${errors} errors per match is costing you points. Identify which shot type you force — likely a high-risk ball you can reset instead.`);
+
+                if(serve >= 80) lines.push(`${serve}% serve neutralization means opponents rarely attack off your return — a huge team advantage.`);
+                else if(serve < 55 && serve > 0) lines.push(`At ${serve}% serve neutralization, opponents are attacking your return too often. Work on deeper, lower returns.`);
+
+                insight = lines.slice(0,2).join(" ");
+              }
+
+              return(
+                <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
+                  borderRadius:16,padding:"20px 22px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+                  <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                    <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,
+                      background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
+                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
+                    <div>
+                      <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:8}}>PICKL Team Insight</div>
+                      <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.7}}>{insight}</div>
+                    </div>
+                  </div>
+                  {matches >= 3 && (
+                    <div style={{display:"flex",gap:12,marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+                      {[
+                        {label:"Win Rate", val:`${winRate}%`, color:winRate>=65?C.mint:C.rose},
+                        {label:"NVZ Arrival", val:`${nvz}%`, color:nvz>=75?C.mint:C.amber},
+                        {label:"Errors/Match", val:errors, color:errors<=5?C.mint:C.rose},
+                      ].map(s=>(
+                        <div key={s.label} style={{flex:1,textAlign:"center"}}>
+                          <div style={{fontFamily:"'DM Mono'",fontSize:18,fontWeight:700,color:s.color}}>{s.val}</div>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:2}}>{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
     </div>
@@ -1694,15 +1675,10 @@ const Coach=()=>{
           {role:"user",content:msg}
         ])
       ];
-      const apiKey = (typeof window !== "undefined" && window.VITE_ANTHROPIC_KEY) ? window.VITE_ANTHROPIC_KEY : "";
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
+      // Call our server-side proxy — keeps the API key off the client
+      const res=await fetch("/api/coach",{
         method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "x-api-key": apiKey,
-          "anthropic-version":"2023-06-01",
-          "anthropic-dangerous-direct-browser-access":"true"
-        },
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:COACH_SYS,messages:apiMsgs})
       });
       if(!res.ok) throw new Error(await res.text());
@@ -1714,7 +1690,7 @@ const Coach=()=>{
       const noKey = !e.message || e.message.includes("401") || e.message.includes("missing");
       setMsgs(prev=>[...prev.filter(m=>!m.typing),{role:"assistant",
         content: noKey
-          ? "⚠️ API key needed to use the coach. In Vercel: Settings → Environment Variables → add VITE_ANTHROPIC_KEY with your Anthropic API key, then redeploy."
+          ? "⚠️ API key needed. In Vercel: Settings → Environment Variables → add ANTHROPIC_KEY (no VITE_ prefix) with your Anthropic API key, then redeploy."
           : "Connection issue — try again.",
         ts:""}]);
     }finally{setLoading(false);}
@@ -2974,6 +2950,7 @@ const LogMatchContent=()=>{
               nvz_win: nvzWin,
               serve_neut: serve,
               errors: parseFloat(errors),
+              partner_role: partnerRole,
             });
 
             // 2. Save shot stats to Supabase (upsert each shot)
