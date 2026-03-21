@@ -1703,8 +1703,7 @@ SHOT DATA:
 - Leaky shots (most losses): ${topMiss||"no shot data yet"}
 
 RECENT MATCHES (last 5):
-${m.slice(0,5).map(x=>`- ${x.date||"?"} vs ${x.opponent||"?"}: ${x.result} ${x.score||""}`).join("
-")}
+${m.slice(0,5).map(x=>"- "+(x.date||"?")+" vs "+(x.opponent||"?")+": "+x.result+" "+(x.score||"")).join("\n")}
 
 Partners played with: ${partners}
 Recent opponents: ${recentOpponents}
