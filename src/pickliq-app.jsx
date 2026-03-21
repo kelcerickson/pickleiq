@@ -1755,21 +1755,22 @@ Recent opponents: ${recentOpponents}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
           <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>AI Coach</h1>
           {/* Data status pill */}
-          <div style={{display:"flex",alignItems:"center",gap:6,
-            background:ctxReady?`${C.mint}18`:`${C.amber}18`,
-            border:`1px solid ${ctxReady?C.mint:C.amber}40`,
-            borderRadius:20,padding:"4px 12px"}}>
-            <div style={{width:7,height:7,borderRadius:"50%",
-              background:ctxReady?C.mint:C.amber,
-              animation:ctxReady?"none":"pulse 1.2s infinite"}}/>
-            <span style={{fontSize:11,fontWeight:600,color:ctxReady?C.mint:C.amber}}>
-              {ctxReady
-                ? playerCtx.includes("no matches")
-                  ? "No match data yet"
-                  : `Stats loaded · ${playerCtx.match(/Total Matches: (\d+)/)?.[1]||""} matches`
-                : "Loading your stats…"}
-            </span>
-          </div>
+          {(()=>{
+            const pillColor = ctxReady ? C.mint : C.amber;
+            const matchCount = ctxReady ? (playerCtx.split("Total Matches: ")[1]||"").split(" ")[0]||"" : "";
+            const pillLabel = !ctxReady ? "Loading your stats…"
+              : playerCtx.includes("no matches") ? "No match data yet"
+              : ("Stats loaded · " + matchCount + " matches");
+            return(
+              <div style={{display:"flex",alignItems:"center",gap:6,
+                background:pillColor+"18",border:"1px solid "+pillColor+"40",
+                borderRadius:20,padding:"4px 12px"}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:pillColor,
+                  animation:ctxReady?"none":"pulse 1.2s infinite"}}/>
+                <span style={{fontSize:11,fontWeight:600,color:pillColor}}>{pillLabel}</span>
+              </div>
+            );
+          })()}
         </div>
         <p style={{color:C.textMid,fontSize:13,marginTop:4}}>Patient · NVZ-first · drill-driven coaching</p>
       </div>
