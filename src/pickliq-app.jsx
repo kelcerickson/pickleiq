@@ -1656,6 +1656,8 @@ const Coach=()=>{
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
   const [playerCtx,setPlayerCtx]=useState("");
+  const [ctxReady,setCtxReady]=useState(false);
+  const playerCtxRef=useRef("");  // ref so send() always reads latest value
   const btmRef=useRef(null);
   useEffect(()=>{btmRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
 
@@ -1671,7 +1673,7 @@ const Coach=()=>{
         const m = Array.isArray(matches)?matches:[];
         const s = Array.isArray(shots)?shots:[];
         const totalMatches = m.length;
-        if(totalMatches===0){ setPlayerCtx("Player has no matches logged yet."); return; }
+        if(totalMatches===0){ const v="Player has no matches logged yet."; setPlayerCtx(v); playerCtxRef.current=v; setCtxReady(true); return; }
         const wins = m.filter(x=>x.result==="W").length;
         const winPct = Math.round(wins/totalMatches*100);
         const avgNvz = Math.round(m.reduce((a,x)=>a+(x.nvz_arrival||0),0)/totalMatches);
@@ -1707,8 +1709,8 @@ ${m.slice(0,5).map(x=>`- ${x.date||"?"} vs ${x.opponent||"?"}: ${x.result} ${x.s
 Partners played with: ${partners}
 Recent opponents: ${recentOpponents}
 `.trim();
-        setPlayerCtx(ctx);
-      }catch(e){ setPlayerCtx("Could not load player data."); }
+        setPlayerCtx(ctx); playerCtxRef.current=ctx; setCtxReady(true);
+      }catch(e){ const v="Could not load player data."; setPlayerCtx(v); playerCtxRef.current=v; setCtxReady(true); }
     })();
   },[]);
 
@@ -1720,10 +1722,8 @@ Recent opponents: ${recentOpponents}
     setLoading(true);
     try{
       const hist=msgs.filter(m=>!m.typing).map(m=>({role:m.role,content:m.content}));
-      // Build dynamic system prompt with real player data
-      const COACH_SYS = COACH_SYS_BASE + "
-
-" + (playerCtx||"Player data loading...");
+      // Build dynamic system prompt with real player data (use ref for latest value)
+      const COACH_SYS = COACH_SYS_BASE + "\n\n" + (playerCtxRef.current||playerCtx||"No player data available.");
       const apiMsgs=[
         ...hist.slice(1), // skip the initial greeting
         {role:"user",content:msg}
@@ -1813,7 +1813,7 @@ Recent opponents: ${recentOpponents}
           background:C.pageBg,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"10px 14px"}}>
           <textarea value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}
-            placeholder="Ask PICKL anything — stats, drills, game plans, opponent scouting..."
+            placeholder={ctxReady ? "Ask PICKL anything — stats, drills, game plans, opponent scouting..." : "Loading your stats…"}
             rows={1} style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14,
               resize:"none",lineHeight:1.5,maxHeight:120,overflowY:"auto"}}/>
           <button onClick={()=>send()} disabled={!input.trim()||loading} className="btn-p" style={{
