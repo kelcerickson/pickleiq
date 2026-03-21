@@ -275,13 +275,12 @@ const PARTNERS = [];
 //  - DUPR proximity: within 0.3 of your rating
 //  - Errors: combined errors should trend toward ≤10/match
 
-const COACH_SYS = `You are PICKL — an elite AI pickleball coach embedded in the PickleIntel app. Your coaching philosophy:
+const COACH_SYS_BASE = `You are PICKL — an elite AI pickleball coach embedded in the PickleIntel app. Your coaching philosophy:
 PATIENCE & CONTROL: Prioritize high-percentage shots. Earn the right to attack — never force pace from a weak position. Reset when in doubt.
 NVZ DOMINANCE: The kitchen is where points are won. Push players to arrive at the NVZ together, maintain pressure with precise dinking, and only speed up when the ball is above net height.
 FUNDAMENTALS FIRST: Drill the boring stuff relentlessly. Footwork, paddle prep, and consistent 3rd shot drops beat flashy shot-making at every level.
 TACTICAL SEQUENCING: Think in patterns, not individual shots. Serve → return → transition → NVZ is the core sequence. Break it deliberately, not by accident.
-Player: New user, no matches logged yet. Help them get started with PickleIntel and set up their goals.
-Be specific, direct, reference the player's actual stats, and give concrete drill prescriptions. Keep responses to 4-5 focused points.`;
+Be specific, direct, reference the player's actual stats, and give concrete drill prescriptions. Keep responses to 4-5 focused points. Use the player data below to give personalized advice — never say you lack data if stats are provided.`;
 
 // ── COMPONENTS ───────────────────────────────────────────────────────────────
 const Logo = () => {
@@ -1653,11 +1652,65 @@ const SUGG=[
 const Coach=()=>{
   const isMobile = useIsMobile();
   const [msgs,setMsgs]=useState([{role:"assistant",ts:"Just now",
-    content:`Hey! I'm PICKL — your personal AI pickleball coach. 🎾\n\nOnce you log some matches I can give you specific feedback on your game. For now, feel free to ask me anything — footwork, strategy, shot selection, or how to use PickleIntel.\n\nWhat do you want to work on?`}]);
+    content:`Hey! I'm PICKL — your personal AI pickleball coach. 🎾\n\nI have full access to your match history and shot stats. Ask me anything — what to work on, drill plans, game strategy, or opponent preparation.\n\nWhat do you want to work on?`}]);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
+  const [playerCtx,setPlayerCtx]=useState("");
   const btmRef=useRef(null);
   useEffect(()=>{btmRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+
+  // Load player data once on mount to inject into every coach message
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const [matches, shots, profile] = await Promise.all([
+          sb.query("matches",{order:"created_at.desc"}),
+          sb.query("shots"),
+          sb.query("profile",{single:true}),
+        ]);
+        const m = Array.isArray(matches)?matches:[];
+        const s = Array.isArray(shots)?shots:[];
+        const totalMatches = m.length;
+        if(totalMatches===0){ setPlayerCtx("Player has no matches logged yet."); return; }
+        const wins = m.filter(x=>x.result==="W").length;
+        const winPct = Math.round(wins/totalMatches*100);
+        const avgNvz = Math.round(m.reduce((a,x)=>a+(x.nvz_arrival||0),0)/totalMatches);
+        const avgNvzWin = Math.round(m.reduce((a,x)=>a+(x.nvz_win||0),0)/totalMatches);
+        const avgServe = Math.round(m.reduce((a,x)=>a+(x.serve_neut||0),0)/totalMatches);
+        const avgErrors = (m.reduce((a,x)=>a+(parseFloat(x.errors)||0),0)/totalMatches).toFixed(1);
+        const recentOpponents = [...new Set(m.slice(0,5).map(x=>x.opponent).filter(Boolean))].join(", ")||"none logged";
+        const partners = [...new Set(m.map(x=>x.partner).filter(Boolean))].join(", ")||"none logged";
+        // Top shots by wins and misses
+        const topWin = [...s].sort((a,b)=>(b.wins||0)-(a.wins||0)).slice(0,3).map(x=>`${x.name}(${x.wins}W)`).join(", ");
+        const topMiss = [...s].sort((a,b)=>(b.misses||0)-(a.misses||0)).slice(0,3).map(x=>`${x.name}(${x.misses}L)`).join(", ");
+        const playerName = profile?.player_name || "Player";
+        const dupr = profile?.dupr ? `DUPR: ${profile.dupr}` : "DUPR: not set";
+        const ctx = `
+PLAYER PROFILE:
+Name: ${playerName} | ${dupr}
+Total Matches: ${totalMatches} | Record: ${wins}W-${totalMatches-wins}L (${winPct}% win rate)
+
+PERFORMANCE AVERAGES (across all matches):
+- NVZ Arrival: ${avgNvz}% (target >80%)
+- NVZ Win Rate: ${avgNvzWin}% (target >65%)
+- Serve Neutralization: ${avgServe}% (target >70%)
+- Unforced Errors/match: ${avgErrors} (target <8)
+
+SHOT DATA:
+- Best shots (most wins): ${topWin||"no shot data yet"}
+- Leaky shots (most losses): ${topMiss||"no shot data yet"}
+
+RECENT MATCHES (last 5):
+${m.slice(0,5).map(x=>`- ${x.date||"?"} vs ${x.opponent||"?"}: ${x.result} ${x.score||""}`).join("
+")}
+
+Partners played with: ${partners}
+Recent opponents: ${recentOpponents}
+`.trim();
+        setPlayerCtx(ctx);
+      }catch(e){ setPlayerCtx("Could not load player data."); }
+    })();
+  },[]);
 
   const send=async(text)=>{
     const msg=text||input.trim();if(!msg||loading)return;
@@ -1667,19 +1720,19 @@ const Coach=()=>{
     setLoading(true);
     try{
       const hist=msgs.filter(m=>!m.typing).map(m=>({role:m.role,content:m.content}));
+      // Build dynamic system prompt with real player data
+      const COACH_SYS = COACH_SYS_BASE + "
+
+" + (playerCtx||"Player data loading...");
       const apiMsgs=[
-        {role:"user",content:`Context: New PickleIntel user. No matches logged yet. Question: ${hist.length===0?msg:""}`},
-        ...(hist.length===0?[]:[
-          {role:"assistant",content:"Context noted. Ready to coach."},
-          ...hist.slice(1),
-          {role:"user",content:msg}
-        ])
+        ...hist.slice(1), // skip the initial greeting
+        {role:"user",content:msg}
       ];
       // Call our server-side proxy — keeps the API key off the client
       const res=await fetch("/api/coach",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:COACH_SYS,messages:apiMsgs})
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,system:COACH_SYS,messages:apiMsgs})
       });
       if(!res.ok) throw new Error(await res.text());
       const data=await res.json();
@@ -1723,7 +1776,18 @@ const Coach=()=>{
                   </div>
                 ):(
                   <>
-                    <div style={{fontSize:14,lineHeight:1.65,color:isU?"#E4EEFF":C.text,whiteSpace:"pre-wrap"}}>{m.content}</div>
+                    <div style={{fontSize:14,lineHeight:1.65,color:isU?"#E4EEFF":C.text}}>
+                      {m.content.split("\n").map((line,li)=>{
+                        // Render **bold** markdown inline
+                        const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                        const rendered = parts.map((p,pi)=>
+                          p.startsWith("**")&&p.endsWith("**")
+                            ? <strong key={pi}>{p.slice(2,-2)}</strong>
+                            : p
+                        );
+                        return <div key={li} style={{marginBottom:line===""?"8px":"2px"}}>{rendered}</div>;
+                      })}
+                    </div>
                     {m.ts&&<div style={{fontSize:10,color:isU?"rgba(255,255,255,0.3)":C.textLight,marginTop:6,textAlign:"right"}}>{m.ts}</div>}
                   </>
                 )}
