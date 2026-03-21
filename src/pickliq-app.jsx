@@ -143,7 +143,7 @@ const STYLES = `
     .page-wrap{padding:16px!important;}
     .tab-bar{overflow-x:auto!important;-webkit-overflow-scrolling:touch;width:100%!important;}
     .tab-bar::-webkit-scrollbar{display:none;}
-    .shot-table-row{grid-template-columns:1fr 100px 100px!important;}
+    /* shot-table-row columns now set inline */
     .shots-table-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch;}
     .shots-table-wrap .shot-col-hide{display:none!important;}
     .shots-header,.shots-row{min-width:480px;}
@@ -697,7 +697,15 @@ const Dashboard=({setPage})=>{
             {[
               {label:"🏆 Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.wins||0} pts won`,      color:C.mint,  bg:C.mintL},
               {label:"⚠️ Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.misses||0} errors`,   color:C.rose,  bg:C.roseL},
-              {label:"📈 Most Improved", shot:mostImproved, metric:(()=>{const h=mostImproved?.winHistory||[0,0,0,0];const wks=h.filter(v=>v>0).length;const d=h[3]-h[0];return wks<2?"Need 2+ weeks":(d>=0?"+":"")+d+" pts";})(), color:C.blue, bg:C.blueL},
+              {label:"📈 Most Improved", shot:mostImproved, metric:(()=>{
+                const h=mostImproved?.winHistory||[0,0,0,0];
+                const nonZero=h.filter(v=>v>0);
+                if(nonZero.length<2) return "Need 2+ sessions";
+                const firstIdx=h.findIndex(v=>v>0);
+                const lastIdx=h.length-1-[...h].reverse().findIndex(v=>v>0);
+                const d=h[lastIdx]-h[firstIdx];
+                return (d>=0?"+":"")+d+"% win rate";
+              })(), color:C.blue, bg:C.blueL},
             ].map(({label,shot,metric,color,bg})=>(
               <div key={label} style={{background:bg,border:`1px solid ${color}25`,borderRadius:10,padding:"10px 12px",
                 display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1029,13 +1037,15 @@ const PartnersContent=()=>{
 
   const partnerMap={};
   dbMatches.forEach(m=>{
-    const name=m.partner;
-    if(!name||name==="—"||name==="") return;
-    if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,errSum:0};
-    partnerMap[name].matches++;
-    if(m.result==="W") partnerMap[name].wins++;
-    partnerMap[name].nvzSum += m.nvz_arrival||0;
-    partnerMap[name].errSum += parseFloat(m.errors||0);
+    // Support comma-separated partner names from chip UI
+    const names=(m.partner||"").split(",").map(s=>s.trim()).filter(s=>s&&s!=="—");
+    names.forEach(name=>{
+      if(!partnerMap[name]) partnerMap[name]={name,matches:0,wins:0,nvzSum:0,errSum:0};
+      partnerMap[name].matches++;
+      if(m.result==="W") partnerMap[name].wins++;
+      partnerMap[name].nvzSum += m.nvz_arrival||0;
+      partnerMap[name].errSum += parseFloat(m.errors||0);
+    });
   });
   const livePartners=Object.values(partnerMap).map(p=>({
     ...p,
@@ -1055,10 +1065,11 @@ const PartnersContent=()=>{
     { id:"nvzArrival", label:"Team NVZ Arrival",     value:`${p.nvz}%`, numVal:p.nvz,   target:80, unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
     { id:"nvzWin",     label:"Team NVZ Win Rate",    value:`${p.nvzWin}%`, numVal:p.nvzWin, target:65, unit:"%", higherIsBetter:true, color:C.blue, colorL:C.blueL },
   ];
-  const tkpis=getTeamKPIs(ap);
+  // Safe ap reference — avoids race between livePartners populating and ap useEffect firing
+  const safeAp = ap || livePartners[0] || null;
 
   // Empty state — no partners yet
-  if(livePartners.length===0) return(
+  if(!safeAp) return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"60px 20px",textAlign:"center"}}>
       <div style={{fontSize:48,marginBottom:16}}>👥</div>
@@ -1069,6 +1080,8 @@ const PartnersContent=()=>{
     </div>
   );
 
+  const tkpis = getTeamKPIs(safeAp);
+
   return(
     <div>
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
@@ -1078,14 +1091,14 @@ const PartnersContent=()=>{
           {livePartners.map(p=>(
             <div key={p.name} className="row" onClick={()=>setAp(p)} style={{
               padding:"14px 18px",borderBottom:`1px solid ${C.border}`,
-              background:ap&&ap.name===p.name?C.pageBg:C.cardBg,
-              borderLeft:`3px solid ${ap&&ap.name===p.name?C.pickle:"transparent"}`}}>
+              background:safeAp&&safeAp.name===p.name?C.pageBg:C.cardBg,
+              borderLeft:`3px solid ${safeAp&&safeAp.name===p.name?C.pickle:"transparent"}`}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
                 <div style={{width:36,height:36,borderRadius:"50%",
                   background:`linear-gradient(135deg,${C.blue},${C.mint})`,
                   display:"flex",alignItems:"center",justifyContent:"center",
                   fontFamily:"'Bebas Neue'",fontSize:14,color:"white",flexShrink:0}}>
-                  {p.name.split(" ").map(w=>w[0]).join("")}
+                  {(p.name||"?").split(" ").filter(Boolean).map(w=>w[0]||"").join("").toUpperCase()||"?"}
                 </div>
                 <div>
                   <div style={{fontSize:13,fontWeight:600,color:C.text}}>{p.name}</div>
@@ -1109,21 +1122,21 @@ const PartnersContent=()=>{
                   background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
                   display:"flex",alignItems:"center",justifyContent:"center",
                   fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy}}>
-                  {ap.name.split(" ").map(w=>w[0]).join("")}
+                  {(safeAp?.name||"?").split(" ").filter(Boolean).map(w=>w[0]||"").join("").toUpperCase()||"?"}
                 </div>
                 <div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em"}}>w/ {ap.name}</div>
-                  <div style={{fontSize:12,color:C.textMid}}>{ap.matches} matches · {ap.wins}W · {ap.matches-ap.wins}L</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em"}}>w/ {safeAp?.name}</div>
+                  <div style={{fontSize:12,color:C.textMid}}>{safeAp?.matches} matches · {safeAp?.wins}W · {safeAp?.matches-safeAp?.wins}L</div>
                 </div>
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{fontSize:11,color:C.textLight,marginBottom:2}}>Synergy Score</div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:44,color:C.mint,lineHeight:1}}>{ap.synergy}</div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:44,color:C.mint,lineHeight:1}}>{safeAp?.synergy}</div>
               </div>
             </div>
             <div style={{marginBottom:20}}>
               <div style={{height:8,background:C.border,borderRadius:4}}>
-                <div style={{height:"100%",width:`${ap.synergy}%`,
+                <div style={{height:"100%",width:`${safeAp?.synergy||0}%`,
                   background:`linear-gradient(90deg,${C.pickle},${C.mint})`,borderRadius:4}}/>
               </div>
             </div>
@@ -1134,7 +1147,7 @@ const PartnersContent=()=>{
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:16}}>
             <Card>
               <SLabel>Role Identification</SLabel>
-              {[{name:"You",role:"—",pct:0,color:C.blue},{name:ap.name,role:ap.role,pct:0,color:C.mint}].map(r=>(
+              {[{name:"You",role:"—",pct:0,color:C.blue},{name:safeAp?.name||"",role:safeAp?.role||"—",pct:0,color:C.mint}].map(r=>(
                 <div key={r.name} style={{background:C.pageBg,borderRadius:12,padding:"14px",marginBottom:10}}>
                   <div style={{fontSize:11,color:C.textLight,marginBottom:3}}>{r.name}</div>
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:r.color,letterSpacing:"0.04em",marginBottom:8}}>{r.role}</div>
@@ -1154,12 +1167,12 @@ const PartnersContent=()=>{
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   <div style={{width:12,height:12,borderRadius:3,background:C.textLight}}/>
-                  <span style={{fontSize:12,color:C.textMid}}>{ap.name}</span>
+                  <span style={{fontSize:12,color:C.textMid}}>{safeAp?.name}</span>
                 </div>
               </div>
               {/* Chart rows */}
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {(ap.shotSplit||[]).map(sh=>{
+                {(safeAp?.shotSplit||[]).map(sh=>{
                   const myW  = Math.round(sh.totalPct * sh.myPct / 100);
                   const prtW = Math.round(sh.totalPct * sh.partnerPct / 100);
                   return(
@@ -1203,7 +1216,7 @@ const PartnersContent=()=>{
                           You: {myW}% of team shots
                         </span>
                         <span style={{fontSize:10,color:C.textLight}}>
-                          {ap.name.split(" ")[0]}: {prtW}% of team shots
+                          {(safeAp?.name||"Partner").split(" ")[0]}: {prtW}% of team shots
                         </span>
                       </div>
                     </div>
@@ -1233,15 +1246,15 @@ const PartnersContent=()=>{
               <div style={{display:"flex",gap:16}}>
                 <div>
                   <div style={{fontFamily:"'DM Mono'",fontSize:26,fontWeight:700,color:C.text}}>
-                    {ap.wins}<span style={{fontSize:16,color:C.textLight}}>/{ap.matches}</span>
+                    {safeAp?.wins}<span style={{fontSize:16,color:C.textLight}}>/{safeAp?.matches}</span>
                   </div>
                   <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.06em"}}>Wins Together</div>
                 </div>
                 <div style={{width:1,background:C.border}}/>
                 <div>
                   <div style={{fontFamily:"'DM Mono'",fontSize:26,fontWeight:700,
-                    color:Math.round(ap.wins/ap.matches*100)>=50?C.mint:C.rose}}>
-                    {Math.round(ap.wins/ap.matches*100)}%
+                    color:Math.round((safeAp?.wins||0)/(safeAp?.matches||1)*100)>=50?C.mint:C.rose}}>
+                    {Math.round((safeAp?.wins||0)/(safeAp?.matches||1)*100)}%
                   </div>
                   <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.06em"}}>Win Rate</div>
                 </div>
@@ -1249,9 +1262,9 @@ const PartnersContent=()=>{
             </div>
             {/* Match rows */}
             <div style={{display:"flex",flexDirection:"column",gap:0}}>
-              {(ap.matchHistory||[]).map((m,i)=>(
+              {(safeAp?.matchHistory||[]).map((m,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:12,
-                  padding:"9px 0",borderBottom:i<ap.matchHistory.length-1?`1px solid ${C.border}`:"none"}}>
+                  padding:"9px 0",borderBottom:i<(safeAp?.matchHistory||[]).length-1?`1px solid ${C.border}`:"none"}}>
                   <div style={{width:28,height:28,borderRadius:8,flexShrink:0,
                     background:m.result==="W"?`${C.mint}20`:`${C.rose}20`,
                     display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1444,17 +1457,45 @@ const Shots = () => {
         </Card>
         <Card style={{ borderLeft:`4px solid ${C.blue}` }}>
           <div style={{ fontSize:11, color:C.blue, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>📈 Most Improved (4wk)</div>
-          <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{mostImproved?.name}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            {(()=>{
-              const h=mostImproved?.winHistory||[0,0,0,0];
-              const weeksWithData=h.filter(v=>v>0).length;
-              const delta=h[3]-h[0];
-              if(weeksWithData<2) return <span style={{fontFamily:"'DM Mono'",fontSize:13,color:C.textLight,fontStyle:"italic"}}>Log matches across 2+ weeks to see trend</span>;
-              return <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.blue }}>{delta>=0?"+":""}{delta} pts</span>;
-            })()}
-            <div style={{ flex:1 }}><Sparkline data={mostImproved?.winHistory||[]} color={C.blue} width={90} height={36} showDots={false}/></div>
-          </div>
+          {(()=>{
+            // winHistory stores win-rate % per week slot [oldest … newest]
+            // Only count slots that had real data logged (non-zero)
+            const h = mostImproved?.winHistory||[0,0,0,0];
+            const nonZeroSlots = h.filter(v=>v>0);
+            const hasMultiWeek = nonZeroSlots.length >= 2;
+            // Find oldest non-zero and newest non-zero for a meaningful delta
+            const firstIdx = h.findIndex(v=>v>0);
+            const lastIdx  = h.length - 1 - [...h].reverse().findIndex(v=>v>0);
+            const delta    = hasMultiWeek ? h[lastIdx] - h[firstIdx] : 0;
+            const totalAttempts = (mostImproved?.wins||0) + (mostImproved?.misses||0);
+            const winRate = totalAttempts > 0 ? Math.round((mostImproved?.wins||0)/totalAttempts*100) : 0;
+            if(!hasMultiWeek) return (
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.text,marginBottom:4}}>{mostImproved?.name||"—"}</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div>
+                    <div style={{fontFamily:"'DM Mono'",fontSize:isMobile?14:18,fontWeight:700,color:C.blue}}>{winRate}% win rate</div>
+                    <div style={{fontSize:10,color:C.textLight,marginTop:2,fontStyle:"italic"}}>Log across 2+ sessions to see trend</div>
+                  </div>
+                  <div style={{flex:1}}><Sparkline data={h} color={C.blue} width={90} height={36} showDots={false}/></div>
+                </div>
+              </div>
+            );
+            return (
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.text,marginBottom:4}}>{mostImproved?.name}</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:isMobile?18:26,fontWeight:700,color:delta>=0?C.blue:C.rose}}>
+                      {delta>=0?"+":""}{delta}%
+                    </span>
+                    <div style={{fontSize:10,color:C.textLight,marginTop:2}}>win rate change · now {h[lastIdx]}%</div>
+                  </div>
+                  <div style={{flex:1}}><Sparkline data={h} color={C.blue} width={90} height={36} showDots={false}/></div>
+                </div>
+              </div>
+            );
+          })()}
         </Card>
       </div>
 
@@ -1505,43 +1546,40 @@ const Shots = () => {
 
       {/* ── SORTABLE TABLE ── */}
       <Card style={{ padding:0, overflow:"hidden" }}>
-        {/* Header */}
+        {/* Header — no trend columns, tip lives under shot name */}
         <div style={{
           display:"grid",
-          gridTemplateColumns:"36px 1fr 80px 80px 80px 80px 1fr",
-          overflowX:"auto",
-          gap:10, padding:"11px 18px",
-          borderBottom:`2px solid ${C.border}`, background:C.pageBg
+          gridTemplateColumns:"36px 1fr 90px 90px 90px",
+          gap:10, padding:"10px 18px",
+          borderBottom:`2px solid ${C.border}`, background:C.pageBg,
+          alignItems:"center"
         }}>
-          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯 Focus</div>
-          <ColHeader col="name"      label="Shot"       />
-          <ColHeader col="category"  label="Category"   />
-          <ColHeader col="wins"      label="Pts Won"  align="center"/>
-          <ColHeader col="winTrend"  label="Win Trend" align="center"/>
-          <ColHeader col="misses"    label="Pts Lost"  align="center"/>
-          <ColHeader col="missTrend" label="Loss Trend" align="center"/>
-          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>PICKL Tip</div>
+          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯</div>
+          <ColHeader col="name"     label="Shot / Tip"  />
+          <ColHeader col="category" label="Category"    />
+          <ColHeader col="wins"     label="Pts Won"  align="center"/>
+          <ColHeader col="misses"   label="Pts Lost" align="center"/>
         </div>
 
         {/* Rows */}
         {displayed.map((shot, i) => {
-          const winDelta  = shot.winHistory[3]  - shot.winHistory[0];
-          const missDelta = shot.missHistory[3] - shot.missHistory[0];
-          const isPinned  = GOALS.priorityShots.some(p=>p.name===shot.name);
-          const atMax     = GOALS.priorityShots.length >= 3 && !isPinned;
+          const hasTrend   = shot.winHistory.filter(v=>v>0).length >= 2;
+          const winDelta   = shot.winHistory[3] - shot.winHistory[0];
+          const missDelta  = shot.missHistory[3] - shot.missHistory[0];
+          const isPinned   = GOALS.priorityShots.some(p=>p.name===shot.name);
+          const atMax      = GOALS.priorityShots.length >= 3 && !isPinned;
           return (
             <div key={shot.name} style={{
               display:"grid",
-              gridTemplateColumns:"36px 1fr 80px 80px 80px 80px 1fr",
-          overflowX:"auto",
-              gap:10, padding:"11px 18px",
+              gridTemplateColumns:"36px 1fr 90px 90px 90px",
+              gap:10, padding:"12px 18px",
               borderBottom:`1px solid ${C.border}`,
               background:isPinned?`${C.pickle}08`:i%2===0?C.cardBg:"#FAFBFC",
-              alignItems:"center", transition:"background 0.15s"
+              alignItems:"start", transition:"background 0.15s"
             }}>
 
               {/* Pin button */}
-              <div style={{display:"flex",justifyContent:"center"}}>
+              <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
                 <button onClick={()=>{
                   if(isPinned){
                     GOALS.priorityShots = GOALS.priorityShots.filter(p=>p.name!==shot.name);
@@ -1553,7 +1591,7 @@ const Shots = () => {
                 }} title={isPinned?"Unpin drill":atMax?"Max 3 reached":"Pin as priority drill"}
                 style={{
                   width:28, height:28, borderRadius:7,
-                  border:`1.5px solid ${isPinned?C.pickle:atMax?C.border:C.border}`,
+                  border:`1.5px solid ${isPinned?C.pickle:C.border}`,
                   background:isPinned?`${C.pickle}20`:"transparent",
                   color:isPinned?C.pickleD:atMax?"#D1D5DB":C.textLight,
                   cursor:atMax&&!isPinned?"not-allowed":"pointer",
@@ -1562,47 +1600,45 @@ const Shots = () => {
                 }}>📌</button>
               </div>
 
-              {/* Shot name */}
+              {/* Shot name + tip inline */}
               <div>
-                <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{shot.name}</div>
-                {isPinned&&<div style={{fontSize:9,color:C.pickleD,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:1}}>Priority Drill</div>}
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{shot.name}</span>
+                  {isPinned&&<span style={{fontSize:9,color:C.pickleD,fontWeight:700,textTransform:"uppercase",
+                    letterSpacing:"0.05em",background:`${C.pickle}20`,borderRadius:4,padding:"2px 5px"}}>Priority</span>}
+                </div>
+                {shot.tip&&<div style={{fontSize:11,color:C.textMid,lineHeight:1.5,marginTop:3,maxWidth:420}}>{shot.tip}</div>}
               </div>
 
               {/* Category */}
-              <div style={{ fontSize:11, color:shot.catColor, display:"flex", alignItems:"center", gap:3 }}>
+              <div style={{fontSize:11,color:shot.catColor,display:"flex",alignItems:"center",gap:3,paddingTop:2}}>
                 <span>{shot.icon}</span>{shot.category}
               </div>
 
-              {/* Pts Won */}
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                <span style={{ fontFamily:"'DM Mono'", fontSize:15, fontWeight:700,
-                  color:shot.wins>=15?C.mint:shot.wins>=8?C.amber:C.rose }}>{shot.wins}</span>
-                <span style={{ fontSize:10, fontWeight:700, color:winDelta>=0?C.mint:C.rose }}>
-                  {winDelta>=0?`▲+${winDelta}`:`▼${winDelta}`}
-                </span>
+              {/* Pts Won + trend if available */}
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
+                  color:shot.wins>=15?C.mint:shot.wins>=8?C.amber:C.textMid}}>{shot.wins}</span>
+                {hasTrend
+                  ? <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
+                      {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
+                    </span>
+                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
+                }
               </div>
 
-              {/* Win trend sparkline */}
-              <div style={{display:"flex",justifyContent:"center"}}>
-                <Sparkline data={shot.winHistory} color={C.mint} width={88} height={32} showDots={false}/>
+              {/* Pts Lost + trend if available */}
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
+                  color:shot.misses>=10?C.rose:shot.misses>=6?C.amber:C.textMid}}>{shot.misses}</span>
+                {hasTrend
+                  ? <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
+                      {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
+                    </span>
+                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
+                }
               </div>
 
-              {/* Pts Lost */}
-              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                <span style={{ fontFamily:"'DM Mono'", fontSize:15, fontWeight:700,
-                  color:shot.misses>=10?C.rose:shot.misses>=6?C.amber:C.mint }}>{shot.misses}</span>
-                <span style={{ fontSize:10, fontWeight:700, color:missDelta<=0?C.mint:C.rose }}>
-                  {missDelta<=0?`▼${missDelta}`:`▲+${missDelta}`}
-                </span>
-              </div>
-
-              {/* Loss trend sparkline */}
-              <div style={{display:"flex",justifyContent:"center"}}>
-                <Sparkline data={shot.missHistory} color={C.rose} width={88} height={32} showDots={false}/>
-              </div>
-
-              {/* PICKL tip */}
-              <div style={{ fontSize:11, color:C.textMid, lineHeight:1.5 }}>{shot.tip}</div>
             </div>
           );
         })}
@@ -2375,116 +2411,180 @@ const INIT_SHOTS = Object.fromEntries(
 );
 
 
-// ── PlayerSearch — typeahead against profile table ──────────────────────────
-function PlayerSearch({ label, value, onChange, placeholder }) {
-  const [query, setQuery]       = useState(value || "");
-  const [results, setResults]   = useState([]);
+// ── PlayerPicker — chip-based player selector with typeahead ─────────────────
+// multi=true allows multiple chips (Opponents), multi=false allows one (Partner)
+function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
+  // value is a comma-joined string for compatibility with existing save logic
+  const toChips = (v) => v ? v.split(",").map(s=>s.trim()).filter(Boolean) : [];
+  const [chips, setChips]       = useState(toChips(value));
+  const [query, setQuery]       = useState("");
+  const [allPlayers, setAllPlayers] = useState([]);   // full list from DB
+  const [filtered, setFiltered] = useState([]);
   const [open, setOpen]         = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const ref = useRef(null);
+  const [saving, setSaving]     = useState(false);
+  const ref  = useRef(null);
+  const inpRef = useRef(null);
 
-  useEffect(()=>{ if(value==="") setQuery(""); }, [value]);
+  // Reset chips when parent clears value (e.g. after save)
+  useEffect(()=>{ if(value==="") setChips([]); }, [value]);
 
+  // Load all players once on mount
   useEffect(()=>{
-    if(query.trim().length < 2){ setResults([]); return; }
-    const t = setTimeout(async()=>{
-      setLoading(true);
+    (async()=>{
       try {
-        const rows = await sb.query("profile", {
-          select: "player_name,dupr,location",
-          filter: `player_name=ilike.*${encodeURIComponent(query.trim())}*`,
-        });
-        setResults(Array.isArray(rows) ? rows : []);
-      } catch(e){ setResults([]); }
-      setLoading(false);
-    }, 280);
-    return ()=>clearTimeout(t);
-  }, [query]);
-
-  useEffect(()=>{
-    const handler = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return ()=>document.removeEventListener("mousedown", handler);
+        const rows = await sb.query("profile", { select:"player_name,dupr" });
+        setAllPlayers(Array.isArray(rows) ? rows : []);
+      } catch(e){}
+    })();
   }, []);
 
-  const [saving, setSaving]     = useState(false);
-  const [saveMsg, setSaveMsg]   = useState("");
+  // Filter as user types
+  useEffect(()=>{
+    const q = query.trim().toLowerCase();
+    if(!q){ setFiltered([]); return; }
+    setFiltered(
+      allPlayers.filter(r=>
+        r.player_name.toLowerCase().includes(q) &&
+        !chips.includes(r.player_name)
+      ).slice(0, 8)
+    );
+  }, [query, allPlayers, chips]);
 
-  const select = (name) => { setQuery(name); onChange(name); setOpen(false); setResults([]); };
-  const showNew = query.trim().length >= 2 && !results.find(r=>r.player_name.toLowerCase()===query.trim().toLowerCase());
+  // Close dropdown on outside click
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return ()=>document.removeEventListener("mousedown", h);
+  }, []);
 
-  const addNewPlayer = async () => {
+  const commit = (names) => {
+    setChips(names);
+    onChange(names.join(", "));
+  };
+
+  const addChip = (name) => {
+    const next = multi ? [...chips, name] : [name];
+    commit(next);
+    setQuery("");
+    setOpen(false);
+    inpRef.current?.focus();
+  };
+
+  const removeChip = (name) => {
+    commit(chips.filter(c=>c!==name));
+  };
+
+  const showNew = query.trim().length >= 2 &&
+    !allPlayers.find(r=>r.player_name.toLowerCase()===query.trim().toLowerCase()) &&
+    !chips.includes(query.trim());
+
+  const createAndAdd = async () => {
     const name = query.trim();
-    if(!name) return;
+    if(!name || saving) return;
     setSaving(true);
-    setSaveMsg("");
     try {
-      // Check if already exists (race condition guard)
-      const existing = await sb.query("profile", {
-        select: "player_name",
-        filter: `player_name=ilike.${encodeURIComponent(name)}`,
-      });
-      if(Array.isArray(existing) && existing.length > 0) {
-        // Already exists — just select them
-        select(name);
-      } else {
-        // Insert minimal profile row
+      const existing = await sb.query("profile",{select:"player_name",filter:`player_name=ilike.${encodeURIComponent(name)}`});
+      if(!Array.isArray(existing)||existing.length===0) {
         await sb.insert("profile", { player_name: name });
-        setSaveMsg("✓ Saved");
-        select(name);
+        setAllPlayers(prev=>[...prev, {player_name:name}]);
       }
-    } catch(e) {
-      console.error("Add player error:", e);
-      // Even if save fails, still set the name so logging works
-      select(name);
-    }
+      addChip(name);
+    } catch(e){ addChip(name); } // still add chip even if DB save fails
     setSaving(false);
   };
+
+  const canAdd = multi || chips.length === 0;
+  const hasDropdown = open && (filtered.length > 0 || showNew);
 
   return (
     <div ref={ref} style={{position:"relative"}}>
       <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
         letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>{label}</div>
-      <input type="text" value={query} placeholder={placeholder}
-        onChange={e=>{ setQuery(e.target.value); onChange(e.target.value); setOpen(true); setSaveMsg(""); }}
-        onFocus={()=>{ if(query.trim().length>=2) setOpen(true); }}
-        style={{width:"100%",background:C.pageBg,
-          border:`1px solid ${open&&(results.length>0||showNew)?C.pickle:C.border}`,
-          borderRadius:open&&(results.length>0||showNew)?"10px 10px 0 0":"10px",
-          padding:"10px 14px",color:C.text,fontSize:13,
-          fontFamily:"'Outfit'",boxSizing:"border-box",outline:"none"}}/>
-      {open && (results.length > 0 || showNew) && (
-        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:500,
+
+      {/* Chip display area + input */}
+      <div onClick={()=>{ if(canAdd) inpRef.current?.focus(); }}
+        style={{minHeight:42,background:C.pageBg,
+          border:`1px solid ${hasDropdown?C.pickle:C.border}`,
+          borderRadius:hasDropdown?"10px 10px 0 0":"10px",
+          padding:"6px 10px",display:"flex",flexWrap:"wrap",
+          gap:6,alignItems:"center",cursor:"text",boxSizing:"border-box"}}>
+
+        {/* Saved chips */}
+        {chips.map(name=>(
+          <div key={name} style={{display:"inline-flex",alignItems:"center",gap:5,
+            background:C.navy,color:"white",
+            borderRadius:20,padding:"4px 10px 4px 12px",fontSize:12,fontWeight:600,
+            fontFamily:"'Outfit'",whiteSpace:"nowrap"}}>
+            {name}
+            <button onClick={(e)=>{e.stopPropagation();removeChip(name);}}
+              style={{background:"none",border:"none",color:"rgba(255,255,255,0.7)",
+                cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 0 1px",
+                display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          </div>
+        ))}
+
+        {/* Type input — only show if can add more */}
+        {canAdd && (
+          <input ref={inpRef} type="text" value={query}
+            placeholder={chips.length===0 ? (placeholder||"Search or type name…") : (multi?"Add another…":"")}
+            onChange={e=>{ setQuery(e.target.value); setOpen(true); }}
+            onFocus={()=>setOpen(true)}
+            onKeyDown={e=>{
+              if(e.key==="Backspace" && !query && chips.length>0) removeChip(chips[chips.length-1]);
+              if(e.key==="Escape") setOpen(false);
+            }}
+            style={{flex:1,minWidth:100,background:"transparent",border:"none",outline:"none",
+              color:C.text,fontSize:13,fontFamily:"'Outfit'",padding:"2px 0"}}/>
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {hasDropdown && (
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:600,
           background:C.cardBg,border:`1px solid ${C.pickle}`,borderTop:"none",
-          borderRadius:"0 0 10px 10px",boxShadow:"0 8px 24px rgba(0,0,0,0.18)",
-          maxHeight:200,overflowY:"auto"}}>
-          {loading && <div style={{padding:"10px 14px",fontSize:12,color:C.textLight}}>Searching…</div>}
-          {results.map(r=>(
-            <div key={r.player_name} onClick={()=>select(r.player_name)}
-              style={{padding:"10px 14px",cursor:"pointer",display:"flex",
+          borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.18)",
+          maxHeight:220,overflowY:"auto"}}>
+
+          {/* Existing player matches */}
+          {filtered.map(r=>(
+            <div key={r.player_name} onClick={()=>addChip(r.player_name)}
+              style={{padding:"9px 14px",cursor:"pointer",display:"flex",
                 alignItems:"center",justifyContent:"space-between",
-                borderBottom:`1px solid ${C.border}`,transition:"background 0.1s"}}
+                borderBottom:`1px solid ${C.border}`}}
               onMouseEnter={e=>e.currentTarget.style.background=C.pageBg}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:`${C.pickle}22`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:12,fontWeight:700,color:C.navy,flexShrink:0}}>
+                  {r.player_name[0].toUpperCase()}
+                </div>
                 <div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.player_name}</div>
-                {r.location&&<div style={{fontSize:11,color:C.textLight}}>{r.location}</div>}
               </div>
-              {r.dupr&&<div style={{fontFamily:"'DM Mono'",fontSize:12,color:C.pickle,fontWeight:700}}>{r.dupr}</div>}
+              {r.dupr&&<div style={{fontFamily:"'DM Mono'",fontSize:11,color:C.pickle,fontWeight:700}}>{r.dupr}</div>}
             </div>
           ))}
-          {showNew&&(
-            <div onClick={addNewPlayer}
-              style={{padding:"10px 14px",cursor:saving?"default":"pointer",display:"flex",
-                alignItems:"center",gap:8,
-                color:saving?C.textLight:C.blue,fontSize:13,fontWeight:600,
-                transition:"background 0.1s",opacity:saving?0.6:1}}
+
+          {/* Create new player option */}
+          {showNew && (
+            <div onClick={createAndAdd}
+              style={{padding:"9px 14px",cursor:saving?"default":"pointer",
+                display:"flex",alignItems:"center",gap:10,
+                opacity:saving?0.6:1}}
               onMouseEnter={e=>{ if(!saving) e.currentTarget.style.background=C.pageBg; }}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              {saving
-                ? <><span style={{fontSize:14}}>⏳</span> Saving…</>
-                : <><span style={{fontSize:16,fontWeight:700}}>＋</span> Add "{query.trim()}" as new player</>
-              }
+              <div style={{width:28,height:28,borderRadius:"50%",
+                background:saving?`${C.border}`:C.navy,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:15,color:"white",flexShrink:0,fontWeight:700}}>
+                {saving ? "…" : "+"}
+              </div>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:C.navy}}>
+                  {saving ? "Saving…" : `Add "${query.trim()}" as new player`}
+                </div>
+                {!saving&&<div style={{fontSize:10,color:C.textLight,marginTop:1}}>Creates a profile · appears in future searches</div>}
+              </div>
             </div>
           )}
         </div>
@@ -2619,7 +2719,7 @@ const LogMatchContent=()=>{
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
             gap:12,padding:"12px 18px 0"}}>
             <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
-              placeholder="Search or type name…"/>
+              placeholder="Search or type name…" multi={true}/>
             <PlayerSearch label="Partner" value={partner} onChange={setPartner}
               placeholder="Search or type name…"/>
           </div>
