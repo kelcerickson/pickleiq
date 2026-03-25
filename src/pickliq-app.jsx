@@ -877,11 +877,14 @@ const MatchHistoryContent=()=>{
   const isMobile = useIsMobile();
   const [dbMatches, setDbMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editMatch, setEditMatch] = useState(null); // match being edited
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
-  useEffect(()=>{
+  const loadMatches = () => {
+    setLoading(true);
     sb.query("matches", { order: "created_at.desc" })
       .then(rows => {
-        // Normalize DB rows to match the shape the UI expects
         const normalized = (rows||[]).map(m=>({
           id: m.id,
           date: m.date,
@@ -890,6 +893,11 @@ const MatchHistoryContent=()=>{
           result: m.result === "W" ? "W" : "L",
           score: m.score || "—",
           notes: m.notes || "",
+          nvz_arrival: m.nvz_arrival || 0,
+          nvz_win:     m.nvz_win     || 0,
+          serve_neut:  m.serve_neut  || 0,
+          errors:      m.errors      || 0,
+          partner_role: m.partner_role || "Balanced",
           stats: {
             nvzArrival: m.nvz_arrival || 0,
             nvzWin:     m.nvz_win     || 0,
@@ -904,9 +912,11 @@ const MatchHistoryContent=()=>{
       })
       .catch(()=>{})
       .finally(()=>setLoading(false));
-  },[]);
+  };
 
-  const allMatches = dbMatches.length > 0 ? dbMatches : MATCHES;
+  useEffect(()=>{ loadMatches(); },[]);
+
+  const allMatches = dbMatches.length > 0 ? dbMatches : [];
   const [sel,setSel]=useState(null);
   const selMatch = sel || allMatches[0] || null;
   const [selShots,setSelShots]=useState(["dink","drive","lob","smash"]);
@@ -920,6 +930,180 @@ const MatchHistoryContent=()=>{
     { id:"nvzArrival", label:"NVZ Arrival",         value:`${s.nvzArrival}%`,numVal:s.nvzArrival,target:80,  unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
     { id:"nvzWin",     label:"NVZ Win Rate",        value:`${s.nvzWin}%`,    numVal:s.nvzWin,    target:65,  unit:"%", higherIsBetter:true,  color:C.blue,   colorL:C.blueL },
   ];
+
+  // ── Edit Modal ──────────────────────────────────────────────────────────────
+  const EditModal = ({m, onClose}) => {
+    const [date, setDate]           = useState(m.date||"");
+    const [opponent, setOpponent]   = useState(m.opponent==="—"?"":m.opponent);
+    const [partner, setPartner]     = useState(m.partner==="—"?"":m.partner);
+    const [score, setScore]         = useState(m.score==="—"?"":m.score);
+    const [result, setResult]       = useState(m.result||"W");
+    const [notes, setNotes]         = useState(m.notes||"");
+    const [nvzArrived, setNvzArrived] = useState(m.nvz_arrival||0);
+    const [nvzWon, setNvzWon]         = useState(m.nvz_win||0);
+    const [serveNeut, setServeNeut]   = useState(m.serve_neut||0);
+    const [errors, setErrors]         = useState(m.errors||0);
+    const [role, setRole]             = useState(m.partner_role||"Balanced");
+    const [saving, setSaving]         = useState(false);
+    const [error, setError]           = useState("");
+
+    const save = async () => {
+      setSaving(true); setError("");
+      try {
+        await sb.upsert("matches", {
+          id: m.id,
+          date, opponent, partner, result, score, notes,
+          nvz_arrival: Number(nvzArrived),
+          nvz_win:     Number(nvzWon),
+          serve_neut:  Number(serveNeut),
+          errors:      Number(errors),
+          partner_role: role,
+        }, "id");
+        loadMatches();
+        onClose();
+      } catch(e) {
+        setError(e.message||"Save failed");
+      }
+      setSaving(false);
+    };
+
+    const CtrBtn = ({val, setVal, color}) => (
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <button onClick={()=>setVal(Math.max(0,val-1))} style={{width:26,height:26,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+        <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:val>0?color:C.textLight,minWidth:20,textAlign:"center"}}>{val}</span>
+        <button onClick={()=>setVal(val+1)} style={{width:26,height:26,borderRadius:6,border:`1px solid ${val>0?color:C.border}`,background:val>0?color+"18":C.pageBg,fontSize:15,color,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+      </div>
+    );
+
+    return(
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+        onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+        <div style={{background:C.cardBg,borderRadius:20,width:"100%",maxWidth:580,
+          maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}}>
+
+          {/* Header */}
+          <div style={{padding:"18px 22px",borderBottom:`1px solid ${C.border}`,
+            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em"}}>Edit Match</div>
+            <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,
+              color:C.textLight,cursor:"pointer",lineHeight:1}}>×</button>
+          </div>
+
+          <div style={{padding:"18px 22px",display:"flex",flexDirection:"column",gap:14}}>
+
+            {/* Row 1: Date + Score + Result */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Date</div>
+                <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Score</div>
+                <input type="text" value={score} onChange={e=>setScore(e.target.value)}
+                  placeholder="11-7"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+
+            {/* Result */}
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                  <button key={v} onClick={()=>setResult(v)} style={{
+                    padding:"9px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
+                    fontFamily:"'Outfit'",border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
+                    background:result===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):C.pageBg,
+                    color:result===v?(v==="W"?C.mint:C.rose):C.textMid}}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Opponent + Partner */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Opponent(s)</div>
+                <input type="text" value={opponent} onChange={e=>setOpponent(e.target.value)}
+                  placeholder="Opponent name"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Partner</div>
+                <input type="text" value={partner} onChange={e=>setPartner(e.target.value)}
+                  placeholder="Partner name"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes</div>
+              <input type="text" value={notes} onChange={e=>setNotes(e.target.value)}
+                placeholder="Anything notable…"
+                style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                  padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+            </div>
+
+            {/* Performance Stats */}
+            <div style={{background:C.pageBg,borderRadius:12,padding:"14px"}}>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700,marginBottom:12}}>Performance Stats</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                {[
+                  {label:"NVZ Arrival",    val:nvzArrived, set:setNvzArrived, color:C.mint},
+                  {label:"NVZ Win Rate",   val:nvzWon,     set:setNvzWon,     color:C.blue},
+                  {label:"Serve Neut.",    val:serveNeut,  set:setServeNeut,  color:C.amber},
+                  {label:"Errors",         val:errors,     set:setErrors,     color:C.rose},
+                ].map(({label,val,set,color})=>(
+                  <div key={label} style={{display:"flex",justifyContent:"space-between",
+                    alignItems:"center",background:C.cardBg,borderRadius:8,padding:"8px 12px"}}>
+                    <span style={{fontSize:12,color:C.textMid}}>{label}</span>
+                    <CtrBtn val={val} setVal={set} color={color}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Role */}
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Your Role</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+                {["Resetter","Driver","Attacker","Balanced"].map(r=>(
+                  <button key={r} onClick={()=>setRole(r)} style={{
+                    padding:"7px 4px",borderRadius:8,fontWeight:600,fontSize:11,cursor:"pointer",
+                    fontFamily:"'Outfit'",background:role===r?C.navy:C.pageBg,
+                    border:`2px solid ${role===r?C.navy:C.border}`,
+                    color:role===r?"white":C.textMid}}>{r}</button>
+                ))}
+              </div>
+            </div>
+
+            {error&&<div style={{background:`${C.rose}15`,border:`1px solid ${C.rose}40`,borderRadius:10,
+              padding:"10px 14px",fontSize:12,color:C.rose}}>{error}</div>}
+
+            {/* Actions */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+              <button onClick={onClose} style={{padding:"12px",borderRadius:12,border:`1px solid ${C.border}`,
+                background:C.pageBg,fontFamily:"'Outfit'",fontWeight:600,fontSize:14,
+                color:C.textMid,cursor:"pointer"}}>Cancel</button>
+              <button onClick={save} disabled={saving} style={{padding:"12px",borderRadius:12,border:"none",
+                background:saving?C.border:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
+                color:C.navy,cursor:saving?"not-allowed":"pointer"}}>
+                {saving?"Saving…":"Save Changes"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if(!selMatch) return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"60px 20px",textAlign:"center"}}>
@@ -930,11 +1114,12 @@ const MatchHistoryContent=()=>{
   );
   return(
     <div>
+      {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><SLabel>Recent Matches</SLabel></div>
-          {MATCHES.map(m=>(
+          {allMatches.map(m=>(
             <div key={m.id} className="row" onClick={()=>setSel(m)} style={{
               padding:"13px 18px",borderBottom:`1px solid ${C.border}`,
               background:selMatch?.id===m.id?C.pageBg:C.cardBg,
@@ -960,7 +1145,11 @@ const MatchHistoryContent=()=>{
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontSize:13,color:C.textMid}}>{selMatch?.score}</span>
                 <Badge text={selMatch?.result==="W"?"WIN":"LOSS"} color={selMatch?.result==="W"?C.mint:C.rose}/>
-
+                <button onClick={()=>setEditMatch(selMatch)} style={{
+                  display:"flex",alignItems:"center",gap:5,padding:"6px 12px",
+                  borderRadius:8,border:`1px solid ${C.border}`,background:C.pageBg,
+                  fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,
+                  cursor:"pointer"}}>✏️ Edit</button>
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:12,marginBottom:20}}>
@@ -2507,16 +2696,15 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
     })();
   }, []);
 
-  // Filter as user types
+  // Filter as user types — show all players when empty, filtered when typing
   useEffect(()=>{
     const q = query.trim().toLowerCase();
-    if(!q){ setFiltered([]); return; }
-    setFiltered(
-      allPlayers.filter(r=>
-        r.player_name.toLowerCase().includes(q) &&
-        !chips.includes(r.player_name)
-      ).slice(0, 8)
-    );
+    const available = allPlayers.filter(r=>!chips.includes(r.player_name));
+    if(!q){
+      setFiltered(available.slice(0, 10)); // show up to 10 players on focus
+    } else {
+      setFiltered(available.filter(r=>r.player_name.toLowerCase().includes(q)).slice(0, 8));
+    }
   }, [query, allPlayers, chips]);
 
   // Close dropdown on outside click
@@ -2563,7 +2751,7 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
   };
 
   const canAdd = multi || chips.length === 0;
-  const hasDropdown = open && (filtered.length > 0 || showNew);
+  const hasDropdown = open && (filtered.length > 0 || showNew) && canAdd;
 
   return (
     <div ref={ref} style={{position:"relative"}}>
@@ -2597,7 +2785,7 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
           <input ref={inpRef} type="text" value={query}
             placeholder={chips.length===0 ? (placeholder||"Search or type name…") : (multi?"Add another…":"")}
             onChange={e=>{ setQuery(e.target.value); setOpen(true); }}
-            onFocus={()=>setOpen(true)}
+            onFocus={()=>{ setOpen(true); }}
             onKeyDown={e=>{
               if(e.key==="Backspace" && !query && chips.length>0) removeChip(chips[chips.length-1]);
               if(e.key==="Escape") setOpen(false);
@@ -2614,6 +2802,14 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
           borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.18)",
           maxHeight:220,overflowY:"auto"}}>
 
+          {/* Player list header */}
+          {filtered.length > 0 && (
+            <div style={{padding:"6px 14px 4px",fontSize:10,color:C.textLight,
+              textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700,
+              borderBottom:`1px solid ${C.border}`,background:C.pageBg}}>
+              {query.trim() ? "Matching players" : "Your players"}
+            </div>
+          )}
           {/* Existing player matches */}
           {filtered.map(r=>(
             <div key={r.player_name} onClick={()=>addChip(r.player_name)}
