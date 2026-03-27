@@ -659,9 +659,9 @@ const Dashboard=({setPage})=>{
     sb.query("matches", { order: "created_at.desc" })
       .then(rows => setDbMatches(rows||[]))
       .catch(()=>{});
-    sb.query("profile", { filter: "id=eq.1", single: true })
+    sb.query("profile", { filter: `user_id=eq.${getCurrentUserId()}`, single: true })
       .then(data => { if(data) setProfileData(data); })
-      .catch(()=>{});
+      .catch(()=>{}); // New users won't have a profile yet — that's ok
     sb.query("shots", { order: "name.asc" })
       .then(rows => {
         if (rows && rows.length > 0) {
@@ -932,6 +932,13 @@ const MatchHistoryContent=()=>{
   const isMobile = useIsMobile();
   const [dbMatches, setDbMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [profileName, setProfileName] = useState("You");
+
+  useEffect(()=>{
+    sb.query("profile",{filter:`user_id=eq.${getCurrentUserId()}`,single:true})
+      .then(p=>{ if(p?.player_name) setProfileName(p.player_name.split(" ")[0]); })
+      .catch(()=>{});
+  },[]);
   const [editMatch, setEditMatch] = useState(null); // match being edited
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
@@ -1216,7 +1223,7 @@ const MatchHistoryContent=()=>{
             <div style={{display:"flex",gap:16,marginBottom:12}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:C.blue}}/>
-                <span style={{fontSize:11,color:C.textMid}}>Alex (you)</span>
+                <span style={{fontSize:11,color:C.textMid}}>{profileName} (you)</span>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:C.textLight}}/>
@@ -2116,7 +2123,8 @@ const Profile=({setPage})=>{
 
   // Load profile from Supabase on mount
   useEffect(() => {
-    sb.query("profile", { filter: "id=eq.1", single: true })
+    const uid = getCurrentUserId();
+    sb.query("profile", { filter: `user_id=eq.${uid}`, single: true })
       .then(data => {
         if (data) {
           if (data.player_name) setPlayerName(data.player_name);
@@ -2126,6 +2134,12 @@ const Profile=({setPage})=>{
           if (data.dupr)        setDupr(data.dupr);
           if (data.goals)       Object.assign(GOALS.targets, data.goals);
           if (data.priority_shots) GOALS.priorityShots = data.priority_shots;
+        } else {
+          // New user — pre-fill email from auth, prompt them to set their name
+          sb.getUser().then(u=>{ if(u?.email) setEmail(u.email); });
+          setPlayerName("");
+          // Auto-open edit modal so new users set their name on first visit
+          setShowEditModal(true);
         }
       })
       .catch(()=>{})
@@ -2141,7 +2155,6 @@ const Profile=({setPage})=>{
     setSaving(true);
     try {
       const profileData = {
-        id: 1,
         player_name: draft.playerName || "",
         location: draft.location || "",
         home_club: draft.homeClub || "",
@@ -2149,8 +2162,9 @@ const Profile=({setPage})=>{
         dupr: parseFloat(draft.dupr) || 0,
         goals: GOALS.targets,
         priority_shots: GOALS.priorityShots,
+        user_id: getCurrentUserId(),
       };
-      const result = await sb.upsert("profile", profileData, "id");
+      const result = await sb.upsert("profile", profileData, "user_id");
       console.log("Profile saved:", result);
       setPlayerName(draft.playerName || "");
       setLocation(draft.location || "");
@@ -3302,7 +3316,10 @@ const LogMatchContent=()=>{
               const shotMeta = cat?.shots.find(sh=>sh.name===name);
               // Get existing shot data to append history
               let existing = null;
-              try { existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}`,single:true}); } catch(e){}
+              try {
+                const uid = getCurrentUserId();
+                existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`,single:true});
+              } catch(e){}
               const prevWinH  = existing?.win_history  || [0,0,0,0];
               const prevMissH = existing?.miss_history || [0,0,0,0];
               const newWinPct  = s.wins+s.misses>0 ? Math.round(s.wins/(s.wins+s.misses)*100) : 0;
@@ -3321,7 +3338,7 @@ const LogMatchContent=()=>{
                 color: cat?.color      || C.blue,
                 icon:  cat?.icon       || "🎾",
                 user_id: getCurrentUserId(),
-              }, "name");
+              }, "user_id,name");
             }
             setSaved(true);
           } catch(err) {
