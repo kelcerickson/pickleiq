@@ -3002,14 +3002,7 @@ const LogMatchContent=()=>{
     <div style={{width:"100%"}}>
       {showUp&&<UploadModal onClose={()=>setShowUp(false)}/>}
 
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-        <button onClick={()=>setShowUp(true)} style={{
-          background:C.navy,border:"none",borderRadius:12,padding:"10px 20px",
-          fontFamily:"'Outfit'",fontWeight:700,fontSize:14,color:C.pickle,
-          cursor:"pointer",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          🎾 Upload Video Instead
-        </button>
-      </div>
+
 
       <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
@@ -3361,12 +3354,321 @@ const LogMatchContent=()=>{
 
 
 // ── MATCH CENTER ──────────────────────────────────────────────────────────────
+
+// ── VIDEO LOGGER ──────────────────────────────────────────────────────────────
+const SHOT_BUTTONS = [
+  { cat:"Serve/Return", color:C.amber,  shots:["Serve","Return BH","Return FH"] },
+  { cat:"Transition",   color:C.blue,   shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
+  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH"] },
+  { cat:"Attack",       color:C.rose,   shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
+  { cat:"Defense",      color:C.purple, shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
+];
+
+function VideoLoggerContent() {
+  const isMobile = useIsMobile();
+
+  // Match metadata
+  const [matchId,   setMatchId]   = useState(null);
+  const [matches,   setMatches]   = useState([]);
+  const [selMatch,  setSelMatch]  = useState(null);
+
+  // Video state
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoUrl,  setVideoUrl]  = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const videoRef = useRef(null);
+
+  // Shot logging state
+  const [shotLog,   setShotLog]   = useState([]); // [{ts, name, result}]
+  const [lastShot,  setLastShot]  = useState(null);
+  const [outcome,   setOutcome]   = useState("W"); // W = won rally, L = lost
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+
+  // Load existing matches to link video to
+  useEffect(()=>{
+    sb.query("matches",{order:"created_at.desc"})
+      .then(rows=>{ setMatches(rows||[]); if(rows?.length) setSelMatch(rows[0]); })
+      .catch(()=>{});
+  },[]);
+
+  const formatTs = (secs) => {
+    const m = Math.floor(secs/60);
+    const s = Math.floor(secs%60);
+    return `${m}:${s.toString().padStart(2,"0")}`;
+  };
+
+  // Upload video to Supabase Storage
+  const uploadVideo = async (file) => {
+    setUploading(true); setUploadErr("");
+    try {
+      const uid = getCurrentUserId();
+      const ext = file.name.split(".").pop();
+      const path = `${uid}/${Date.now()}.${ext}`;
+      const res = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/match-videos/${path}`,
+        {
+          method:"POST",
+          headers:{
+            apikey: SUPABASE_KEY,
+            Authorization:`Bearer ${_authToken}`,
+            "Content-Type": file.type,
+          },
+          body: file,
+        }
+      );
+      if(!res.ok) throw new Error(await res.text());
+      // Get signed URL for playback
+      const signRes = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`,
+        {
+          method:"POST",
+          headers:{
+            apikey: SUPABASE_KEY,
+            Authorization:`Bearer ${_authToken}`,
+            "Content-Type":"application/json",
+          },
+          body: JSON.stringify({expiresIn: 3600}),
+        }
+      );
+      const signData = await signRes.json();
+      const url = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
+      setVideoUrl(url);
+      // Save video URL to match if one is selected
+      if(selMatch?.id) {
+        await sb.upsert("matches",{id:selMatch.id, video_url:url},"id");
+      }
+    } catch(e) {
+      setUploadErr("Upload failed: " + (e.message||"Unknown error"));
+    }
+    setUploading(false);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    if(!file.type.startsWith("video/")) { setUploadErr("Please select a video file."); return; }
+    if(file.size > 500 * 1024 * 1024) { setUploadErr("File must be under 500MB."); return; }
+    setVideoFile(file);
+    setVideoUrl(URL.createObjectURL(file)); // preview locally while uploading
+    uploadVideo(file);
+  };
+
+  // Log a shot at current video timestamp
+  const logShot = (shotName) => {
+    const ts = videoRef.current?.currentTime || 0;
+    const entry = {ts, name:shotName, result:outcome, id:Date.now()};
+    setShotLog(prev=>[...prev, entry].sort((a,b)=>a.ts-b.ts));
+    setLastShot(entry);
+    // Flash feedback
+    setTimeout(()=>setLastShot(null), 800);
+  };
+
+  const removeShot = (id) => setShotLog(prev=>prev.filter(s=>s.id!==id));
+
+  // Save all logged shots to DB
+  const saveShots = async () => {
+    if(!selMatch?.id || shotLog.length===0) return;
+    setSaving(true);
+    try {
+      const uid = getCurrentUserId();
+      for(const shot of shotLog) {
+        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===shot.name));
+        let existing = null;
+        try { existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(shot.name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        const w = shot.result==="W"?1:0;
+        const m = shot.result==="L"?1:0;
+        await sb.upsert("shots",{
+          name: shot.name,
+          category: cat?.label||"",
+          attempts: (existing?.attempts||0)+1,
+          wins:     (existing?.wins||0)+w,
+          misses:   (existing?.misses||0)+m,
+          win_history:  [...((existing?.win_history)||[0,0,0,0]).slice(1), w*100],
+          miss_history: [...((existing?.miss_history)||[0,0,0,0]).slice(1), m*100],
+          color: cat?.color||C.blue,
+          icon:  cat?.icon||"🎾",
+          user_id: uid,
+        }, "user_id,name");
+      }
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 3000);
+    } catch(e) { alert("Save failed: "+e.message); }
+    setSaving(false);
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16,width:"100%"}}>
+
+      {/* ── Step 1: Link to a match ── */}
+      <Card style={{padding:"16px 20px"}}>
+        <SLabel>Step 1 — Link to a Match</SLabel>
+        <div style={{fontSize:12,color:C.textMid,marginBottom:10}}>
+          Select the match this video is from so shots get linked to it.
+        </div>
+        <select value={selMatch?.id||""} onChange={e=>setSelMatch(matches.find(m=>m.id===parseInt(e.target.value)))}
+          style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+            padding:"10px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}>
+          {matches.length===0 && <option value="">No matches yet — log one first</option>}
+          {matches.map(m=>(
+            <option key={m.id} value={m.id}>
+              {m.date} vs {m.opponent||"Unknown"} ({m.result==="W"?"W":"L"})
+            </option>
+          ))}
+        </select>
+      </Card>
+
+      {/* ── Step 2: Upload video ── */}
+      <Card style={{padding:"16px 20px"}}>
+        <SLabel>Step 2 — Upload Video</SLabel>
+        {!videoUrl ? (
+          <label style={{display:"block",cursor:"pointer"}}>
+            <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"40px 20px",
+              textAlign:"center",background:C.pageBg,transition:"all 0.2s"}}
+              onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.pickle;}}
+              onDragLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
+              onDrop={e=>{
+                e.preventDefault();
+                e.currentTarget.style.borderColor=C.border;
+                const f=e.dataTransfer.files[0];
+                if(f){ const inp=document.createElement("input"); inp.files=[f];
+                  handleFileChange({target:{files:[f]}}); }
+              }}>
+              <div style={{fontSize:40,marginBottom:12}}>🎬</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>
+                Drop video here or click to browse
+              </div>
+              <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 500MB</div>
+              {uploading&&<div style={{marginTop:12,fontSize:13,color:C.amber,fontWeight:600}}>⏳ Uploading…</div>}
+              {uploadErr&&<div style={{marginTop:12,fontSize:12,color:C.rose}}>{uploadErr}</div>}
+            </div>
+            <input type="file" accept="video/*" onChange={handleFileChange} style={{display:"none"}}/>
+          </label>
+        ) : (
+          <div>
+            <video ref={videoRef} src={videoUrl} controls
+              style={{width:"100%",borderRadius:12,background:"#000",maxHeight:400}}/>
+            {uploading&&<div style={{marginTop:8,fontSize:12,color:C.amber,textAlign:"center"}}>⏳ Uploading to cloud…</div>}
+            <button onClick={()=>{setVideoUrl(null);setVideoFile(null);setShotLog([]);}}
+              style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
+                padding:"6px 14px",fontSize:12,color:C.textMid,cursor:"pointer",fontFamily:"'Outfit'"}}>
+              ✕ Remove video
+            </button>
+          </div>
+        )}
+      </Card>
+
+      {/* ── Step 3: Log shots ── */}
+      {videoUrl && (
+        <Card style={{padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SLabel style={{marginBottom:0}}>Step 3 — Log Shots</SLabel>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:C.textMid}}>Rally result:</span>
+              {[["W","✓ Won"],["L","✕ Lost"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>setOutcome(v)} style={{
+                  padding:"5px 12px",borderRadius:8,border:`1.5px solid ${outcome===v?(v==="W"?C.mint:C.rose):C.border}`,
+                  background:outcome===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):"transparent",
+                  color:outcome===v?(v==="W"?C.mint:C.rose):C.textMid,
+                  fontFamily:"'Outfit'",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{fontSize:12,color:C.textMid,marginBottom:14,padding:"8px 12px",
+            background:`${C.pickle}10`,borderRadius:8,border:`1px solid ${C.pickle}30`}}>
+            ▶ Play the video, then tap the shot type each time a rally ends. Set Won/Lost before tapping.
+          </div>
+
+          {/* Last shot flash */}
+          {lastShot && (
+            <div style={{marginBottom:12,padding:"8px 14px",background:lastShot.result==="W"?`${C.mint}20`:`${C.rose}20`,
+              borderRadius:10,border:`1px solid ${lastShot.result==="W"?C.mint:C.rose}`,
+              fontSize:13,fontWeight:600,color:lastShot.result==="W"?C.mint:C.rose,
+              animation:"fadeUp 0.2s ease",display:"flex",justifyContent:"space-between"}}>
+              <span>{lastShot.result==="W"?"✓":"✕"} {lastShot.name} logged</span>
+              <span style={{fontFamily:"'DM Mono'",fontSize:11,opacity:0.8}}>@ {formatTs(lastShot.ts)}</span>
+            </div>
+          )}
+
+          {/* Shot category buttons */}
+          {SHOT_BUTTONS.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:14}}>
+              <div style={{fontSize:9,fontWeight:700,color:cat.color,textTransform:"uppercase",
+                letterSpacing:"0.1em",marginBottom:6}}>{cat.cat}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {cat.shots.map(shot=>(
+                  <button key={shot} onClick={()=>logShot(shot)}
+                    style={{padding:"8px 14px",borderRadius:10,border:`1.5px solid ${cat.color}30`,
+                      background:`${cat.color}10`,color:cat.color,fontFamily:"'Outfit'",
+                      fontWeight:600,fontSize:12,cursor:"pointer",transition:"all 0.1s",
+                      whiteSpace:"nowrap"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background=cat.color+"25";e.currentTarget.style.transform="scale(1.04)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background=cat.color+"10";e.currentTarget.style.transform="scale(1)";}}>
+                    {shot}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ── Shot log timeline ── */}
+      {shotLog.length > 0 && (
+        <Card style={{padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SLabel style={{marginBottom:0}}>Shot Log · {shotLog.length} shots</SLabel>
+            <div style={{display:"flex",gap:8}}>
+              <span style={{fontSize:12,color:C.mint,fontWeight:600}}>
+                {shotLog.filter(s=>s.result==="W").length}W
+              </span>
+              <span style={{fontSize:12,color:C.rose,fontWeight:600}}>
+                {shotLog.filter(s=>s.result==="L").length}L
+              </span>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
+            {shotLog.map((s,i)=>(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",
+                borderRadius:8,background:s.result==="W"?`${C.mint}08`:`${C.rose}08`,
+                border:`1px solid ${s.result==="W"?C.mint:C.rose}20`}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:11,color:C.textLight,minWidth:36}}>{formatTs(s.ts)}</span>
+                <span style={{fontSize:12,fontWeight:600,color:C.text,flex:1}}>{s.name}</span>
+                <span style={{fontSize:11,fontWeight:700,color:s.result==="W"?C.mint:C.rose}}>{s.result==="W"?"✓ Won":"✕ Lost"}</span>
+                <button onClick={()=>removeShot(s.id)} style={{background:"none",border:"none",
+                  color:C.textLight,cursor:"pointer",fontSize:14,padding:"0 2px",lineHeight:1}}>×</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Save button */}
+          <button onClick={saveShots} disabled={saving||saved} style={{
+            width:"100%",marginTop:14,background:saved?C.mint:saving?C.border:C.pickle,
+            border:"none",borderRadius:12,padding:"13px",fontFamily:"'Outfit'",
+            fontWeight:700,fontSize:15,color:C.navy,cursor:saving?"not-allowed":"pointer",transition:"all 0.2s"}}>
+            {saved?"✓ Shots Saved!":saving?"Saving…":"Save All Shots to Match"}
+          </button>
+        </Card>
+      )}
+
+    </div>
+  );
+}
+
 const MatchCenter=({defaultTab="log"})=>{
   const isMobile = useIsMobile();
   const [tab,setTab]=useState(defaultTab); // "log" | "partners" | "history"
 
   const TABS=[
     {id:"log",      label:"📋 Log Match"},
+    {id:"video",    label:"🎬 Log from Video"},
     {id:"partners", label:"👥 Partners"},
     {id:"history",  label:"🏆 Match History"},
   ];
@@ -3397,6 +3699,9 @@ const MatchCenter=({defaultTab="log"})=>{
 
       {/* ── Tab: Log Match ── */}
       {tab==="log"&&<LogMatchContent/>}
+
+      {/* ── Tab: Video Logger ── */}
+      {tab==="video"&&<VideoLoggerContent/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
