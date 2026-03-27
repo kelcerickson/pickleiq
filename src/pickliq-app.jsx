@@ -3469,7 +3469,7 @@ function VideoLoggerContent() {
   const processFile = (file) => {
     if(!file) return;
     setUploadErr("");
-    if(file.size > 500 * 1024 * 1024) { setUploadErr("File must be under 500MB."); return; }
+    if(file.size > 2048 * 1024 * 1024) { setUploadErr("File must be under 2GB."); return; }
     const isVideo = file.type.startsWith("video/") ||
       /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
     if(!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
@@ -3638,7 +3638,7 @@ function VideoLoggerContent() {
               <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>
                 Drop video here or click to browse
               </div>
-              <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 500MB</div>
+              <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 2GB</div>
               {uploading&&<div style={{marginTop:12,fontSize:13,color:C.amber,fontWeight:600}}>⏳ Uploading…</div>}
               {uploadErr&&<div style={{marginTop:12,fontSize:12,color:C.rose}}>{uploadErr}</div>}
             </div>
