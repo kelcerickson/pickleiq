@@ -3367,31 +3367,51 @@ const SHOT_BUTTONS = [
 function VideoLoggerContent() {
   const isMobile = useIsMobile();
 
-  // Match info (created at save time)
-  const [date,      setDate]      = useState(new Date().toISOString().slice(0,10));
-  const [opponent,  setOpponent]  = useState("");
-  const [partner,   setPartner]   = useState("");
-  const [score,     setScore]     = useState("");
-  const [result,    setResult]    = useState("W");
-  const [notes,     setNotes]     = useState("");
-  const [savedMatchId, setSavedMatchId] = useState(null); // set after match is created
+  const [date,        setDate]        = useState(new Date().toISOString().slice(0,10));
+  const [opponent,    setOpponent]    = useState("");
+  const [partner,     setPartner]     = useState("");
+  const [score,       setScore]       = useState("");
+  const [result,      setResult]      = useState("W");
+  const [notes,       setNotes]       = useState("");
+  const [savedMatchId,setSavedMatchId]= useState(null);
+  const [matchSaved,  setMatchSaved]  = useState(false);
+  const [matchSaving, setMatchSaving] = useState(false);
+  const [matchErr,    setMatchErr]    = useState("");
 
-  // Video state
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl,  setVideoUrl]  = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
   const videoRef = useRef(null);
 
-  // Shot logging state
-  const [shotLog,   setShotLog]   = useState([]);
-  const [lastShot,  setLastShot]  = useState(null);
-  const [outcome,   setOutcome]   = useState("W");
-  const [saving,    setSaving]    = useState(false);
-  const [saved,     setSaved]     = useState(false);
-  const [matchSaved, setMatchSaved] = useState(false);
-  const [matchSaving, setMatchSaving] = useState(false);
-  const [matchErr,  setMatchErr]  = useState("");
+  // Tracking toggles — persisted in localStorage
+  const loadPref = (key, def) => {
+    try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); }
+    catch(e) { return def; }
+  };
+  const [trackRallyEnder,  setTrackRallyEnder]  = useState(()=>loadPref("pi_track_rally", true));
+  const [trackShotOutcome, setTrackShotOutcome] = useState(()=>loadPref("pi_track_outcome", false));
+  const [trackShotCount,   setTrackShotCount]   = useState(()=>loadPref("pi_track_count", false));
+  const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} };
+  const toggleRallyEnder  = () => { const v=!trackRallyEnder;  setTrackRallyEnder(v);  savePref("pi_track_rally",v); };
+  const toggleShotOutcome = () => { const v=!trackShotOutcome; setTrackShotOutcome(v); savePref("pi_track_outcome",v); };
+  const toggleShotCount   = () => { const v=!trackShotCount;   setTrackShotCount(v);   savePref("pi_track_count",v); };
+
+  // Rally Ender
+  const [rallyLog,     setRallyLog]     = useState([]);
+  const [rallyOutcome, setRallyOutcome] = useState("W");
+  const [lastRally,    setLastRally]    = useState(null);
+
+  // Shot Outcome
+  const [outcomeLog,  setOutcomeLog]  = useState([]);
+  const [shotDir,     setShotDir]     = useState("+");
+  const [lastOutcome, setLastOutcome] = useState(null);
+
+  // Shot Counter
+  const [counts, setCounts] = useState({});
+
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
 
   const formatTs = (secs) => {
     const m = Math.floor(secs/60);
@@ -3399,7 +3419,6 @@ function VideoLoggerContent() {
     return `${m}:${s.toString().padStart(2,"0")}`;
   };
 
-  // Save match info first, then upload video
   const saveMatchAndUpload = async (file) => {
     setMatchSaving(true); setMatchErr("");
     try {
@@ -3407,62 +3426,38 @@ function VideoLoggerContent() {
       const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
       const rows = await sb.insert("matches", {
         date: dateFormatted, opponent, partner, result, score, notes,
-        nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced",
-        user_id: uid,
+        nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced", user_id: uid,
       });
       const newMatchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
       setSavedMatchId(newMatchId);
       setMatchSaved(true);
-      // Now upload video
       await uploadVideo(file, newMatchId);
-    } catch(e) {
-      setMatchErr("Failed to save match: " + (e.message||"Unknown error"));
-    }
+    } catch(e) { setMatchErr("Failed to save match: " + (e.message||"Unknown error")); }
     setMatchSaving(false);
   };
 
-  // Upload video to Supabase Storage
   const uploadVideo = async (file, matchId) => {
     setUploading(true); setUploadErr("");
     try {
       const uid = getCurrentUserId();
       const ext = file.name.split(".").pop();
       const path = `${uid}/${Date.now()}.${ext}`;
-      const res = await fetch(
-        `${SUPABASE_URL}/storage/v1/object/match-videos/${path}`,
-        {
-          method:"POST",
-          headers:{
-            apikey: SUPABASE_KEY,
-            Authorization:`Bearer ${_authToken}`,
-            "Content-Type": file.type||"video/mp4",
-          },
-          body: file,
-        }
-      );
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
+        method:"POST",
+        headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${_authToken}`, "Content-Type":file.type||"video/mp4" },
+        body: file,
+      });
       if(!res.ok) throw new Error(await res.text());
-      // Get signed URL for playback
-      const signRes = await fetch(
-        `${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`,
-        {
-          method:"POST",
-          headers:{
-            apikey: SUPABASE_KEY,
-            Authorization:`Bearer ${_authToken}`,
-            "Content-Type":"application/json",
-          },
-          body: JSON.stringify({expiresIn: 7200}),
-        }
-      );
+      const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
+        method:"POST",
+        headers:{ apikey:SUPABASE_KEY, Authorization:`Bearer ${_authToken}`, "Content-Type":"application/json" },
+        body: JSON.stringify({expiresIn:7200}),
+      });
       const signData = await signRes.json();
       const url = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
       setVideoUrl(url);
-      if(matchId) {
-        await sb.upsert("matches",{id:matchId, video_url:url},"id");
-      }
-    } catch(e) {
-      setUploadErr("Upload failed: " + (e.message||"Unknown error"));
-    }
+      if(matchId) await sb.upsert("matches",{id:matchId, video_url:url},"id");
+    } catch(e) { setUploadErr("Upload failed: " + (e.message||"Unknown error")); }
     setUploading(false);
   };
 
@@ -3470,104 +3465,157 @@ function VideoLoggerContent() {
     if(!file) return;
     setUploadErr("");
     if(file.size > 2048 * 1024 * 1024) { setUploadErr("File must be under 2GB."); return; }
-    const isVideo = file.type.startsWith("video/") ||
-      /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
+    const isVideo = file.type.startsWith("video/") || /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
     if(!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
     setVideoFile(file);
-    // Show local preview immediately
-    const localUrl = URL.createObjectURL(file);
-    setVideoUrl(localUrl);
-    // Save match + upload in background
+    setVideoUrl(URL.createObjectURL(file));
     saveMatchAndUpload(file);
   };
 
-  const handleFileChange = (e) => {
-    processFile(e.target.files[0]);
-  };
-
-  // Log a shot at current video timestamp
-  const logShot = (shotName) => {
+  const logRallyEnder = (shotName) => {
     const ts = videoRef.current?.currentTime || 0;
-    const entry = {ts, name:shotName, result:outcome, id:Date.now()};
-    setShotLog(prev=>[...prev, entry].sort((a,b)=>a.ts-b.ts));
-    setLastShot(entry);
-    // Flash feedback
-    setTimeout(()=>setLastShot(null), 800);
+    const entry = {id:Date.now(), ts, name:shotName, result:rallyOutcome};
+    setRallyLog(prev=>[...prev, entry].sort((a,b)=>a.ts-b.ts));
+    setLastRally(entry); setTimeout(()=>setLastRally(null), 1200);
   };
 
-  const removeShot = (id) => setShotLog(prev=>prev.filter(s=>s.id!==id));
+  const logShotOutcome = (shotName) => {
+    const ts = videoRef.current?.currentTime || 0;
+    const entry = {id:Date.now(), ts, name:shotName, outcome:shotDir};
+    setOutcomeLog(prev=>[...prev, entry].sort((a,b)=>a.ts-b.ts));
+    setLastOutcome(entry); setTimeout(()=>setLastOutcome(null), 1000);
+  };
 
-  // Save all logged shots to DB
-  const saveShots = async () => {
-    if(!savedMatchId || shotLog.length===0) { alert(savedMatchId?"No shots to save yet.":"Please fill in match info and upload a video first."); return; }
+  const incrementCount = (shotName) => setCounts(prev=>({...prev, [shotName]:(prev[shotName]||0)+1}));
+  const decrementCount = (shotName) => setCounts(prev=>({...prev, [shotName]:Math.max(0,(prev[shotName]||0)-1)}));
+
+  const saveAll = async () => {
+    if(!savedMatchId) { alert("Please upload a video first so the match is saved."); return; }
+    const hasRally   = trackRallyEnder  && rallyLog.length>0;
+    const hasOutcome = trackShotOutcome && outcomeLog.length>0;
+    const hasCount   = trackShotCount   && Object.values(counts).some(v=>v>0);
+    if(!hasRally && !hasOutcome && !hasCount) { alert("Nothing logged yet."); return; }
     setSaving(true);
     try {
       const uid = getCurrentUserId();
-      for(const shot of shotLog) {
-        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===shot.name));
-        let existing = null;
-        try { existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(shot.name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
-        const w = shot.result==="W"?1:0;
-        const m = shot.result==="L"?1:0;
+      const upsertShot = async (name, winAdd, missAdd, attAdd) => {
+        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===name));
+        let ex = null;
+        try { ex = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        const att = attAdd !== undefined ? attAdd : winAdd+missAdd;
         await sb.upsert("shots",{
-          name: shot.name,
-          category: cat?.label||"",
-          attempts: (existing?.attempts||0)+1,
-          wins:     (existing?.wins||0)+w,
-          misses:   (existing?.misses||0)+m,
-          win_history:  [...((existing?.win_history)||[0,0,0,0]).slice(1), w*100],
-          miss_history: [...((existing?.miss_history)||[0,0,0,0]).slice(1), m*100],
-          color: cat?.color||C.blue,
-          icon:  cat?.icon||"🎾",
-          user_id: uid,
-        }, "user_id,name");
-      }
-      setSaved(true);
-      setTimeout(()=>setSaved(false), 3000);
+          name, category:cat?.label||"",
+          attempts: (ex?.attempts||0)+att,
+          wins:     (ex?.wins||0)+winAdd,
+          misses:   (ex?.misses||0)+missAdd,
+          win_history:  [...((ex?.win_history)||[0,0,0,0]).slice(1), winAdd>0?100:0],
+          miss_history: [...((ex?.miss_history)||[0,0,0,0]).slice(1), missAdd>0?100:0],
+          color: cat?.color||C.blue, icon: cat?.icon||"🎾", user_id: uid,
+        },"user_id,name");
+      };
+      if(hasRally)   for(const s of rallyLog)   await upsertShot(s.name, s.result==="W"?1:0, s.result==="L"?1:0);
+      if(hasOutcome) for(const s of outcomeLog)  await upsertShot(s.name, s.outcome==="+"?1:0, s.outcome==="-"?1:0);
+      if(hasCount)   for(const [name,cnt] of Object.entries(counts)) { if(cnt>0) await upsertShot(name,0,0,cnt); }
+      setSaved(true); setTimeout(()=>setSaved(false),3000);
     } catch(e) { alert("Save failed: "+e.message); }
     setSaving(false);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // Sub-components
+  const ShotGrid = ({onTap}) => (
+    <div>
+      {SHOT_BUTTONS.map(cat=>(
+        <div key={cat.cat} style={{marginBottom:14}}>
+          <div style={{fontSize:9,fontWeight:700,color:cat.color,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>{cat.cat}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {cat.shots.map(shot=>(
+              <button key={shot} onClick={()=>onTap(shot)}
+                style={{padding:"9px 16px",borderRadius:10,border:`1.5px solid ${cat.color}40`,
+                  background:`${cat.color}12`,color:cat.color,fontFamily:"'Outfit',sans-serif",
+                  fontWeight:600,fontSize:13,cursor:"pointer",transition:"all 0.1s",whiteSpace:"nowrap"}}
+                onMouseEnter={e=>{e.currentTarget.style.background=cat.color+"30";e.currentTarget.style.transform="translateY(-1px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.background=cat.color+"12";e.currentTarget.style.transform="translateY(0)";}}>
+                {shot}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const Toggle = ({label, sublabel, active, onToggle, color}) => (
+    <div onClick={onToggle} style={{
+      display:"flex",alignItems:"center",gap:14,padding:"14px 18px",
+      borderRadius:12,border:`1.5px solid ${active?color:C.border}`,
+      background:active?`${color}08`:C.pageBg,cursor:"pointer",transition:"all 0.18s",userSelect:"none"}}>
+      <div style={{width:42,height:24,borderRadius:12,flexShrink:0,background:active?color:C.border,position:"relative",transition:"background 0.2s"}}>
+        <div style={{position:"absolute",top:3,left:active?19:3,width:18,height:18,borderRadius:"50%",
+          background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
+      </div>
+      <div>
+        <div style={{fontSize:13,fontWeight:700,color:active?C.text:C.textMid}}>{label}</div>
+        {sublabel&&<div style={{fontSize:11,color:C.textLight,marginTop:1}}>{sublabel}</div>}
+      </div>
+    </div>
+  );
+
+  const FlashBanner = ({entry, type}) => {
+    if(!entry) return null;
+    if(type==="rally") {
+      const won=entry.result==="W";
+      const col=won?C.mint:C.rose;
+      return(
+        <div style={{marginBottom:10,padding:"9px 14px",background:`${col}20`,borderRadius:10,
+          border:`1px solid ${col}`,fontSize:13,fontWeight:600,color:col,
+          display:"flex",justifyContent:"space-between",animation:"fadeUp 0.2s ease"}}>
+          <span>{won?"✓":"✕"} {entry.name} — Rally {won?"Won":"Lost"}</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,opacity:0.7}}>@ {formatTs(entry.ts)}</span>
+        </div>
+      );
+    }
+    const map={"+":C.mint,"~":C.amber,"-":C.rose};
+    const lmap={"+":"Positive","~":"Neutral","-":"Negative"};
+    const col=map[entry.outcome];
+    return(
+      <div style={{marginBottom:10,padding:"9px 14px",background:`${col}20`,borderRadius:10,
+        border:`1px solid ${col}`,fontSize:13,fontWeight:600,color:col,
+        display:"flex",justifyContent:"space-between",animation:"fadeUp 0.2s ease"}}>
+        <span>{entry.name} — {lmap[entry.outcome]}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,opacity:0.7}}>@ {formatTs(entry.ts)}</span>
+      </div>
+    );
+  };
+
+  const anyTracking = trackRallyEnder || trackShotOutcome || trackShotCount;
+  const totalLogged = rallyLog.length + outcomeLog.length + Object.values(counts).reduce((a,b)=>a+b,0);
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16,width:"100%"}}>
 
-      {/* ── Step 1: Match Info ── */}
+      {/* Step 1: Match Info */}
       <Card style={{padding:0,overflow:"visible"}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,
-          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <SLabel style={{marginBottom:0}}>Step 1 — Match Info</SLabel>
-          {matchSaved && (
-            <span style={{fontSize:12,fontWeight:600,color:C.mint}}>✓ Match saved</span>
-          )}
+          {matchSaved&&<span style={{fontSize:12,fontWeight:600,color:C.mint}}>✓ Match saved</span>}
         </div>
-
-        {/* Row 1: Date · Score · Result */}
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
-          gap:12,padding:"14px 18px 0"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,padding:"14px 18px 0"}}>
           <div>
             <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Date</div>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              disabled={matchSaved}
-              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
-                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
-                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
           </div>
           <div>
             <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Score</div>
-            <input type="text" value={score} onChange={e=>setScore(e.target.value)}
-              placeholder="e.g. 11-7" disabled={matchSaved}
-              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
-                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
-                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+            <input type="text" value={score} onChange={e=>setScore(e.target.value)} placeholder="e.g. 11-7" disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
           </div>
           <div>
             <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
                 <button key={v} onClick={()=>!matchSaved&&setResult(v)} style={{
-                  padding:"9px 4px",borderRadius:10,fontWeight:700,fontSize:12,
-                  cursor:matchSaved?"default":"pointer",fontFamily:"'Outfit'",
+                  padding:"9px 4px",borderRadius:10,fontWeight:700,fontSize:12,cursor:matchSaved?"default":"pointer",fontFamily:"'Outfit'",
                   background:result===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):C.pageBg,
                   border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
                   color:result===v?(v==="W"?C.mint:C.rose):C.textMid}}>{lbl}</button>
@@ -3575,722 +3623,203 @@ function VideoLoggerContent() {
             </div>
           </div>
         </div>
-
-        {/* Row 2: Opponent · Partner */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"12px 18px 0"}}>
-          <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
-            placeholder="Search or type name…" multi={true}/>
-          <PlayerSearch label="Partner" value={partner} onChange={setPartner}
-            placeholder="Search or type name…"/>
+          <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent} placeholder="Search or type name..." multi={true}/>
+          <PlayerSearch label="Partner" value={partner} onChange={setPartner} placeholder="Search or type name..."/>
         </div>
-
-        {/* Row 3: Notes */}
         <div style={{padding:"12px 18px 16px"}}>
           <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes (optional)</div>
-          <input type="text" value={notes} onChange={e=>setNotes(e.target.value)}
-            placeholder="Anything notable — tactics, conditions, how you felt…" disabled={matchSaved}
-            style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
-              borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
-              fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+          <input type="text" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable..." disabled={matchSaved}
+            style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
         </div>
-
-        {matchErr&&<div style={{margin:"0 18px 14px",background:`${C.rose}15`,border:`1px solid ${C.rose}40`,
-          borderRadius:10,padding:"10px 14px",fontSize:12,color:C.rose}}>{matchErr}</div>}
+        {matchErr&&<div style={{margin:"0 18px 14px",background:`${C.rose}15`,border:`1px solid ${C.rose}40`,borderRadius:10,padding:"10px 14px",fontSize:12,color:C.rose}}>{matchErr}</div>}
       </Card>
 
-      {/* ── Step 2: Upload video ── */}
+      {/* Step 2: Tracking Mode Toggles */}
+      <Card style={{padding:"18px 20px"}}>
+        <div style={{marginBottom:14}}>
+          <SLabel style={{marginBottom:2}}>Step 2 — Choose What to Track</SLabel>
+          <div style={{fontSize:12,color:C.textLight}}>Your selections are saved and remembered next time.</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+          <Toggle label="🏁 Rally Ender" sublabel="Shot that ended the rally + Won/Lost"
+            active={trackRallyEnder} onToggle={toggleRallyEnder} color={C.mint}/>
+          <Toggle label="⬆️ Shot Outcome" sublabel="Rate each shot: Positive / Neutral / Negative"
+            active={trackShotOutcome} onToggle={toggleShotOutcome} color={C.blue}/>
+          <Toggle label="📊 Shot Counter" sublabel="Live tally of how many of each shot you hit"
+            active={trackShotCount} onToggle={toggleShotCount} color={C.purple}/>
+        </div>
+        {!anyTracking&&(
+          <div style={{marginTop:12,padding:"10px 14px",background:`${C.amber}15`,border:`1px solid ${C.amber}40`,
+            borderRadius:10,fontSize:12,color:C.amber,fontWeight:600}}>
+            ⚠️ Turn on at least one tracking mode above to log shots.
+          </div>
+        )}
+      </Card>
+
+      {/* Step 3: Upload Video */}
       <Card style={{padding:"16px 20px"}}>
-        <SLabel>Step 2 — Upload Video</SLabel>
+        <SLabel>Step 3 — Upload Video</SLabel>
         {!videoUrl ? (
           <div>
-            {/* URL input for PlaySight / external links */}
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-                letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Paste a video URL (optional)</div>
+              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Paste a video URL (optional)</div>
               <div style={{display:"flex",gap:8}}>
-                <input type="text" id="videoUrlInput"
-                  placeholder="https://... (direct .mp4 link)"
-                  style={{flex:1,background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
-                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}/>
-                <button onClick={()=>{
-                  const url = document.getElementById("videoUrlInput").value.trim();
-                  if(url) setVideoUrl(url);
-                }} style={{padding:"9px 16px",background:C.navy,border:"none",borderRadius:10,
-                  color:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                  Load
-                </button>
+                <input type="text" id="videoUrlInput2" placeholder="https://... (direct .mp4 link)"
+                  style={{flex:1,background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}/>
+                <button onClick={()=>{const url=document.getElementById("videoUrlInput2").value.trim();if(url)setVideoUrl(url);}}
+                  style={{padding:"9px 16px",background:C.navy,border:"none",borderRadius:10,color:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,cursor:"pointer"}}>Load</button>
               </div>
-              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>
-                Or upload a file below ↓
-              </div>
+              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Or upload a file below ↓</div>
             </div>
-          <label style={{display:"block",cursor:"pointer"}}>
-            <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"40px 20px",
-              textAlign:"center",background:C.pageBg,transition:"all 0.2s"}}
-              onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.pickle;}}
-              onDragLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
-              onDrop={e=>{
-                e.preventDefault();
-                e.currentTarget.style.borderColor=C.border;
-                processFile(e.dataTransfer.files[0]);
-              }}>
-              <div style={{fontSize:40,marginBottom:12}}>🎬</div>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>
-                Drop video here or click to browse
+            <label style={{display:"block",cursor:"pointer"}}>
+              <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center",background:C.pageBg,transition:"all 0.2s"}}
+                onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.pickle;}}
+                onDragLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
+                onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.border;processFile(e.dataTransfer.files[0]);}}>
+                <div style={{fontSize:40,marginBottom:12}}>🎬</div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>Drop video here or click to browse</div>
+                <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 2GB</div>
+                {uploading&&<div style={{marginTop:12,fontSize:13,color:C.amber,fontWeight:600}}>⏳ Uploading...</div>}
+                {uploadErr&&<div style={{marginTop:12,fontSize:12,color:C.rose}}>{uploadErr}</div>}
               </div>
-              <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 2GB</div>
-              {uploading&&<div style={{marginTop:12,fontSize:13,color:C.amber,fontWeight:600}}>⏳ Uploading…</div>}
-              {uploadErr&&<div style={{marginTop:12,fontSize:12,color:C.rose}}>{uploadErr}</div>}
-            </div>
-            <input type="file" accept="video/*" onChange={handleFileChange} style={{display:"none"}}/>
-          </label>
+              <input type="file" accept="video/*" onChange={e=>processFile(e.target.files[0])} style={{display:"none"}}/>
+            </label>
           </div>
         ) : (
           <div>
-            <video ref={videoRef} src={videoUrl} controls
-              style={{width:"100%",borderRadius:12,background:"#000",maxHeight:400}}/>
-            {uploading&&<div style={{marginTop:8,fontSize:12,color:C.amber,textAlign:"center"}}>⏳ Uploading to cloud…</div>}
-            <button onClick={()=>{setVideoUrl(null);setVideoFile(null);setShotLog([]);}}
-              style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
-                padding:"6px 14px",fontSize:12,color:C.textMid,cursor:"pointer",fontFamily:"'Outfit'"}}>
+            <video ref={videoRef} src={videoUrl} controls style={{width:"100%",borderRadius:12,background:"#000",maxHeight:420}}/>
+            {uploading&&<div style={{marginTop:8,fontSize:12,color:C.amber,textAlign:"center"}}>⏳ Uploading to cloud...</div>}
+            <button onClick={()=>{setVideoUrl(null);setVideoFile(null);setRallyLog([]);setOutcomeLog([]);setCounts({});}}
+              style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 14px",fontSize:12,color:C.textMid,cursor:"pointer",fontFamily:"'Outfit'"}}>
               ✕ Remove video
             </button>
           </div>
         )}
       </Card>
 
-      {/* ── Step 3: Log shots ── */}
-      {videoUrl && (
-        <Card style={{padding:"16px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <SLabel style={{marginBottom:0}}>Step 3 — Log Shots</SLabel>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,color:C.textMid}}>Rally result:</span>
-              {[["W","✓ Won"],["L","✕ Lost"]].map(([v,lbl])=>(
-                <button key={v} onClick={()=>setOutcome(v)} style={{
-                  padding:"5px 12px",borderRadius:8,border:`1.5px solid ${outcome===v?(v==="W"?C.mint:C.rose):C.border}`,
-                  background:outcome===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):"transparent",
-                  color:outcome===v?(v==="W"?C.mint:C.rose):C.textMid,
-                  fontFamily:"'Outfit'",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{fontSize:12,color:C.textMid,marginBottom:14,padding:"8px 12px",
-            background:`${C.pickle}10`,borderRadius:8,border:`1px solid ${C.pickle}30`}}>
-            ▶ Play the video, then tap the shot type each time a rally ends. Set Won/Lost before tapping.
-          </div>
-
-          {/* Last shot flash */}
-          {lastShot && (
-            <div style={{marginBottom:12,padding:"8px 14px",background:lastShot.result==="W"?`${C.mint}20`:`${C.rose}20`,
-              borderRadius:10,border:`1px solid ${lastShot.result==="W"?C.mint:C.rose}`,
-              fontSize:13,fontWeight:600,color:lastShot.result==="W"?C.mint:C.rose,
-              animation:"fadeUp 0.2s ease",display:"flex",justifyContent:"space-between"}}>
-              <span>{lastShot.result==="W"?"✓":"✕"} {lastShot.name} logged</span>
-              <span style={{fontFamily:"'DM Mono'",fontSize:11,opacity:0.8}}>@ {formatTs(lastShot.ts)}</span>
-            </div>
+      {/* Step 4: Live Logging Panels */}
+      {videoUrl && anyTracking && (
+        <>
+          {/* Panel A: Rally Ender */}
+          {trackRallyEnder && (
+            <Card style={{padding:"18px 20px",border:`2px solid ${C.mint}40`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.05em"}}>🏁 Rally Ender</div>
+                  <div style={{fontSize:12,color:C.textLight,marginTop:1}}>Tap the shot that ended the rally, then mark Won or Lost.</div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  {[["W","✓ Won",C.mint],["L","✕ Lost",C.rose]].map(([v,lbl,col])=>(
+                    <button key={v} onClick={()=>setRallyOutcome(v)} style={{
+                      padding:"9px 20px",borderRadius:10,border:`2px solid ${rallyOutcome===v?col:C.border}`,
+                      background:rallyOutcome===v?`${col}20`:"transparent",color:rallyOutcome===v?col:C.textMid,
+                      fontFamily:"'Outfit'",fontWeight:700,fontSize:14,cursor:"pointer",transition:"all 0.15s"}}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <FlashBanner entry={lastRally} type="rally"/>
+              <ShotGrid onTap={logRallyEnder}/>
+              {rallyLog.length>0&&(
+                <div style={{marginTop:10,padding:"8px 12px",background:C.pageBg,borderRadius:8,display:"flex",gap:16,alignItems:"center"}}>
+                  <span style={{fontSize:12,color:C.textMid,fontWeight:600}}>{rallyLog.length} rallies logged</span>
+                  <span style={{fontSize:13,color:C.mint,fontWeight:700}}>{rallyLog.filter(r=>r.result==="W").length}W</span>
+                  <span style={{fontSize:13,color:C.rose,fontWeight:700}}>{rallyLog.filter(r=>r.result==="L").length}L</span>
+                </div>
+              )}
+            </Card>
           )}
 
-          {/* Shot category buttons */}
-          {SHOT_BUTTONS.map(cat=>(
-            <div key={cat.cat} style={{marginBottom:14}}>
-              <div style={{fontSize:9,fontWeight:700,color:cat.color,textTransform:"uppercase",
-                letterSpacing:"0.1em",marginBottom:6}}>{cat.cat}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                {cat.shots.map(shot=>(
-                  <button key={shot} onClick={()=>logShot(shot)}
-                    style={{padding:"8px 14px",borderRadius:10,border:`1.5px solid ${cat.color}30`,
-                      background:`${cat.color}10`,color:cat.color,fontFamily:"'Outfit'",
-                      fontWeight:600,fontSize:12,cursor:"pointer",transition:"all 0.1s",
-                      whiteSpace:"nowrap"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background=cat.color+"25";e.currentTarget.style.transform="scale(1.04)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.background=cat.color+"10";e.currentTarget.style.transform="scale(1)";}}>
-                    {shot}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {/* ── Shot log timeline ── */}
-      {shotLog.length > 0 && (
-        <Card style={{padding:"16px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <SLabel style={{marginBottom:0}}>Shot Log · {shotLog.length} shots</SLabel>
-            <div style={{display:"flex",gap:8}}>
-              <span style={{fontSize:12,color:C.mint,fontWeight:600}}>
-                {shotLog.filter(s=>s.result==="W").length}W
-              </span>
-              <span style={{fontSize:12,color:C.rose,fontWeight:600}}>
-                {shotLog.filter(s=>s.result==="L").length}L
-              </span>
-            </div>
-          </div>
-
-          {/* Timeline */}
-          <div style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
-            {shotLog.map((s,i)=>(
-              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",
-                borderRadius:8,background:s.result==="W"?`${C.mint}08`:`${C.rose}08`,
-                border:`1px solid ${s.result==="W"?C.mint:C.rose}20`}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:11,color:C.textLight,minWidth:36}}>{formatTs(s.ts)}</span>
-                <span style={{fontSize:12,fontWeight:600,color:C.text,flex:1}}>{s.name}</span>
-                <span style={{fontSize:11,fontWeight:700,color:s.result==="W"?C.mint:C.rose}}>{s.result==="W"?"✓ Won":"✕ Lost"}</span>
-                <button onClick={()=>removeShot(s.id)} style={{background:"none",border:"none",
-                  color:C.textLight,cursor:"pointer",fontSize:14,padding:"0 2px",lineHeight:1}}>×</button>
-              </div>
-            ))}
-          </div>
-
-          {/* Save button */}
-          <button onClick={saveShots} disabled={saving||saved} style={{
-            width:"100%",marginTop:14,background:saved?C.mint:saving?C.border:C.pickle,
-            border:"none",borderRadius:12,padding:"13px",fontFamily:"'Outfit'",
-            fontWeight:700,fontSize:15,color:C.navy,cursor:saving?"not-allowed":"pointer",transition:"all 0.2s"}}>
-            {saved?"✓ Shots Saved!":saving?"Saving…":"Save All Shots to Match"}
-          </button>
-        </Card>
-      )}
-
-    </div>
-  );
-}
-
-const MatchCenter=({defaultTab="log"})=>{
-  const isMobile = useIsMobile();
-  const [tab,setTab]=useState(defaultTab); // "log" | "partners" | "history"
-
-  const TABS=[
-    {id:"log",      label:"📋 Log Match"},
-    {id:"video",    label:"🎬 Log from Video"},
-    {id:"partners", label:"👥 Partners"},
-    {id:"history",  label:"🏆 Match History"},
-  ];
-
-  return(
-    <div className="fade-up" style={{width:"100%",boxSizing:"border-box"}}>
-
-      {/* Page header */}
-      <div style={{marginBottom:24}}>
-        <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>Matches</h1>
-        <p style={{color:C.textMid,fontSize:14,marginTop:3}}>Log results · track partnerships · review your match history</p>
-      </div>
-
-      {/* Tab bar */}
-      <div style={{display:"flex",gap:4,marginBottom:28,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5,width:"100%",overflowX:"auto"}}>
-        {TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            background:tab===t.id?C.navy:"transparent",
-            border:"none",borderRadius:10,
-            padding:"10px 22px",cursor:"pointer",
-            fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
-            color:tab===t.id?"white":C.textMid,
-            transition:"all 0.15s",whiteSpace:"nowrap"}}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Tab: Log Match ── */}
-      {tab==="log"&&<LogMatchContent/>}
-
-      {/* ── Tab: Video Logger ── */}
-      {tab==="video"&&<VideoLoggerContent/>}
-
-      {/* ── Tab: Partners ── */}
-      {tab==="partners"&&<PartnersContent/>}
-
-      {/* ── Tab: Match History ── */}
-      {tab==="history"&&<MatchHistoryContent/>}
-
-    </div>
-  );
-};
-
-// ── HELP MODAL ────────────────────────────────────────────────────────────────
-const FAQS = [
-  { q:"How do I log a match?",
-    a:"Go to Matches → Log Match tab. Fill in the basics (date, opponent, partner, score, result) and the performance sliders (NVZ Arrival, errors, etc.). Shot logging is optional — expand the Shot Log section at the bottom if you want to track individual shot data. Hit Save Match and all your charts update automatically." },
-  { q:"How is my Win Rate calculated?",
-    a:"Win Rate is the percentage of matches you've won out of all logged matches. It updates automatically each time you log a match result." },
-  { q:"What is NVZ Arrival and why does it matter?",
-    a:"NVZ Arrival is the percentage of rallies where both you and your partner reach the Non-Volley Zone (kitchen line). Research shows teams who arrive at the NVZ together win significantly more rallies — elite 4.0+ players target 80%+." },
-  { q:"What does Serve Neutralization mean?",
-    a:"Serve Neutralization measures the percentage of YOUR serves and returns where the opponent cannot attack. It's tracked individually — not as a team stat — so it reflects your personal serving and return quality." },
-  { q:"How do I pin Priority Drills?",
-    a:"Go to the Shot Analytics page and click the 📌 Focus button on any shot row. You can pin up to 3 shots. They'll appear on your Dashboard and Profile with target sliders to track progress." },
-  { q:"What is the Synergy Score?",
-    a:"Synergy Score (0–100) measures how well you and a partner perform together. It's built from 5 equally weighted components: Joint NVZ Arrival, NVZ Win Rate, Role Clarity, Error Avoidance, and DUPR-Adjusted Win Rate." },
-  { q:"Who can see my stats and match data?",
-    a:"Your stats are private by default — only you can see them. PickleIntel does not share individual match data, shot analytics, or performance metrics with other players, clubs, or third parties. Aggregate anonymized data may be used to improve the app." },
-  { q:"How do I upgrade to Pro?",
-    a:"Go to your Profile page and click 'Upgrade to Pro →' in the Membership section. Pro unlocks automated video analysis and unlimited PICKL AI coaching for $12.99/month." },
-  { q:"Can I connect my DUPR account?",
-    a:"Yes — DUPR integration is available on both Free and Pro plans. Go to Profile → Connected Accounts. Once connected, your rating syncs automatically after each logged match." },
-  { q:"How does the PICKL AI coach work?",
-    a:"PICKL is powered by Claude AI and has full context of your match history, shot stats, and goals. Free users get 10 messages per month. Pro users get unlimited access. You can ask anything — drill plans, game strategy, or help interpreting your stats." },
-];
-
-const HelpModal = ({onClose}) => {
-  const [tab, setTab]         = useState("faq");
-  const [openFaq, setOpenFaq] = useState(null);
-  const [feedback, setFeedback]     = useState("");
-  const [feedType, setFeedType]     = useState("bug");
-  const [feedSent, setFeedSent]     = useState(false);
-  const TABS = [
-    {id:"faq",      label:"❓ FAQs"},
-    {id:"feedback", label:"💬 Feedback"},
-    {id:"contact",  label:"✉️ Contact"},
-  ];
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.75)",backdropFilter:"blur(8px)",
-      zIndex:400,display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",padding:isMobile?0:16}}>
-      <div style={{background:C.cardBg,borderRadius:isMobile?"16px 16px 0 0":"20px",width:"100%",maxWidth:620,
-        height:"80vh",display:"flex",flexDirection:"column",
-        boxShadow:"0 24px 80px rgba(0,0,0,0.25)"}}>
-
-        {/* Header */}
-        <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
-          borderRadius:"20px 20px 0 0",padding:"20px 26px",flexShrink:0}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <div>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:"white",letterSpacing:"0.05em"}}>Help & Support</div>
-              <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>FAQs · Send feedback · Contact support</div>
-            </div>
-            <button onClick={onClose} style={{background:"rgba(255,255,255,0.1)",border:"none",
-              borderRadius:8,width:34,height:34,fontSize:18,color:"white",cursor:"pointer",
-              display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-          </div>
-          {/* Tab switcher */}
-          <div style={{display:"flex",gap:4,marginTop:16}}>
-            {TABS.map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{
-                background:tab===t.id?"rgba(255,255,255,0.15)":"transparent",
-                border:`1px solid ${tab===t.id?"rgba(255,255,255,0.3)":"transparent"}`,
-                borderRadius:8,padding:"7px 16px",fontSize:12,fontWeight:600,
-                color:tab===t.id?"white":"#94A3B8",cursor:"pointer",
-                fontFamily:"'Outfit'",transition:"all 0.15s"}}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── FAQ Tab ── */}
-        {tab==="faq"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"20px 26px"}}>
-            <p style={{fontSize:13,color:C.textMid,marginBottom:18}}>
-              Common questions about PickleIntel features and metrics.
-            </p>
-            {FAQS.map((f,i)=>(
-              <div key={i} style={{borderBottom:`1px solid ${C.border}`,marginBottom:0}}>
-                <button onClick={()=>setOpenFaq(openFaq===i?null:i)} style={{
-                  width:"100%",background:"none",border:"none",cursor:"pointer",
-                  padding:"14px 0",display:"flex",justifyContent:"space-between",
-                  alignItems:"center",gap:12,textAlign:"left",fontFamily:"'Outfit'"}}>
-                  <span style={{fontSize:13,fontWeight:600,color:C.text,lineHeight:1.4}}>{f.q}</span>
-                  <span style={{fontSize:16,color:openFaq===i?C.pickle:C.textLight,
-                    flexShrink:0,transition:"transform 0.2s",
-                    display:"inline-block",transform:openFaq===i?"rotate(45deg)":"rotate(0deg)"}}>+</span>
-                </button>
-                {openFaq===i&&(
-                  <div style={{fontSize:13,color:C.textMid,lineHeight:1.65,
-                    paddingBottom:14,paddingRight:24}}>{f.a}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Feedback Tab ── */}
-        {tab==="feedback"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"24px 26px"}}>
-            {feedSent ? (
-              <div style={{textAlign:"center",padding:"48px 16px"}}>
-                <div style={{fontSize:40,marginBottom:12}}>🎉</div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>
-                  Thanks for the feedback!
+          {/* Panel B: Shot Outcome */}
+          {trackShotOutcome && (
+            <Card style={{padding:"18px 20px",border:`2px solid ${C.blue}40`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.05em"}}>⬆️ Shot Outcome</div>
+                  <div style={{fontSize:12,color:C.textLight,marginTop:1}}>Select the outcome, then tap the shot type.</div>
                 </div>
-                <div style={{fontSize:13,color:C.textMid,marginBottom:24}}>
-                  We read everything and use it to make PickleIntel better.
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  {[["+","⬆ Positive",C.mint],["~","➡ Neutral",C.amber],["-","⬇ Negative",C.rose]].map(([v,lbl,col])=>(
+                    <button key={v} onClick={()=>setShotDir(v)} style={{
+                      padding:"9px 16px",borderRadius:10,border:`2px solid ${shotDir===v?col:C.border}`,
+                      background:shotDir===v?`${col}20`:"transparent",color:shotDir===v?col:C.textMid,
+                      fontFamily:"'Outfit'",fontWeight:700,fontSize:13,cursor:"pointer",transition:"all 0.15s"}}>
+                      {lbl}
+                    </button>
+                  ))}
                 </div>
-                <button onClick={()=>{setFeedSent(false);setFeedback("");}} style={{
-                  background:C.navy,border:"none",borderRadius:10,padding:"10px 24px",
-                  fontFamily:"'Outfit'",fontWeight:700,fontSize:13,color:C.pickle,cursor:"pointer"}}>
-                  Send more feedback
-                </button>
               </div>
-            ) : (
-              <>
-                <p style={{fontSize:13,color:C.textMid,marginBottom:20}}>
-                  Tell us what's working, what's broken, or what you'd love to see next.
-                </p>
-                {/* Type selector */}
-                <div style={{marginBottom:18}}>
-                  <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-                    letterSpacing:"0.07em",fontWeight:600,marginBottom:8}}>Type</div>
-                  <div style={{display:"flex",gap:8}}>
-                    {[
-                      {id:"bug",     label:"🐛 Bug Report"},
-                      {id:"feature", label:"💡 Feature Idea"},
-                      {id:"general", label:"👋 General"},
-                    ].map(t=>(
-                      <button key={t.id} onClick={()=>setFeedType(t.id)} style={{
-                        background:feedType===t.id?C.navy:C.pageBg,
-                        border:`1.5px solid ${feedType===t.id?C.navy:C.border}`,
-                        borderRadius:9,padding:"8px 14px",fontSize:12,fontWeight:600,
-                        color:feedType===t.id?C.pickle:C.textMid,
-                        cursor:"pointer",fontFamily:"'Outfit'",transition:"all 0.15s"}}>
-                        {t.label}
-                      </button>
-                    ))}
+              <FlashBanner entry={lastOutcome} type="outcome"/>
+              <ShotGrid onTap={logShotOutcome}/>
+              {outcomeLog.length>0&&(
+                <div style={{marginTop:10,padding:"8px 12px",background:C.pageBg,borderRadius:8,display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,color:C.textMid,fontWeight:600}}>{outcomeLog.length} shots rated</span>
+                  <span style={{fontSize:13,color:C.mint,fontWeight:700}}>{outcomeLog.filter(s=>s.outcome==="+").length} positive</span>
+                  <span style={{fontSize:13,color:C.amber,fontWeight:700}}>{outcomeLog.filter(s=>s.outcome==="~").length} neutral</span>
+                  <span style={{fontSize:13,color:C.rose,fontWeight:700}}>{outcomeLog.filter(s=>s.outcome==="-").length} negative</span>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Panel C: Shot Counter */}
+          {trackShotCount && (
+            <Card style={{padding:"18px 20px",border:`2px solid ${C.purple}40`}}>
+              <div style={{marginBottom:14}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.05em"}}>📊 Shot Counter</div>
+                <div style={{fontSize:12,color:C.textLight,marginTop:1}}>Tap + each time you hit that shot. Tap − to undo.</div>
+              </div>
+              {SHOT_BUTTONS.map(cat=>(
+                <div key={cat.cat} style={{marginBottom:16}}>
+                  <div style={{fontSize:9,fontWeight:700,color:cat.color,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{cat.cat}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:8}}>
+                    {cat.shots.map(shot=>{
+                      const cnt=counts[shot]||0;
+                      return(
+                        <div key={shot} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                          padding:"9px 12px",borderRadius:10,transition:"all 0.15s",
+                          border:`1.5px solid ${cnt>0?cat.color:C.border}`,
+                          background:cnt>0?`${cat.color}12`:C.pageBg}}>
+                          <span style={{fontSize:12,fontWeight:cnt>0?700:400,color:cnt>0?cat.color:C.textMid,flex:1,marginRight:8}}>{shot}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                            <button onClick={()=>decrementCount(shot)} style={{width:28,height:28,borderRadius:7,border:`1px solid ${C.border}`,
+                              background:C.cardBg,fontSize:16,color:C.textMid,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center"}}>-</button>
+                            <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,color:cnt>0?cat.color:C.textLight,minWidth:22,textAlign:"center"}}>{cnt}</span>
+                            <button onClick={()=>incrementCount(shot)} style={{width:28,height:28,borderRadius:7,
+                              border:`1.5px solid ${cnt>0?cat.color:C.border}`,
+                              background:cnt>0?`${cat.color}22`:C.cardBg,
+                              fontSize:16,color:cat.color,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-                {/* Message */}
-                <div style={{marginBottom:20}}>
-                  <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
-                    letterSpacing:"0.07em",fontWeight:600,marginBottom:8}}>Message</div>
-                  <textarea value={feedback} onChange={e=>setFeedback(e.target.value)}
-                    placeholder={
-                      feedType==="bug"    ? "Describe what happened and how to reproduce it..." :
-                      feedType==="feature"? "What would you like to see, and why would it help?" :
-                                           "Share anything on your mind..."
-                    }
-                    rows={6} style={{width:"100%",background:C.pageBg,
-                      border:`1.5px solid ${C.border}`,borderRadius:10,
-                      padding:"12px 14px",color:C.text,fontSize:13,
-                      fontFamily:"'Outfit'",resize:"vertical",boxSizing:"border-box"}}/>
+              ))}
+              {Object.values(counts).some(v=>v>0)&&(
+                <div style={{marginTop:4,padding:"8px 12px",background:C.pageBg,borderRadius:8,fontSize:12,color:C.textMid,fontWeight:600}}>
+                  Total shots counted: {Object.values(counts).reduce((a,b)=>a+b,0)}
                 </div>
-                <button onClick={()=>{if(feedback.trim()) setFeedSent(true);}}
-                  disabled={!feedback.trim()}
-                  style={{width:"100%",background:feedback.trim()?C.navy:C.border,
-                    border:"none",borderRadius:12,padding:"13px",
-                    fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
-                    color:feedback.trim()?C.pickle:C.textLight,
-                    cursor:feedback.trim()?"pointer":"not-allowed",transition:"all 0.2s"}}>
-                  Send Feedback →
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── Contact Tab ── */}
-        {tab==="contact"&&(
-          <div style={{flex:1,overflowY:"auto",padding:"28px 26px",display:"flex",flexDirection:"column",gap:16}}>
-            <p style={{fontSize:13,color:C.textMid,margin:0}}>
-              Can't find what you need in the FAQs? Reach out and we'll get back to you within one business day.
-            </p>
-            {/* Email card */}
-            <div style={{background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:14,padding:"20px 22px",
-              display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>Email Support</div>
-                <div style={{fontSize:13,color:C.blue}}>support@pickleintel.app</div>
-                <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Response within 1 business day</div>
-              </div>
-              <a href="mailto:support@pickleintel.app" style={{
-                background:C.navy,border:"none",borderRadius:10,padding:"10px 18px",
-                fontFamily:"'Outfit'",fontWeight:700,fontSize:13,color:C.pickle,
-                cursor:"pointer",textDecoration:"none",whiteSpace:"nowrap",flexShrink:0}}>
-                Send Email →
-              </a>
-            </div>
-            {/* Tip: try FAQs first */}
-            <div style={{background:`${C.pickle}12`,border:`1px solid ${C.pickle}30`,
-              borderRadius:12,padding:"14px 16px",display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:16,flexShrink:0}}>💡</span>
-              <div style={{fontSize:12,color:C.textMid,lineHeight:1.6}}>
-                Before reaching out, check the <button onClick={()=>setTab("faq")} style={{
-                  background:"none",border:"none",color:C.blue,fontWeight:700,fontSize:12,
-                  cursor:"pointer",padding:0,fontFamily:"'Outfit'"}}>FAQs tab</button> — most common questions are answered there instantly.
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ── ROOT ──────────────────────────────────────────────────────────────────────
-
-// ── Login / Signup Screen ─────────────────────────────────────────────────────
-function LoginScreen({ onAuth }) {
-  const [mode, setMode]       = useState("login"); // "login" | "signup" | "reset"
-  const [email, setEmail]     = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [success, setSuccess] = useState("");
-
-  const submit = async () => {
-    setError(""); setSuccess("");
-    if (!email.trim() || (!password && mode !== "reset")) { setError("Please fill in all fields."); return; }
-    if (mode === "signup" && password !== confirm) { setError("Passwords don't match."); return; }
-    if (password && password.length < 6 && mode !== "reset") { setError("Password must be at least 6 characters."); return; }
-    setLoading(true);
-    try {
-      if (mode === "login") {
-        const data = await sb.signIn(email.trim(), password);
-        onAuth(data);
-      } else if (mode === "signup") {
-        const data = await sb.signUp(email.trim(), password);
-        // Supabase may require email confirmation depending on settings
-        if (data.access_token) {
-          onAuth(data);
-        } else {
-          setSuccess("Account created! Check your email to confirm your account, then log in.");
-          setMode("login");
-        }
-      } else if (mode === "reset") {
-        const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
-          method: "POST",
-          headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim() }),
-        });
-        if (res.ok) setSuccess("Password reset email sent! Check your inbox.");
-        else setError("Couldn't send reset email. Check the address and try again.");
-        setMode("login");
-      }
-    } catch(e) {
-      setError(e.message || "Something went wrong. Please try again.");
-    }
-    setLoading(false);
-  };
-
-  const inputStyle = {
-    width:"100%", background:"#F4F7F4", border:`1px solid #E5E9F0`,
-    borderRadius:12, padding:"13px 16px", color:"#111827", fontSize:15,
-    fontFamily:"'Outfit'", boxSizing:"border-box", outline:"none",
-  };
-
-  return (
-    <div style={{minHeight:"100vh", background:`linear-gradient(135deg, #0A1628 0%, #162440 60%, #0A1628 100%)`,
-      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-      padding:20, fontFamily:"'Outfit', sans-serif"}}>
-
-      {/* Logo */}
-      <div style={{marginBottom:40, textAlign:"center"}}>
-        <div style={{fontFamily:"'Bebas Neue'", fontSize:48, letterSpacing:"0.08em", lineHeight:1}}>
-          <span style={{color:"white"}}>PICKLE</span>
-          <span style={{color:C.pickle}}>INTEL</span>
-        </div>
-        <div style={{color:"#64748B", fontSize:14, marginTop:6, letterSpacing:"0.04em"}}>
-          Patient · NVZ-first · data-driven
-        </div>
-      </div>
-
-      {/* Card */}
-      <div style={{background:"white", borderRadius:24, padding:"36px 32px", width:"100%",
-        maxWidth:420, boxShadow:"0 24px 60px rgba(0,0,0,0.4)"}}>
-
-        {/* Tab switcher */}
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:4,
-          background:"#F4F7F4", borderRadius:12, padding:4, marginBottom:28}}>
-          {[["login","Log In"],["signup","Sign Up"]].map(([m,lbl])=>(
-            <button key={m} onClick={()=>{setMode(m);setError("");setSuccess("");}}
-              style={{padding:"10px", borderRadius:9, border:"none", cursor:"pointer",
-                fontFamily:"'Outfit'", fontWeight:700, fontSize:14, transition:"all 0.15s",
-                background:mode===m?"white":"transparent",
-                color:mode===m?C.navy:"#9CA3AF",
-                boxShadow:mode===m?"0 1px 4px rgba(0,0,0,0.12)":"none"}}>{lbl}</button>
-          ))}
-        </div>
-
-        <div style={{display:"flex", flexDirection:"column", gap:14}}>
-          {/* Email */}
-          <div>
-            <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
-              textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
-              Email
-            </label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="you@example.com" style={inputStyle}
-              onKeyDown={e=>e.key==="Enter"&&submit()}/>
-          </div>
-
-          {/* Password */}
-          {mode !== "reset" && (
-            <div>
-              <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
-                textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
-                Password
-              </label>
-              <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
-                placeholder={mode==="signup"?"At least 6 characters":"••••••••"} style={inputStyle}
-                onKeyDown={e=>e.key==="Enter"&&submit()}/>
-            </div>
+              )}
+            </Card>
           )}
 
-          {/* Confirm password for signup */}
-          {mode === "signup" && (
-            <div>
-              <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
-                textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
-                Confirm Password
-              </label>
-              <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)}
-                placeholder="Re-enter password" style={inputStyle}
-                onKeyDown={e=>e.key==="Enter"&&submit()}/>
-            </div>
-          )}
-
-          {/* Error / success */}
-          {error && (
-            <div style={{background:"#FEF0F3", border:"1px solid #F05A7A40", borderRadius:10,
-              padding:"10px 14px", fontSize:13, color:"#F05A7A"}}>{error}</div>
-          )}
-          {success && (
-            <div style={{background:"#E8FAF5", border:"1px solid #2DD4A040", borderRadius:10,
-              padding:"10px 14px", fontSize:13, color:"#2DD4A0"}}>{success}</div>
-          )}
-
-          {/* Submit */}
-          <button onClick={submit} disabled={loading} style={{
-            width:"100%", background:loading?"#E5E9F0":C.pickle, border:"none", borderRadius:12,
-            padding:"14px", fontFamily:"'Outfit'", fontWeight:700, fontSize:16,
-            color:C.navy, cursor:loading?"not-allowed":"pointer", marginTop:4,
-            transition:"all 0.15s"}}>
-            {loading ? "Please wait…" : mode==="login" ? "Log In" : mode==="signup" ? "Create Account" : "Send Reset Email"}
-          </button>
-
-          {/* Forgot password */}
-          {mode === "login" && (
-            <button onClick={()=>{setMode("reset");setError("");setSuccess("");}}
-              style={{background:"none", border:"none", color:"#9CA3AF", fontSize:13,
-                cursor:"pointer", fontFamily:"'Outfit'", textAlign:"center", padding:0}}>
-              Forgot your password?
+          {/* Save Button */}
+          {totalLogged > 0 && (
+            <button onClick={saveAll} disabled={saving||saved} style={{
+              width:"100%",background:saved?C.mint:saving?C.border:C.pickle,
+              border:"none",borderRadius:14,padding:"16px",fontFamily:"'Outfit'",
+              fontWeight:700,fontSize:16,color:C.navy,
+              cursor:saving||saved?"not-allowed":"pointer",transition:"all 0.2s"}}>
+              {saved?"✓ All Data Saved!":saving?"Saving...":"Save Session ("+totalLogged+" entries logged)"}
             </button>
           )}
-
-          {mode === "reset" && (
-            <button onClick={()=>{setMode("login");setError("");}}
-              style={{background:"none", border:"none", color:"#9CA3AF", fontSize:13,
-                cursor:"pointer", fontFamily:"'Outfit'", textAlign:"center", padding:0}}>
-              ← Back to log in
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div style={{color:"#334155", fontSize:12, marginTop:24, textAlign:"center", lineHeight:1.8}}>
-        By signing up you agree to our Terms of Service<br/>
-        Your data is private and never shared
-      </div>
+        </>
+      )}
     </div>
-  );
-}
-
-export default function App(){
-  const [page,setPage]         = useState("dashboard");
-  const [showHelp,setShowHelp] = useState(false);
-  const [authUser, setAuthUser] = useState(null);   // null = not logged in
-  const [authLoading, setAuthLoading] = useState(true); // checking stored session
-
-  // On mount: try to restore session from localStorage
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const token   = localStorage.getItem("pi_token");
-        const refresh = localStorage.getItem("pi_refresh");
-        if (token) {
-          _authToken = token;
-          // Verify token is still valid
-          const user = await sb.getUser();
-          if (user?.id) { setAuthUser(user); }
-          else if (refresh) {
-            // Try refreshing
-            const data = await sb.refreshSession(refresh);
-            const refreshedUser = await sb.getUser();
-            if (refreshedUser?.id) setAuthUser(refreshedUser);
-          }
-        }
-      } catch(e) {
-        sb.signOut(); // clear bad tokens
-      }
-      setAuthLoading(false);
-    })();
-  },[]);
-
-  const handleAuth = (data) => {
-    // Called after successful login or signup
-    sb.getUser().then(user => { if(user?.id) setAuthUser(user); });
-  };
-
-  const handleSignOut = () => {
-    sb.signOut();
-    setAuthUser(null);
-    setPage("dashboard");
-  };
-
-  // Loading state while checking session
-  if (authLoading) return (
-    <div style={{minHeight:"100vh",background:"#0A1628",display:"flex",
-      alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
-      <div style={{fontFamily:"'Bebas Neue'",fontSize:42,letterSpacing:"0.08em"}}>
-        <span style={{color:"white"}}>PICKLE</span>
-        <span style={{color:C.pickle}}>INTEL</span>
-      </div>
-      <div style={{color:"#64748B",fontSize:14}}>Loading…</div>
-    </div>
-  );
-
-  // Not logged in — show login screen
-  if (!authUser) return (
-    <>
-      <style>{STYLES}</style>
-      <LoginScreen onAuth={handleAuth}/>
-    </>
-  );
-
-  // Logged in — show the full app
-  return(
-    <>
-      <style>{STYLES}</style>
-      {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
-      <div style={{minHeight:"100vh",background:C.pageBg,display:"flex",flexDirection:"column",overflowX:"hidden",width:"100%"}}>
-        <TopNav page={page} setPage={setPage} onSignOut={handleSignOut} authUser={authUser}/>
-        <main style={{flex:1}}>
-          {page==="dashboard"&&<Dashboard setPage={setPage}/>}
-          {page==="shots"    &&<Shots/>}
-          {page==="matches"  &&<MatchCenter defaultTab="log"/>}
-          {page==="matches:partners"&&<MatchCenter defaultTab="partners"/>}
-          {page==="coach"    &&<Coach/>}
-          {page==="profile"  &&<Profile setPage={setPage}/>}
-        </main>
-        {/* ── Global Footer ── */}
-        <footer style={{background:C.navy,borderTop:`1px solid rgba(255,255,255,0.06)`,
-          padding:"14px 20px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",
-          alignItems:"center",gap:10,flexShrink:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:0,lineHeight:1}}>
-            <span style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:"0.06em",color:"white"}}>PICKLE</span>
-            <span style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:"0.06em",color:C.pickle}}>INTEL</span>
-            <span style={{fontSize:11,color:"#475569",marginLeft:8}}>© 2026</span>
-          </div>
-          <button onClick={()=>setShowHelp(true)} style={{
-            display:"flex",alignItems:"center",gap:8,
-            background:"rgba(255,255,255,0.06)",
-            border:"1px solid rgba(255,255,255,0.12)",
-            borderRadius:10,padding:"8px 16px",cursor:"pointer",
-            fontFamily:"'Outfit'",transition:"all 0.15s"}}>
-            <span style={{fontSize:14}}>❓</span>
-            <span style={{fontSize:13,fontWeight:600,color:"white"}}>Help & Support</span>
-          </button>
-          <div style={{display:"flex",gap:16}}>
-            {["Privacy","Terms","Contact"].map(l=>(
-              <span key={l} style={{fontSize:11,color:"#475569",cursor:"pointer"}}>{l}</span>
-            ))}
-          </div>
-        </footer>
-      </div>
-    </>
   );
 }
