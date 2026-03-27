@@ -3367,10 +3367,14 @@ const SHOT_BUTTONS = [
 function VideoLoggerContent() {
   const isMobile = useIsMobile();
 
-  // Match metadata
-  const [matchId,   setMatchId]   = useState(null);
-  const [matches,   setMatches]   = useState([]);
-  const [selMatch,  setSelMatch]  = useState(null);
+  // Match info (created at save time)
+  const [date,      setDate]      = useState(new Date().toISOString().slice(0,10));
+  const [opponent,  setOpponent]  = useState("");
+  const [partner,   setPartner]   = useState("");
+  const [score,     setScore]     = useState("");
+  const [result,    setResult]    = useState("W");
+  const [notes,     setNotes]     = useState("");
+  const [savedMatchId, setSavedMatchId] = useState(null); // set after match is created
 
   // Video state
   const [videoFile, setVideoFile] = useState(null);
@@ -3380,18 +3384,14 @@ function VideoLoggerContent() {
   const videoRef = useRef(null);
 
   // Shot logging state
-  const [shotLog,   setShotLog]   = useState([]); // [{ts, name, result}]
+  const [shotLog,   setShotLog]   = useState([]);
   const [lastShot,  setLastShot]  = useState(null);
-  const [outcome,   setOutcome]   = useState("W"); // W = won rally, L = lost
+  const [outcome,   setOutcome]   = useState("W");
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
-
-  // Load existing matches to link video to
-  useEffect(()=>{
-    sb.query("matches",{order:"created_at.desc"})
-      .then(rows=>{ setMatches(rows||[]); if(rows?.length) setSelMatch(rows[0]); })
-      .catch(()=>{});
-  },[]);
+  const [matchSaved, setMatchSaved] = useState(false);
+  const [matchSaving, setMatchSaving] = useState(false);
+  const [matchErr,  setMatchErr]  = useState("");
 
   const formatTs = (secs) => {
     const m = Math.floor(secs/60);
@@ -3399,8 +3399,30 @@ function VideoLoggerContent() {
     return `${m}:${s.toString().padStart(2,"0")}`;
   };
 
+  // Save match info first, then upload video
+  const saveMatchAndUpload = async (file) => {
+    setMatchSaving(true); setMatchErr("");
+    try {
+      const uid = getCurrentUserId();
+      const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+      const rows = await sb.insert("matches", {
+        date: dateFormatted, opponent, partner, result, score, notes,
+        nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced",
+        user_id: uid,
+      });
+      const newMatchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
+      setSavedMatchId(newMatchId);
+      setMatchSaved(true);
+      // Now upload video
+      await uploadVideo(file, newMatchId);
+    } catch(e) {
+      setMatchErr("Failed to save match: " + (e.message||"Unknown error"));
+    }
+    setMatchSaving(false);
+  };
+
   // Upload video to Supabase Storage
-  const uploadVideo = async (file) => {
+  const uploadVideo = async (file, matchId) => {
     setUploading(true); setUploadErr("");
     try {
       const uid = getCurrentUserId();
@@ -3413,7 +3435,7 @@ function VideoLoggerContent() {
           headers:{
             apikey: SUPABASE_KEY,
             Authorization:`Bearer ${_authToken}`,
-            "Content-Type": file.type,
+            "Content-Type": file.type||"video/mp4",
           },
           body: file,
         }
@@ -3429,15 +3451,14 @@ function VideoLoggerContent() {
             Authorization:`Bearer ${_authToken}`,
             "Content-Type":"application/json",
           },
-          body: JSON.stringify({expiresIn: 3600}),
+          body: JSON.stringify({expiresIn: 7200}),
         }
       );
       const signData = await signRes.json();
       const url = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
       setVideoUrl(url);
-      // Save video URL to match if one is selected
-      if(selMatch?.id) {
-        await sb.upsert("matches",{id:selMatch.id, video_url:url},"id");
+      if(matchId) {
+        await sb.upsert("matches",{id:matchId, video_url:url},"id");
       }
     } catch(e) {
       setUploadErr("Upload failed: " + (e.message||"Unknown error"));
@@ -3448,15 +3469,16 @@ function VideoLoggerContent() {
   const processFile = (file) => {
     if(!file) return;
     setUploadErr("");
-    // Check size (500MB limit)
     if(file.size > 500 * 1024 * 1024) { setUploadErr("File must be under 500MB."); return; }
-    // Accept video/* OR common video extensions (some files have blank MIME type)
     const isVideo = file.type.startsWith("video/") ||
       /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
     if(!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
     setVideoFile(file);
-    setVideoUrl(URL.createObjectURL(file));
-    uploadVideo(file);
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setVideoUrl(localUrl);
+    // Save match + upload in background
+    saveMatchAndUpload(file);
   };
 
   const handleFileChange = (e) => {
@@ -3477,7 +3499,7 @@ function VideoLoggerContent() {
 
   // Save all logged shots to DB
   const saveShots = async () => {
-    if(!selMatch?.id || shotLog.length===0) return;
+    if(!savedMatchId || shotLog.length===0) { alert(savedMatchId?"No shots to save yet.":"Please fill in match info and upload a video first."); return; }
     setSaving(true);
     try {
       const uid = getCurrentUserId();
@@ -3510,22 +3532,70 @@ function VideoLoggerContent() {
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16,width:"100%"}}>
 
-      {/* ── Step 1: Link to a match ── */}
-      <Card style={{padding:"16px 20px"}}>
-        <SLabel>Step 1 — Link to a Match</SLabel>
-        <div style={{fontSize:12,color:C.textMid,marginBottom:10}}>
-          Select the match this video is from so shots get linked to it.
+      {/* ── Step 1: Match Info ── */}
+      <Card style={{padding:0,overflow:"visible"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <SLabel style={{marginBottom:0}}>Step 1 — Match Info</SLabel>
+          {matchSaved && (
+            <span style={{fontSize:12,fontWeight:600,color:C.mint}}>✓ Match saved</span>
+          )}
         </div>
-        <select value={selMatch?.id||""} onChange={e=>setSelMatch(matches.find(m=>m.id===parseInt(e.target.value)))}
-          style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
-            padding:"10px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}>
-          {matches.length===0 && <option value="">No matches yet — log one first</option>}
-          {matches.map(m=>(
-            <option key={m.id} value={m.id}>
-              {m.date||"No date"} vs {m.opponent&&m.opponent!=="—"?m.opponent:"Unknown opponent"} · {m.result==="W"?"Win":"Loss"} {m.score?`${m.score}`:""}
-            </option>
-          ))}
-        </select>
+
+        {/* Row 1: Date · Score · Result */}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
+          gap:12,padding:"14px 18px 0"}}>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Date</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Score</div>
+            <input type="text" value={score} onChange={e=>setScore(e.target.value)}
+              placeholder="e.g. 11-7" disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>!matchSaved&&setResult(v)} style={{
+                  padding:"9px 4px",borderRadius:10,fontWeight:700,fontSize:12,
+                  cursor:matchSaved?"default":"pointer",fontFamily:"'Outfit'",
+                  background:result===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):C.pageBg,
+                  border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
+                  color:result===v?(v==="W"?C.mint:C.rose):C.textMid}}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Opponent · Partner */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"12px 18px 0"}}>
+          <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
+            placeholder="Search or type name…" multi={true}/>
+          <PlayerSearch label="Partner" value={partner} onChange={setPartner}
+            placeholder="Search or type name…"/>
+        </div>
+
+        {/* Row 3: Notes */}
+        <div style={{padding:"12px 18px 16px"}}>
+          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes (optional)</div>
+          <input type="text" value={notes} onChange={e=>setNotes(e.target.value)}
+            placeholder="Anything notable — tactics, conditions, how you felt…" disabled={matchSaved}
+            style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+              borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+              fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+        </div>
+
+        {matchErr&&<div style={{margin:"0 18px 14px",background:`${C.rose}15`,border:`1px solid ${C.rose}40`,
+          borderRadius:10,padding:"10px 14px",fontSize:12,color:C.rose}}>{matchErr}</div>}
       </Card>
 
       {/* ── Step 2: Upload video ── */}
