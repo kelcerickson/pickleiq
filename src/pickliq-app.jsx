@@ -3943,6 +3943,7 @@ const FAQS = [
 ];
 
 const HelpModal = ({onClose}) => {
+  const isMobile = useIsMobile();
   const [tab, setTab]         = useState("faq");
   const [openFaq, setOpenFaq] = useState(null);
   const [feedback, setFeedback]     = useState("");
