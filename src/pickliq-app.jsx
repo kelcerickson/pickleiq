@@ -3391,37 +3391,31 @@ function VideoLoggerContent() {
     try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); }
     catch(e) { return def; }
   };
-  const [trackRally,   setTrackRally]   = useState(() => loadPref("pi_track_rally", true));
-  const [trackOutcome, setTrackOutcome] = useState(() => loadPref("pi_track_outcome", false));
-  const [trackCount,   setTrackCount]   = useState(() => loadPref("pi_track_count", false));
+  const [trackRally,  setTrackRally]  = useState(() => loadPref("pi_track_rally",  true));
+  const [trackShots,  setTrackShots]  = useState(() => loadPref("pi_track_shots",  false));
   const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} };
-  const toggleRally   = () => { const v = !trackRally;   setTrackRally(v);   savePref("pi_track_rally", v); };
-  const toggleOutcome = () => { const v = !trackOutcome; setTrackOutcome(v); savePref("pi_track_outcome", v); };
-  const toggleCount   = () => { const v = !trackCount;   setTrackCount(v);   savePref("pi_track_count", v); };
+  const toggleRally = () => { const v = !trackRally; setTrackRally(v); savePref("pi_track_rally", v); };
+  const toggleShots = () => { const v = !trackShots; setTrackShots(v); savePref("pi_track_shots", v); };
 
   // ── Rally Ender log ───────────────────────────────────────────────────────────
-  const [rallyLog,   setRallyLog]   = useState([]);
-  const [lastRally,  setLastRally]  = useState(null);
+  // [{id, ts, name, result:"W"|"L"}]
+  const [rallyLog, setRallyLog] = useState([]);
 
-  // ── Shot Outcome log ──────────────────────────────────────────────────────────
-  const [outcomeLog,    setOutcomeLog]    = useState([]);
-  const [lastOutcome,   setLastOutcome]   = useState(null);
-  const [outcomeMode,   setOutcomeMode]   = useState("+"); // current outcome selector
-
-  // ── Shot Counter ──────────────────────────────────────────────────────────────
-  const [counts, setCounts] = useState({});
+  // ── Shot tracker: counts per shot per outcome ─────────────────────────────────
+  // shotData[shotName] = { pos:0, neu:0, neg:0 }
+  const [shotData, setShotData] = useState({});
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
 
   // ── Flash feedback ────────────────────────────────────────────────────────────
-  const [flashMsg,  setFlashMsg]  = useState(null);
-  const [flashType, setFlashType] = useState("rally"); // "rally" | "outcome"
+  const [flashMsg,   setFlashMsg]   = useState(null);
+  const [flashColor, setFlashColor] = useState(C.mint);
 
-  const showFlash = (msg, type) => {
-    setFlashMsg(msg); setFlashType(type);
-    setTimeout(() => setFlashMsg(null), 1100);
+  const showFlash = (msg, color) => {
+    setFlashMsg(msg); setFlashColor(color);
+    setTimeout(() => setFlashMsg(null), 900);
   };
 
   const formatTs = (secs) => {
@@ -3485,33 +3479,33 @@ function VideoLoggerContent() {
   };
 
   // ── Logging actions ───────────────────────────────────────────────────────────
-  // Rally ender: one click = shot + result (Won or Lost)
+  // Rally ender: green button = Won, red button = Lost — one tap, done
   const logRally = (shotName, res) => {
     const ts = videoRef.current?.currentTime || 0;
-    const entry = { id: Date.now(), ts, name: shotName, result: res };
-    setRallyLog(prev => [...prev, entry].sort((a, b) => a.ts - b.ts));
-    showFlash(`${res === "W" ? "✓ Won" : "✕ Lost"} — ${shotName}`, "rally");
+    setRallyLog(prev => [...prev, { id: Date.now(), ts, name: shotName, result: res }].sort((a,b) => a.ts - b.ts));
+    const col = res === "W" ? C.mint : C.rose;
+    showFlash(`${res === "W" ? "✓ Won" : "✕ Lost"} — ${shotName}`, col);
   };
 
-  // Shot outcome: one click = shot + current outcome mode
-  const logOutcome = (shotName) => {
-    const ts = videoRef.current?.currentTime || 0;
-    const entry = { id: Date.now(), ts, name: shotName, outcome: outcomeMode };
-    setOutcomeLog(prev => [...prev, entry].sort((a, b) => a.ts - b.ts));
-    const lbl = { "+": "Positive", "~": "Neutral", "-": "Negative" }[outcomeMode];
-    showFlash(`${shotName} — ${lbl}`, "outcome");
+  // Shot tracker: tap pos/neu/neg button on a shot row — logs outcome + count in one tap
+  const logShot = (shotName, outcome) => {
+    setShotData(prev => {
+      const curr = prev[shotName] || { pos:0, neu:0, neg:0 };
+      return { ...prev, [shotName]: { ...curr, [outcome]: curr[outcome] + 1 } };
+    });
+    const col = outcome === "pos" ? C.mint : outcome === "neg" ? C.rose : C.textMid;
+    const lbl = outcome === "pos" ? "Positive" : outcome === "neg" ? "Negative" : "Neutral";
+    showFlash(`${shotName} — ${lbl}`, col);
   };
-
-  const incrementCount = (shotName) => setCounts(prev => ({ ...prev, [shotName]: (prev[shotName] || 0) + 1 }));
-  const decrementCount = (shotName) => setCounts(prev => ({ ...prev, [shotName]: Math.max(0, (prev[shotName] || 0) - 1) }));
 
   // ── Save all ──────────────────────────────────────────────────────────────────
   const saveAll = async () => {
     if (!savedMatchId) { alert("Please upload a video first so the match is saved."); return; }
-    const hasRally   = trackRally   && rallyLog.length > 0;
-    const hasOutcome = trackOutcome && outcomeLog.length > 0;
-    const hasCount   = trackCount   && Object.values(counts).some(v => v > 0);
-    if (!hasRally && !hasOutcome && !hasCount) { alert("Nothing logged yet."); return; }
+    const hasRally = trackRally && rallyLog.length > 0;
+    const hasShots = trackShots && Object.keys(shotData).some(k => {
+      const d = shotData[k]; return (d.pos + d.neu + d.neg) > 0;
+    });
+    if (!hasRally && !hasShots) { alert("Nothing logged yet."); return; }
     setSaving(true);
     try {
       const uid = getCurrentUserId();
@@ -3523,23 +3517,31 @@ function VideoLoggerContent() {
         await sb.upsert("shots", {
           name, category: cat?.label || "",
           attempts: (ex?.attempts || 0) + att,
-          wins:     (ex?.wins || 0) + winAdd,
-          misses:   (ex?.misses || 0) + missAdd,
+          wins:     (ex?.wins    || 0) + winAdd,
+          misses:   (ex?.misses  || 0) + missAdd,
           win_history:  [...((ex?.win_history)  || [0,0,0,0]).slice(1), winAdd  > 0 ? 100 : 0],
           miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), missAdd > 0 ? 100 : 0],
           color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
         }, "user_id,name");
       };
-      if (hasRally)   for (const s of rallyLog)   await upsertShot(s.name, s.result === "W" ? 1 : 0, s.result === "L" ? 1 : 0);
-      if (hasOutcome) for (const s of outcomeLog)  await upsertShot(s.name, s.outcome === "+" ? 1 : 0, s.outcome === "-" ? 1 : 0);
-      if (hasCount)   for (const [name, cnt] of Object.entries(counts)) { if (cnt > 0) await upsertShot(name, 0, 0, cnt); }
+      if (hasRally) {
+        for (const s of rallyLog) await upsertShot(s.name, s.result === "W" ? 1 : 0, s.result === "L" ? 1 : 0);
+      }
+      if (hasShots) {
+        for (const [name, d] of Object.entries(shotData)) {
+          const total = d.pos + d.neu + d.neg;
+          if (total === 0) continue;
+          // pos = wins, neg = misses, neu = neutral attempts
+          await upsertShot(name, d.pos, d.neg, total);
+        }
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch(e) { alert("Save failed: " + e.message); }
     setSaving(false);
   };
 
-  // ── Toggle switch UI ──────────────────────────────────────────────────────────
+  // ── Toggle switch ─────────────────────────────────────────────────────────────
   const Toggle = ({ label, active, onToggle, color }) => (
     <div onClick={onToggle} style={{
       display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
@@ -3554,12 +3556,12 @@ function VideoLoggerContent() {
     </div>
   );
 
-  // ── Shot button grid (two columns: Won / Lost side by side) ───────────────────
+  // ── Rally Ender grid: each shot = green Won + red Lost buttons ────────────────
   const RallyGrid = () => (
     <div>
       {SHOT_BUTTONS.map(cat => (
-        <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
+        <div key={cat.cat} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{cat.cat}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {cat.shots.map(shot => (
               <div key={shot} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
@@ -3567,22 +3569,20 @@ function VideoLoggerContent() {
                   padding: "7px 6px", borderRadius: 8,
                   border: `1.5px solid ${C.mint}50`, background: `${C.mint}10`,
                   color: C.mint, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 11,
-                  cursor: "pointer", textAlign: "center", transition: "all 0.1s",
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "all 0.1s",
                 }}
-                  onMouseEnter={e => { e.currentTarget.style.background = C.mint + "25"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = C.mint + "10"; }}>
+                  onMouseEnter={e => e.currentTarget.style.background = C.mint + "28"}
+                  onMouseLeave={e => e.currentTarget.style.background = C.mint + "10"}>
                   ✓ {shot}
                 </button>
                 <button onClick={() => logRally(shot, "L")} style={{
                   padding: "7px 6px", borderRadius: 8,
                   border: `1.5px solid ${C.rose}50`, background: `${C.rose}10`,
                   color: C.rose, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 11,
-                  cursor: "pointer", textAlign: "center", transition: "all 0.1s",
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "all 0.1s",
                 }}
-                  onMouseEnter={e => { e.currentTarget.style.background = C.rose + "25"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = C.rose + "10"; }}>
+                  onMouseEnter={e => e.currentTarget.style.background = C.rose + "28"}
+                  onMouseLeave={e => e.currentTarget.style.background = C.rose + "10"}>
                   ✕ {shot}
                 </button>
               </div>
@@ -3593,53 +3593,71 @@ function VideoLoggerContent() {
     </div>
   );
 
-  // ── Shot outcome grid ─────────────────────────────────────────────────────────
-  const OutcomeGrid = () => (
+  // ── Shot Tracker grid: each shot = neg + neu + pos buttons + tally ────────────
+  const ShotTrackerGrid = () => (
     <div>
       {SHOT_BUTTONS.map(cat => (
-        <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {cat.shots.map(shot => (
-              <button key={shot} onClick={() => logOutcome(shot)} style={{
-                padding: "7px 12px", borderRadius: 8,
-                border: `1.5px solid ${cat.color}40`, background: `${cat.color}12`,
-                color: cat.color, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 11,
-                cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.1s",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.background = cat.color + "28"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = cat.color + "12"; }}>
-                {shot}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── Shot counter grid ─────────────────────────────────────────────────────────
-  const CounterGrid = () => (
-    <div>
-      {SHOT_BUTTONS.map(cat => (
-        <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div key={cat.cat} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{cat.cat}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {cat.shots.map(shot => {
-              const cnt = counts[shot] || 0;
+              const d = shotData[shot] || { pos: 0, neu: 0, neg: 0 };
+              const total = d.pos + d.neu + d.neg;
               return (
                 <div key={shot} style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "6px 10px", borderRadius: 8,
-                  border: `1.5px solid ${cnt > 0 ? cat.color : C.border}`,
-                  background: cnt > 0 ? `${cat.color}12` : C.pageBg, transition: "all 0.15s",
+                  display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto",
+                  gap: 3, alignItems: "center",
+                  padding: "3px 0",
+                  borderBottom: `1px solid ${C.border}30`,
                 }}>
-                  <span style={{ fontSize: 11, fontWeight: cnt > 0 ? 700 : 400, color: cnt > 0 ? cat.color : C.textMid, flex: 1 }}>{shot}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                    <button onClick={() => decrementCount(shot)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.border}`, background: C.cardBg, fontSize: 15, color: C.textMid, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
-                    <span style={{ fontFamily: "'DM Mono'", fontSize: 14, fontWeight: 700, color: cnt > 0 ? cat.color : C.textLight, minWidth: 20, textAlign: "center" }}>{cnt}</span>
-                    <button onClick={() => incrementCount(shot)} style={{ width: 24, height: 24, borderRadius: 6, border: `1.5px solid ${cnt > 0 ? cat.color : C.border}`, background: cnt > 0 ? `${cat.color}22` : C.cardBg, fontSize: 15, color: cat.color, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                  </div>
+                  {/* Negative (red) */}
+                  <button onClick={() => logShot(shot, "neg")} style={{
+                    padding: "6px 4px", borderRadius: 7,
+                    border: `1.5px solid ${d.neg > 0 ? C.rose : C.border}`,
+                    background: d.neg > 0 ? `${C.rose}15` : C.pageBg,
+                    color: d.neg > 0 ? C.rose : C.textLight,
+                    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 10,
+                    cursor: "pointer", transition: "all 0.1s", textAlign: "center",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = C.rose + "25"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = d.neg > 0 ? C.rose+"15" : C.pageBg; e.currentTarget.style.borderColor = d.neg > 0 ? C.rose : C.border; e.currentTarget.style.color = d.neg > 0 ? C.rose : C.textLight; }}>
+                    ✕ {shot}{d.neg > 0 ? ` (${d.neg})` : ""}
+                  </button>
+                  {/* Neutral (gray) */}
+                  <button onClick={() => logShot(shot, "neu")} style={{
+                    padding: "6px 4px", borderRadius: 7,
+                    border: `1.5px solid ${d.neu > 0 ? C.textMid : C.border}`,
+                    background: d.neu > 0 ? `rgba(75,85,99,0.12)` : C.pageBg,
+                    color: d.neu > 0 ? C.textMid : C.textLight,
+                    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 10,
+                    cursor: "pointer", transition: "all 0.1s", textAlign: "center",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(75,85,99,0.2)"; e.currentTarget.style.borderColor = C.textMid; e.currentTarget.style.color = C.textMid; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = d.neu > 0 ? "rgba(75,85,99,0.12)" : C.pageBg; e.currentTarget.style.borderColor = d.neu > 0 ? C.textMid : C.border; e.currentTarget.style.color = d.neu > 0 ? C.textMid : C.textLight; }}>
+                    – {shot}{d.neu > 0 ? ` (${d.neu})` : ""}
+                  </button>
+                  {/* Positive (green) */}
+                  <button onClick={() => logShot(shot, "pos")} style={{
+                    padding: "6px 4px", borderRadius: 7,
+                    border: `1.5px solid ${d.pos > 0 ? C.mint : C.border}`,
+                    background: d.pos > 0 ? `${C.mint}15` : C.pageBg,
+                    color: d.pos > 0 ? C.mint : C.textLight,
+                    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 10,
+                    cursor: "pointer", transition: "all 0.1s", textAlign: "center",
+                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.background = C.mint + "25"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = C.mint; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = d.pos > 0 ? C.mint+"15" : C.pageBg; e.currentTarget.style.borderColor = d.pos > 0 ? C.mint : C.border; e.currentTarget.style.color = d.pos > 0 ? C.mint : C.textLight; }}>
+                    ✓ {shot}{d.pos > 0 ? ` (${d.pos})` : ""}
+                  </button>
+                  {/* Total tally */}
+                  <div style={{
+                    fontFamily: "'DM Mono'", fontSize: 12, fontWeight: 700,
+                    color: total > 0 ? C.text : C.textLight,
+                    minWidth: 24, textAlign: "right", paddingRight: 2,
+                  }}>{total > 0 ? total : ""}</div>
                 </div>
               );
             })}
@@ -3649,11 +3667,10 @@ function VideoLoggerContent() {
     </div>
   );
 
-  const anyTracking = trackRally || trackOutcome || trackCount;
-  const totalLogged = rallyLog.length + outcomeLog.length + Object.values(counts).reduce((a, b) => a + b, 0);
-  const flashColor = flashType === "rally"
-    ? (flashMsg?.startsWith("✓") ? C.mint : C.rose)
-    : ({ "+": C.mint, "~": C.amber, "-": C.rose }[outcomeMode]);
+  const anyTracking = trackRally || trackShots;
+  const rallyTotal  = rallyLog.length;
+  const shotTotal   = Object.values(shotData).reduce((a, d) => a + d.pos + d.neu + d.neg, 0);
+  const totalLogged = rallyTotal + shotTotal;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
@@ -3678,7 +3695,7 @@ function VideoLoggerContent() {
           <div>
             <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 4 }}>Result</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-              {[["W", "Win"], ["L", "Loss"]].map(([v, lbl]) => (
+              {[["W","Win"],["L","Loss"]].map(([v,lbl]) => (
                 <button key={v} onClick={() => !matchSaved && setResult(v)} style={{
                   padding: "8px 4px", borderRadius: 9, fontWeight: 700, fontSize: 12, cursor: matchSaved ? "default" : "pointer", fontFamily: "'Outfit'",
                   background: result === v ? (v === "W" ? `${C.mint}20` : `${C.rose}20`) : C.pageBg,
@@ -3705,10 +3722,9 @@ function VideoLoggerContent() {
       <Card style={{ padding: "14px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginRight: 4 }}>Track:</div>
-          <Toggle label="🏁 Rally Ender" active={trackRally}   onToggle={toggleRally}   color={C.mint} />
-          <Toggle label="⬆️ Shot Outcome" active={trackOutcome} onToggle={toggleOutcome} color={C.blue} />
-          <Toggle label="📊 Shot Counter"  active={trackCount}   onToggle={toggleCount}   color={C.purple} />
-          <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Preferences saved automatically</div>
+          <Toggle label="🏁 Rally Ender" active={trackRally} onToggle={toggleRally} color={C.mint} />
+          <Toggle label="🎯 Shot Tracker" active={trackShots} onToggle={toggleShots} color={C.blue} />
+          <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Saved automatically</div>
         </div>
         {!anyTracking && (
           <div style={{ marginTop: 10, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
@@ -3748,43 +3764,36 @@ function VideoLoggerContent() {
           </div>
         ) : (
           /* ── Video loaded: side-by-side layout ── */
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16, alignItems: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 16, alignItems: "start" }}>
 
-            {/* Left: video player */}
+            {/* Left: video + summary + save */}
             <div>
               <video ref={videoRef} src={videoUrl} controls
                 style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
               {uploading && <div style={{ marginTop: 6, fontSize: 12, color: C.amber, textAlign: "center" }}>⏳ Uploading to cloud...</div>}
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setRallyLog([]); setOutcomeLog([]); setCounts({}); }}
+              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setRallyLog([]); setShotData({}); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
 
-              {/* Summary counts below video */}
+              {/* Live summary */}
               {totalLogged > 0 && (
-                <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  {trackRally && rallyLog.length > 0 && (
+                <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {trackRally && rallyTotal > 0 && (
                     <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12 }}>
-                      <span style={{ color: C.textMid, fontWeight: 600 }}>🏁 Rallies: </span>
+                      <span style={{ color: C.textMid, fontWeight: 600 }}>🏁 </span>
                       <span style={{ color: C.mint, fontWeight: 700 }}>{rallyLog.filter(r => r.result === "W").length}W</span>
                       <span style={{ color: C.textLight }}> / </span>
                       <span style={{ color: C.rose, fontWeight: 700 }}>{rallyLog.filter(r => r.result === "L").length}L</span>
                     </div>
                   )}
-                  {trackOutcome && outcomeLog.length > 0 && (
-                    <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12 }}>
-                      <span style={{ color: C.textMid, fontWeight: 600 }}>⬆️ Outcomes: </span>
-                      <span style={{ color: C.mint, fontWeight: 700 }}>{outcomeLog.filter(s => s.outcome === "+").length}+</span>
-                      <span style={{ color: C.textLight }}> · </span>
-                      <span style={{ color: C.amber, fontWeight: 700 }}>{outcomeLog.filter(s => s.outcome === "~").length}~</span>
-                      <span style={{ color: C.textLight }}> · </span>
-                      <span style={{ color: C.rose, fontWeight: 700 }}>{outcomeLog.filter(s => s.outcome === "-").length}-</span>
-                    </div>
-                  )}
-                  {trackCount && Object.values(counts).some(v => v > 0) && (
-                    <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12 }}>
-                      <span style={{ color: C.textMid, fontWeight: 600 }}>📊 Shots counted: </span>
-                      <span style={{ color: C.purple, fontWeight: 700 }}>{Object.values(counts).reduce((a, b) => a + b, 0)}</span>
+                  {trackShots && shotTotal > 0 && (
+                    <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, display: "flex", gap: 8 }}>
+                      <span style={{ color: C.textMid, fontWeight: 600 }}>🎯 </span>
+                      <span style={{ color: C.mint, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.pos,0)}+</span>
+                      <span style={{ color: C.textMid, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neu,0)}–</span>
+                      <span style={{ color: C.rose, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neg,0)}✕</span>
+                      <span style={{ color: C.textLight }}>· {shotTotal} total</span>
                     </div>
                   )}
                 </div>
@@ -3803,9 +3812,9 @@ function VideoLoggerContent() {
               )}
             </div>
 
-            {/* Right: logging panel */}
+            {/* Right: logging panels */}
             {anyTracking && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 520, overflowY: "auto", paddingRight: 2 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 560, overflowY: "auto", paddingRight: 2 }}>
 
                 {/* Flash feedback */}
                 {flashMsg && (
@@ -3818,43 +3827,28 @@ function VideoLoggerContent() {
                   </div>
                 )}
 
-                {/* Rally Ender panel */}
+                {/* Rally Ender */}
                 {trackRally && (
                   <div style={{ background: `${C.mint}08`, border: `1.5px solid ${C.mint}40`, borderRadius: 12, padding: "12px 14px" }}>
                     <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 3 }}>🏁 Rally Ender</div>
                     <div style={{ fontSize: 11, color: C.textLight, marginBottom: 10 }}>
-                      Left column = <span style={{ color: C.mint, fontWeight: 700 }}>Won</span> · Right = <span style={{ color: C.rose, fontWeight: 700 }}>Lost</span>
+                      <span style={{ color: C.mint, fontWeight: 700 }}>✓ Won</span> · <span style={{ color: C.rose, fontWeight: 700 }}>✕ Lost</span> — tap to log
                     </div>
                     <RallyGrid />
                   </div>
                 )}
 
-                {/* Shot Outcome panel */}
-                {trackOutcome && (
+                {/* Shot Tracker */}
+                {trackShots && (
                   <div style={{ background: `${C.blue}08`, border: `1.5px solid ${C.blue}40`, borderRadius: 12, padding: "12px 14px" }}>
-                    <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 6 }}>⬆️ Shot Outcome</div>
-                    {/* Outcome selector */}
-                    <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
-                      {[["+", "⬆ Pos", C.mint], ["~", "➡ Neutral", C.amber], ["-", "⬇ Neg", C.rose]].map(([v, lbl, col]) => (
-                        <button key={v} onClick={() => setOutcomeMode(v)} style={{
-                          flex: 1, padding: "6px 4px", borderRadius: 8,
-                          border: `2px solid ${outcomeMode === v ? col : C.border}`,
-                          background: outcomeMode === v ? `${col}20` : "transparent",
-                          color: outcomeMode === v ? col : C.textMid,
-                          fontFamily: "'Outfit'", fontWeight: 700, fontSize: 11, cursor: "pointer", transition: "all 0.15s",
-                        }}>{lbl}</button>
-                      ))}
+                    <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 3 }}>🎯 Shot Tracker</div>
+                    <div style={{ display: "flex", gap: 12, marginBottom: 10, fontSize: 11 }}>
+                      <span style={{ color: C.rose, fontWeight: 700 }}>✕ Negative</span>
+                      <span style={{ color: C.textMid, fontWeight: 700 }}>– Neutral</span>
+                      <span style={{ color: C.mint, fontWeight: 700 }}>✓ Positive</span>
+                      <span style={{ color: C.textLight, marginLeft: "auto" }}>total →</span>
                     </div>
-                    <OutcomeGrid />
-                  </div>
-                )}
-
-                {/* Shot Counter panel */}
-                {trackCount && (
-                  <div style={{ background: `${C.purple}08`, border: `1.5px solid ${C.purple}40`, borderRadius: 12, padding: "12px 14px" }}>
-                    <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 3 }}>📊 Shot Counter</div>
-                    <div style={{ fontSize: 11, color: C.textLight, marginBottom: 10 }}>Tap + / − to tally shots hit</div>
-                    <CounterGrid />
+                    <ShotTrackerGrid />
                   </div>
                 )}
               </div>
@@ -3865,6 +3859,7 @@ function VideoLoggerContent() {
     </div>
   );
 }
+
 
 
 const MatchCenter=({defaultTab="log"})=>{
