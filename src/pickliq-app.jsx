@@ -603,9 +603,9 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
           marginLeft:isMobile?2:12,
           justifyContent:isMobile?"space-between":"flex-start"}}>
           {NAV.map(n=>{
-            const a=page===n.id;
+            const a=page===n.id || (n.id==="matches" && page==="matches:partners");
             return(
-              <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id)} style={{
+              <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id==="matches"?"matches":n.id)} style={{
                 background:a?C.pickle:"transparent",
                 padding:isMobile?"6px 8px":"7px 14px",
                 borderRadius:8,
@@ -905,7 +905,7 @@ const Dashboard=({setPage})=>{
                 );})}
               </div>
               <div style={{textAlign:"right"}}>
-                <span onClick={function(){setPage("team")}} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>View team analytics →</span>
+                <span onClick={function(){setPage("matches:partners")}} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>View team analytics →</span>
               </div>
             </div>
           ) : (
@@ -3361,9 +3361,9 @@ const LogMatchContent=()=>{
 
 
 // ── MATCH CENTER ──────────────────────────────────────────────────────────────
-const MatchCenter=()=>{
+const MatchCenter=({defaultTab="log"})=>{
   const isMobile = useIsMobile();
-  const [tab,setTab]=useState("log"); // "log" | "partners" | "history"
+  const [tab,setTab]=useState(defaultTab); // "log" | "partners" | "history"
 
   const TABS=[
     {id:"log",      label:"📋 Log Match"},
@@ -3857,7 +3857,8 @@ export default function App(){
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
-          {page==="matches"  &&<MatchCenter/>}
+          {page==="matches"  &&<MatchCenter defaultTab="log"/>}
+          {page==="matches:partners"&&<MatchCenter defaultTab="partners"/>}
           {page==="coach"    &&<Coach/>}
           {page==="profile"  &&<Profile setPage={setPage}/>}
         </main>
