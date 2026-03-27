@@ -4,18 +4,83 @@ import React, { useState, useRef, useEffect } from "react";
 const SUPABASE_URL = "https://orifhmwlasencdgmeouu.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yaWZobXdsYXNlbmNkZ21lb3V1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTQwOTUsImV4cCI6MjA4ODgzMDA5NX0.Do_WRC5e2zxTXfwkZ7-oy-6WAy0_l3qJwrMl-EpXBTE";
 
+// ── Auth token management ────────────────────────────────────────────────────
+let _authToken = null; // set after login, used in all requests
+
+// Extract user ID from JWT without a library
+const getCurrentUserId = () => {
+  if (!_authToken) return null;
+  try {
+    const payload = JSON.parse(atob(_authToken.split(".")[1]));
+    return payload.sub || null;
+  } catch(e) { return null; }
+};
+const getAuthHeaders = () => ({
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${_authToken || SUPABASE_KEY}`,
+});
+
 const sb = {
+  // ── Auth methods ──────────────────────────────────────────────────────────
+  async signUp(email, password) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.msg || data.error_description || "Sign up failed");
+    if (data.access_token) _authToken = data.access_token;
+    return data;
+  },
+  async signIn(email, password) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.msg || "Sign in failed");
+    _authToken = data.access_token;
+    // Persist session
+    localStorage.setItem("pi_token", data.access_token);
+    localStorage.setItem("pi_refresh", data.refresh_token);
+    return data;
+  },
+  async refreshSession(refreshToken) {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error("Session expired");
+    _authToken = data.access_token;
+    localStorage.setItem("pi_token", data.access_token);
+    localStorage.setItem("pi_refresh", data.refresh_token);
+    return data;
+  },
+  async getUser() {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}` },
+    });
+    if (!res.ok) return null;
+    return res.json();
+  },
+  signOut() {
+    _authToken = null;
+    localStorage.removeItem("pi_token");
+    localStorage.removeItem("pi_refresh");
+  },
+
+  // ── Data methods (now auth-aware) ─────────────────────────────────────────
   async query(table, options = {}) {
     const { select = "*", filter, order, single } = options;
     let url = `${SUPABASE_URL}/rest/v1/${table}?select=${select}`;
     if (filter) url += `&${filter}`;
     if (order) url += `&order=${order}`;
     const res = await fetch(url, {
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        Accept: single ? "application/vnd.pgrst.object+json" : "application/json",
-      },
+      headers: { ...getAuthHeaders(), Accept: single ? "application/vnd.pgrst.object+json" : "application/json" },
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
@@ -23,12 +88,7 @@ const sb = {
   async insert(table, data) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -37,12 +97,7 @@ const sb = {
   async update(table, data, filter) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: "PATCH",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -51,12 +106,7 @@ const sb = {
   async upsert(table, data, conflictCol="id") {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
       method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation,resolution=merge-duplicates",
-      },
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -65,10 +115,7 @@ const sb = {
   async delete(table, filter) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: "DELETE",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
+      headers: getAuthHeaders(),
     });
     if (!res.ok) throw new Error(await res.text());
     return true;
@@ -213,8 +260,8 @@ const GOALS = {
 // trend = change over last 4 weeks (positive = improving, negative = declining)
 const CORE_KPIS = [
   { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8" },
-  { id:"errors",    label:"Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
-  { id:"serveNeut", label:"Serve Neutralization",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
+  { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
+  { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
   { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
   { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
 ];
@@ -528,7 +575,7 @@ const NAV=[
   {id:"profile",label:"Profile",short:"Me"},
 ];
 
-const TopNav=({page,setPage})=>{
+const TopNav=({page,setPage,onSignOut,authUser})=>{
   const isMobile = useIsMobile();
   return(
     <div style={{background:C.navy,position:"sticky",top:0,zIndex:100,
@@ -574,21 +621,29 @@ const TopNav=({page,setPage})=>{
           })}
         </div>
 
-        {/* DUPR chip + avatar — desktop only */}
-        {!isMobile&&(
-          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-            <div style={{background:C.navyMid,borderRadius:10,padding:"6px 14px",
-              display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:11,color:"#94A3B8",textTransform:"uppercase",letterSpacing:"0.07em"}}>DUPR</span>
-              <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,color:C.pickle}}>—</span>
-              <span style={{fontSize:10,color:C.mint,fontWeight:700}}></span>
-            </div>
-            <div style={{width:36,height:36,borderRadius:"50%",
-              background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,fontWeight:700}}>ME</div>
+        {/* Avatar + sign out */}
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:8}}>
+          {/* User avatar with initial */}
+          <div style={{width:34,height:34,borderRadius:"50%",
+            background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontFamily:"'Bebas Neue'",fontSize:14,color:C.navy,fontWeight:700,
+            title:authUser?.email,cursor:"default",flexShrink:0}}>
+            {(authUser?.email||"?")[0].toUpperCase()}
           </div>
-        )}
+          {/* Sign out button */}
+          {!isMobile&&(
+            <button onClick={onSignOut} style={{
+              background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",
+              borderRadius:8,padding:"6px 12px",cursor:"pointer",
+              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:"#94A3B8",
+              transition:"all 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.color="white"}
+              onMouseLeave={e=>e.currentTarget.style.color="#94A3B8"}>
+              Sign Out
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -797,8 +852,8 @@ const Dashboard=({setPage})=>{
             {[
               {label:"NVZ Arrival",v:lastMatch.nvz_arrival||lastMatch.stats?.nvzArrival||0,color:C.mint},
               {label:"NVZ Win",    v:lastMatch.nvz_win||lastMatch.stats?.nvzWin||0,    color:C.blue},
-              {label:"Serve Neut.",v:lastMatch.serve_neut||lastMatch.stats?.serveNeut||0,     color:C.amber},
-              {label:"Errors",     v:lastMatch.errors||lastMatch.stats?.errors||0,       color:C.rose},
+              {label:"My Serve Neut.",v:lastMatch.serve_neut||lastMatch.stats?.serveNeut||0,     color:C.amber},
+              {label:"My Errors",  v:lastMatch.errors||lastMatch.stats?.errors||0,       color:C.rose},
             ].map(s=>(
               <div key={s.label} style={{background:C.pageBg,borderRadius:8,padding:"8px 10px"}}>
                 <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:2}}>{s.label}</div>
@@ -840,7 +895,7 @@ const Dashboard=({setPage})=>{
                 {[
                   {label:"Team NVZ",  value:bestPartner.nvz+"%",          color:C.mint},
                   {label:"Win Rate",  value:Math.round(bestPartner.wins/bestPartner.matches*100)+"%", color:C.pickle},
-                  {label:"Errors",    value:bestPartner.errors,            color:C.rose},
+                  {label:"My Errors", value:bestPartner.errors,            color:C.rose},
                   {label:"Role",      value:bestPartner.role,              color:C.purple},
                 ].map(function(s){ return (
                   <div key={s.label} style={{background:C.pageBg,borderRadius:8,padding:"8px 10px"}}>
@@ -925,8 +980,8 @@ const MatchHistoryContent=()=>{
   const shots=ALL_SHOTS_LIST.filter(sh=>selShots.includes(sh.id));
   const MATCH_KPIS=[
     { id:"winRate",    label:"Win Rate",            value:selMatch?.result==="W"?"WIN":"LOSS", numVal:selMatch?.result==="W"?100:0,  target:65,  unit:"%", higherIsBetter:true,  color:selMatch?.result==="W"?C.mint:C.rose, colorL:selMatch?.result==="W"?C.mintL:C.roseL, trendLabel:"this match" },
-    { id:"errors",     label:"Errors",              value:s.errors,   numVal:s.errors,   target:8,   unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
-    { id:"serveNeut",  label:"Serve Neutralization",value:`${s.serveNeut}%`, numVal:s.serveNeut, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
+    { id:"errors",     label:"My Errors",           value:s.errors,   numVal:s.errors,   target:8,   unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
+    { id:"serveNeut",  label:"My Serve Neut.",value:`${s.serveNeut}%`, numVal:s.serveNeut, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
     { id:"nvzArrival", label:"NVZ Arrival",         value:`${s.nvzArrival}%`,numVal:s.nvzArrival,target:80,  unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
     { id:"nvzWin",     label:"NVZ Win Rate",        value:`${s.nvzWin}%`,    numVal:s.nvzWin,    target:65,  unit:"%", higherIsBetter:true,  color:C.blue,   colorL:C.blueL },
   ];
@@ -1057,8 +1112,8 @@ const MatchHistoryContent=()=>{
                 {[
                   {label:"NVZ Arrival",    val:nvzArrived, set:setNvzArrived, color:C.mint},
                   {label:"NVZ Win Rate",   val:nvzWon,     set:setNvzWon,     color:C.blue},
-                  {label:"Serve Neut.",    val:serveNeut,  set:setServeNeut,  color:C.amber},
-                  {label:"Errors",         val:errors,     set:setErrors,     color:C.rose},
+                  {label:"My Serve Neut.", val:serveNeut,  set:setServeNeut,  color:C.amber},
+                  {label:"My Errors",      val:errors,     set:setErrors,     color:C.rose},
                 ].map(({label,val,set,color})=>(
                   <div key={label} style={{display:"flex",justifyContent:"space-between",
                     alignItems:"center",background:C.cardBg,borderRadius:8,padding:"8px 12px"}}>
@@ -1281,7 +1336,7 @@ const PartnersContent=()=>{
   const getTeamKPIs=(p)=>!p?[]:[
     { id:"winRate",    label:"Win Rate Together",    value:`${Math.round(p.wins/p.matches*100)}%`, numVal:Math.round(p.wins/p.matches*100), target:65, unit:"%", higherIsBetter:true,  color:C.pickle, colorL:"#F5FAE8" },
     { id:"errors",     label:"Team Errors / Match",  value:p.errors,  numVal:p.errors,  target:8,  unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
-    { id:"serveNeut",  label:"Serve Neutralization", value:p.serve>0?`${p.serve}%`:"—", numVal:p.serve||null, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
+    { id:"serveNeut",  label:"My Serve Neut.", value:p.serve>0?`${p.serve}%`:"—", numVal:p.serve||null, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
     { id:"nvzArrival", label:"Team NVZ Arrival",     value:`${p.nvz}%`, numVal:p.nvz,   target:80, unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
     { id:"nvzWin",     label:"Team NVZ Win Rate",    value:p.nvzWin>0?`${p.nvzWin}%`:"—", numVal:p.nvzWin||null, target:65, unit:"%", higherIsBetter:true, color:C.blue, colorL:C.blueL },
   ];
@@ -1452,7 +1507,7 @@ const PartnersContent=()=>{
                       {[
                         {label:"Win Rate", val:`${winRate}%`, color:winRate>=65?C.mint:C.rose},
                         {label:"NVZ Arrival", val:`${nvz}%`, color:nvz>=75?C.mint:C.amber},
-                        {label:"Errors/Match", val:errors, color:errors<=5?C.mint:C.rose},
+                        {label:"My Errors", val:errors, color:errors<=5?C.mint:C.rose},
                       ].map(s=>(
                         <div key={s.label} style={{flex:1,textAlign:"center"}}>
                           <div style={{fontFamily:"'DM Mono'",fontSize:18,fontWeight:700,color:s.color}}>{s.val}</div>
@@ -1890,8 +1945,8 @@ Total Matches: ${totalMatches} | Record: ${wins}W-${totalMatches-wins}L (${winPc
 PERFORMANCE AVERAGES (across all matches):
 - NVZ Arrival: ${avgNvz}% (target >80%)
 - NVZ Win Rate: ${avgNvzWin}% (target >65%)
-- Serve Neutralization: ${avgServe}% (target >70%)
-- Unforced Errors/match: ${avgErrors} (target <8)
+- My Serve Neutralization: ${avgServe}% (target >70%)
+- My Unforced Errors/match: ${avgErrors} (target <8)
 
 SHOT DATA:
 - Best shots (most wins): ${topWin||"no shot data yet"}
@@ -2430,7 +2485,7 @@ const Profile=({setPage})=>{
               {label:"Avg Errors",   value:CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—", color:C.rose},
               {label:"NVZ Arrival",  value:CORE_KPIS[3].value, color:C.mint},
               {label:"NVZ Win Rate", value:CORE_KPIS[4].value, color:C.blue},
-              {label:"Serve Neut.",  value:CORE_KPIS[2].value, color:C.amber},
+              {label:"My Serve Neut.",  value:CORE_KPIS[2].value, color:C.amber},
             ].map(s=>(
               <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"10px 12px"}}>
                 <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>{s.label}</div>
@@ -2475,8 +2530,8 @@ const Profile=({setPage})=>{
         <div style={{display:"flex",flexDirection:"column",gap:0}}>
           {[
             {id:"winRate",   label:"Win Rate",            current:CORE_KPIS[0].numVal||0, unit:"%",  min:50, max:100, higherIsBetter:true,  color:C.pickle, desc:"% of matches won"},
-            {id:"errors",    label:"Errors / Match",       current:CORE_KPIS[1].numVal||0, unit:"",  min:2,  max:20,  higherIsBetter:false, color:C.rose,   desc:"Combined unforced per match (lower = better)"},
-            {id:"serveNeut", label:"Serve Neutralization", current:CORE_KPIS[2].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.amber,  desc:"% of serves preventing offensive returns"},
+            {id:"errors",    label:"My Errors / Match",       current:CORE_KPIS[1].numVal||0, unit:"",  min:2,  max:20,  higherIsBetter:false, color:C.rose,   desc:"Your personal unforced errors per match (lower = better)"},
+            {id:"serveNeut", label:"My Serve Neut.", current:CORE_KPIS[2].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.amber,  desc:"% of YOUR serves/returns preventing opponent attacks"},
             {id:"nvzArrival",label:"NVZ Arrival",          current:CORE_KPIS[3].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.mint,   desc:"% of rallies both players reach the kitchen"},
             {id:"nvzWin",    label:"NVZ Win Rate",         current:CORE_KPIS[4].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.blue,   desc:"% of kitchen rallies your team wins"},
           ].map((m,i,arr)=>{
@@ -2742,7 +2797,7 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
     try {
       const existing = await sb.query("profile",{select:"player_name",filter:`player_name=ilike.${encodeURIComponent(name)}`});
       if(!Array.isArray(existing)||existing.length===0) {
-        await sb.insert("profile", { player_name: name });
+        await sb.insert("profile", { player_name: name, user_id: getCurrentUserId() });
         setAllPlayers(prev=>[...prev, {player_name:name}]);
       }
       addChip(name);
@@ -3054,12 +3109,12 @@ const LogMatchContent=()=>{
                   <div style={{fontSize:9,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ No</div>
                 </div>
               </div>
-              {/* Serve Neutralization */}
+              {/* My Serve Neutralization (individual) */}
               {(()=>{const hd=servNeut>0||servFailed>0; return(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
                   padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.pickle}08`:C.cardBg}}>
                   <div>
-                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>Serve Neut.</div>
+                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>My Serve Neut.</div>
                     <div style={{fontSize:9,color:servTotal>0?C.amber:C.textLight,fontFamily:servTotal>0?"'DM Mono'":"'Outfit'",fontWeight:servTotal>0?700:400}}>{servTotal>0?serve+"%":"Couldn't attack?"}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
@@ -3080,7 +3135,7 @@ const LogMatchContent=()=>{
                   padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.rose}08`:C.cardBg}}>
                   <div>
                     <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>Errors</div>
-                    <div style={{fontSize:9,color:C.textLight}}>Unforced errors</div>
+                    <div style={{fontSize:9,color:C.textLight}}>My unforced errors</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
                     <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
@@ -3227,6 +3282,7 @@ const LogMatchContent=()=>{
           try {
             // 1. Save match to Supabase
             const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+            const userId = getCurrentUserId();
             await sb.insert("matches", {
               date: dateFormatted,
               opponent, partner, result, score, notes,
@@ -3235,6 +3291,7 @@ const LogMatchContent=()=>{
               serve_neut: serve,
               errors: parseFloat(errors),
               partner_role: partnerRole,
+              user_id: userId,
             });
 
             // 2. Save shot stats to Supabase (upsert each shot)
@@ -3263,6 +3320,7 @@ const LogMatchContent=()=>{
                 tip:   shotMeta?.tip   || "",
                 color: cat?.color      || C.blue,
                 icon:  cat?.icon       || "🎾",
+                user_id: getCurrentUserId(),
               }, "name");
             }
             setSaved(true);
@@ -3342,7 +3400,7 @@ const FAQS = [
   { q:"What is NVZ Arrival and why does it matter?",
     a:"NVZ Arrival is the percentage of rallies where both you and your partner reach the Non-Volley Zone (kitchen line). Research shows teams who arrive at the NVZ together win significantly more rallies — elite 4.0+ players target 80%+." },
   { q:"What does Serve Neutralization mean?",
-    a:"Serve Neutralization measures the percentage of serves and return exchanges where your opponent cannot hit an offensive shot. A high rate means your serve or return is forcing weak responses." },
+    a:"Serve Neutralization measures the percentage of YOUR serves and returns where the opponent cannot attack. It's tracked individually — not as a team stat — so it reflects your personal serving and return quality." },
   { q:"How do I pin Priority Drills?",
     a:"Go to the Shot Analytics page and click the 📌 Focus button on any shot row. You can pin up to 3 shots. They'll appear on your Dashboard and Profile with target sliders to track progress." },
   { q:"What is the Synergy Score?",
@@ -3541,15 +3599,244 @@ const HelpModal = ({onClose}) => {
 };
 
 // ── ROOT ──────────────────────────────────────────────────────────────────────
+
+// ── Login / Signup Screen ─────────────────────────────────────────────────────
+function LoginScreen({ onAuth }) {
+  const [mode, setMode]       = useState("login"); // "login" | "signup" | "reset"
+  const [email, setEmail]     = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
+  const [success, setSuccess] = useState("");
+
+  const submit = async () => {
+    setError(""); setSuccess("");
+    if (!email.trim() || (!password && mode !== "reset")) { setError("Please fill in all fields."); return; }
+    if (mode === "signup" && password !== confirm) { setError("Passwords don't match."); return; }
+    if (password && password.length < 6 && mode !== "reset") { setError("Password must be at least 6 characters."); return; }
+    setLoading(true);
+    try {
+      if (mode === "login") {
+        const data = await sb.signIn(email.trim(), password);
+        onAuth(data);
+      } else if (mode === "signup") {
+        const data = await sb.signUp(email.trim(), password);
+        // Supabase may require email confirmation depending on settings
+        if (data.access_token) {
+          onAuth(data);
+        } else {
+          setSuccess("Account created! Check your email to confirm your account, then log in.");
+          setMode("login");
+        }
+      } else if (mode === "reset") {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim() }),
+        });
+        if (res.ok) setSuccess("Password reset email sent! Check your inbox.");
+        else setError("Couldn't send reset email. Check the address and try again.");
+        setMode("login");
+      }
+    } catch(e) {
+      setError(e.message || "Something went wrong. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    width:"100%", background:"#F4F7F4", border:`1px solid #E5E9F0`,
+    borderRadius:12, padding:"13px 16px", color:"#111827", fontSize:15,
+    fontFamily:"'Outfit'", boxSizing:"border-box", outline:"none",
+  };
+
+  return (
+    <div style={{minHeight:"100vh", background:`linear-gradient(135deg, #0A1628 0%, #162440 60%, #0A1628 100%)`,
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      padding:20, fontFamily:"'Outfit', sans-serif"}}>
+
+      {/* Logo */}
+      <div style={{marginBottom:40, textAlign:"center"}}>
+        <div style={{fontFamily:"'Bebas Neue'", fontSize:48, letterSpacing:"0.08em", lineHeight:1}}>
+          <span style={{color:"white"}}>PICKLE</span>
+          <span style={{color:C.pickle}}>INTEL</span>
+        </div>
+        <div style={{color:"#64748B", fontSize:14, marginTop:6, letterSpacing:"0.04em"}}>
+          Patient · NVZ-first · data-driven
+        </div>
+      </div>
+
+      {/* Card */}
+      <div style={{background:"white", borderRadius:24, padding:"36px 32px", width:"100%",
+        maxWidth:420, boxShadow:"0 24px 60px rgba(0,0,0,0.4)"}}>
+
+        {/* Tab switcher */}
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:4,
+          background:"#F4F7F4", borderRadius:12, padding:4, marginBottom:28}}>
+          {[["login","Log In"],["signup","Sign Up"]].map(([m,lbl])=>(
+            <button key={m} onClick={()=>{setMode(m);setError("");setSuccess("");}}
+              style={{padding:"10px", borderRadius:9, border:"none", cursor:"pointer",
+                fontFamily:"'Outfit'", fontWeight:700, fontSize:14, transition:"all 0.15s",
+                background:mode===m?"white":"transparent",
+                color:mode===m?C.navy:"#9CA3AF",
+                boxShadow:mode===m?"0 1px 4px rgba(0,0,0,0.12)":"none"}}>{lbl}</button>
+          ))}
+        </div>
+
+        <div style={{display:"flex", flexDirection:"column", gap:14}}>
+          {/* Email */}
+          <div>
+            <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
+              textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
+              Email
+            </label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              placeholder="you@example.com" style={inputStyle}
+              onKeyDown={e=>e.key==="Enter"&&submit()}/>
+          </div>
+
+          {/* Password */}
+          {mode !== "reset" && (
+            <div>
+              <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
+                textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
+                Password
+              </label>
+              <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+                placeholder={mode==="signup"?"At least 6 characters":"••••••••"} style={inputStyle}
+                onKeyDown={e=>e.key==="Enter"&&submit()}/>
+            </div>
+          )}
+
+          {/* Confirm password for signup */}
+          {mode === "signup" && (
+            <div>
+              <label style={{fontSize:12, fontWeight:600, color:"#6B7280",
+                textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:6}}>
+                Confirm Password
+              </label>
+              <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)}
+                placeholder="Re-enter password" style={inputStyle}
+                onKeyDown={e=>e.key==="Enter"&&submit()}/>
+            </div>
+          )}
+
+          {/* Error / success */}
+          {error && (
+            <div style={{background:"#FEF0F3", border:"1px solid #F05A7A40", borderRadius:10,
+              padding:"10px 14px", fontSize:13, color:"#F05A7A"}}>{error}</div>
+          )}
+          {success && (
+            <div style={{background:"#E8FAF5", border:"1px solid #2DD4A040", borderRadius:10,
+              padding:"10px 14px", fontSize:13, color:"#2DD4A0"}}>{success}</div>
+          )}
+
+          {/* Submit */}
+          <button onClick={submit} disabled={loading} style={{
+            width:"100%", background:loading?"#E5E9F0":C.pickle, border:"none", borderRadius:12,
+            padding:"14px", fontFamily:"'Outfit'", fontWeight:700, fontSize:16,
+            color:C.navy, cursor:loading?"not-allowed":"pointer", marginTop:4,
+            transition:"all 0.15s"}}>
+            {loading ? "Please wait…" : mode==="login" ? "Log In" : mode==="signup" ? "Create Account" : "Send Reset Email"}
+          </button>
+
+          {/* Forgot password */}
+          {mode === "login" && (
+            <button onClick={()=>{setMode("reset");setError("");setSuccess("");}}
+              style={{background:"none", border:"none", color:"#9CA3AF", fontSize:13,
+                cursor:"pointer", fontFamily:"'Outfit'", textAlign:"center", padding:0}}>
+              Forgot your password?
+            </button>
+          )}
+
+          {mode === "reset" && (
+            <button onClick={()=>{setMode("login");setError("");}}
+              style={{background:"none", border:"none", color:"#9CA3AF", fontSize:13,
+                cursor:"pointer", fontFamily:"'Outfit'", textAlign:"center", padding:0}}>
+              ← Back to log in
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{color:"#334155", fontSize:12, marginTop:24, textAlign:"center", lineHeight:1.8}}>
+        By signing up you agree to our Terms of Service<br/>
+        Your data is private and never shared
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
-  const [page,setPage]       = useState("dashboard");
+  const [page,setPage]         = useState("dashboard");
   const [showHelp,setShowHelp] = useState(false);
+  const [authUser, setAuthUser] = useState(null);   // null = not logged in
+  const [authLoading, setAuthLoading] = useState(true); // checking stored session
+
+  // On mount: try to restore session from localStorage
+  useEffect(()=>{
+    (async()=>{
+      try {
+        const token   = localStorage.getItem("pi_token");
+        const refresh = localStorage.getItem("pi_refresh");
+        if (token) {
+          _authToken = token;
+          // Verify token is still valid
+          const user = await sb.getUser();
+          if (user?.id) { setAuthUser(user); }
+          else if (refresh) {
+            // Try refreshing
+            const data = await sb.refreshSession(refresh);
+            const refreshedUser = await sb.getUser();
+            if (refreshedUser?.id) setAuthUser(refreshedUser);
+          }
+        }
+      } catch(e) {
+        sb.signOut(); // clear bad tokens
+      }
+      setAuthLoading(false);
+    })();
+  },[]);
+
+  const handleAuth = (data) => {
+    // Called after successful login or signup
+    sb.getUser().then(user => { if(user?.id) setAuthUser(user); });
+  };
+
+  const handleSignOut = () => {
+    sb.signOut();
+    setAuthUser(null);
+    setPage("dashboard");
+  };
+
+  // Loading state while checking session
+  if (authLoading) return (
+    <div style={{minHeight:"100vh",background:"#0A1628",display:"flex",
+      alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:42,letterSpacing:"0.08em"}}>
+        <span style={{color:"white"}}>PICKLE</span>
+        <span style={{color:C.pickle}}>INTEL</span>
+      </div>
+      <div style={{color:"#64748B",fontSize:14}}>Loading…</div>
+    </div>
+  );
+
+  // Not logged in — show login screen
+  if (!authUser) return (
+    <>
+      <style>{STYLES}</style>
+      <LoginScreen onAuth={handleAuth}/>
+    </>
+  );
+
+  // Logged in — show the full app
   return(
     <>
       <style>{STYLES}</style>
       {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
       <div style={{minHeight:"100vh",background:C.pageBg,display:"flex",flexDirection:"column",overflowX:"hidden",width:"100%"}}>
-        <TopNav page={page} setPage={setPage}/>
+        <TopNav page={page} setPage={setPage} onSignOut={handleSignOut} authUser={authUser}/>
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
