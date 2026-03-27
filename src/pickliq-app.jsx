@@ -3445,14 +3445,22 @@ function VideoLoggerContent() {
     setUploading(false);
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  const processFile = (file) => {
     if(!file) return;
-    if(!file.type.startsWith("video/")) { setUploadErr("Please select a video file."); return; }
+    setUploadErr("");
+    // Check size (500MB limit)
     if(file.size > 500 * 1024 * 1024) { setUploadErr("File must be under 500MB."); return; }
+    // Accept video/* OR common video extensions (some files have blank MIME type)
+    const isVideo = file.type.startsWith("video/") ||
+      /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
+    if(!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
     setVideoFile(file);
-    setVideoUrl(URL.createObjectURL(file)); // preview locally while uploading
+    setVideoUrl(URL.createObjectURL(file));
     uploadVideo(file);
+  };
+
+  const handleFileChange = (e) => {
+    processFile(e.target.files[0]);
   };
 
   // Log a shot at current video timestamp
@@ -3514,7 +3522,7 @@ function VideoLoggerContent() {
           {matches.length===0 && <option value="">No matches yet — log one first</option>}
           {matches.map(m=>(
             <option key={m.id} value={m.id}>
-              {m.date} vs {m.opponent||"Unknown"} ({m.result==="W"?"W":"L"})
+              {m.date||"No date"} vs {m.opponent&&m.opponent!=="—"?m.opponent:"Unknown opponent"} · {m.result==="W"?"Win":"Loss"} {m.score?`${m.score}`:""}
             </option>
           ))}
         </select>
@@ -3524,6 +3532,28 @@ function VideoLoggerContent() {
       <Card style={{padding:"16px 20px"}}>
         <SLabel>Step 2 — Upload Video</SLabel>
         {!videoUrl ? (
+          <div>
+            {/* URL input for PlaySight / external links */}
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
+                letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Paste a video URL (optional)</div>
+              <div style={{display:"flex",gap:8}}>
+                <input type="text" id="videoUrlInput"
+                  placeholder="https://... (direct .mp4 link)"
+                  style={{flex:1,background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}/>
+                <button onClick={()=>{
+                  const url = document.getElementById("videoUrlInput").value.trim();
+                  if(url) setVideoUrl(url);
+                }} style={{padding:"9px 16px",background:C.navy,border:"none",borderRadius:10,
+                  color:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                  Load
+                </button>
+              </div>
+              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>
+                Or upload a file below ↓
+              </div>
+            </div>
           <label style={{display:"block",cursor:"pointer"}}>
             <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"40px 20px",
               textAlign:"center",background:C.pageBg,transition:"all 0.2s"}}
@@ -3532,9 +3562,7 @@ function VideoLoggerContent() {
               onDrop={e=>{
                 e.preventDefault();
                 e.currentTarget.style.borderColor=C.border;
-                const f=e.dataTransfer.files[0];
-                if(f){ const inp=document.createElement("input"); inp.files=[f];
-                  handleFileChange({target:{files:[f]}}); }
+                processFile(e.dataTransfer.files[0]);
               }}>
               <div style={{fontSize:40,marginBottom:12}}>🎬</div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>
@@ -3546,6 +3574,7 @@ function VideoLoggerContent() {
             </div>
             <input type="file" accept="video/*" onChange={handleFileChange} style={{display:"none"}}/>
           </label>
+          </div>
         ) : (
           <div>
             <video ref={videoRef} src={videoUrl} controls
