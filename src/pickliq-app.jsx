@@ -1598,6 +1598,9 @@ const Shots = () => {
                 shot.attempts    = row.attempts    || 0;
                 shot.wins        = row.wins        || 0;
                 shot.misses      = row.misses      || 0;
+                shot.posCount    = row.pos_count   || 0;
+                shot.neuCount    = row.neu_count   || 0;
+                shot.negCount    = row.neg_count   || 0;
                 shot.winHistory  = row.win_history  || [0,0,0,0];
                 shot.missHistory = row.miss_history || [0,0,0,0];
                 if (row.tip) shot.tip = row.tip;
@@ -1788,19 +1791,22 @@ const Shots = () => {
 
       {/* ── SORTABLE TABLE ── */}
       <Card style={{ padding:0, overflow:"hidden" }}>
-        {/* Header — no trend columns, tip lives under shot name */}
+        {/* Header */}
         <div style={{
           display:"grid",
-          gridTemplateColumns:"36px 1fr 90px 90px 90px",
-          gap:10, padding:"10px 18px",
+          gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
+          gap:8, padding:"10px 18px",
           borderBottom:`2px solid ${C.border}`, background:C.pageBg,
           alignItems:"center"
         }}>
           <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯</div>
-          <ColHeader col="name"     label="Shot / Tip"  />
-          <ColHeader col="category" label="Category"    />
-          <ColHeader col="wins"     label="Pts Won"  align="center"/>
-          <ColHeader col="misses"   label="Pts Lost" align="center"/>
+          <ColHeader col="name"     label="Shot / Tip" />
+          <ColHeader col="category" label="Category"   />
+          <ColHeader col="wins"     label="Rally Won"  align="center"/>
+          <ColHeader col="misses"   label="Rally Lost" align="center"/>
+          <div style={{fontSize:10,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Pos</div>
+          <div style={{fontSize:10,color:C.textMid,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>– Neu</div>
+          <div style={{fontSize:10,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ Neg</div>
         </div>
 
         {/* Rows */}
@@ -1813,8 +1819,8 @@ const Shots = () => {
           return (
             <div key={shot.name} style={{
               display:"grid",
-              gridTemplateColumns:"36px 1fr 90px 90px 90px",
-              gap:10, padding:"12px 18px",
+              gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
+              gap:8, padding:"12px 18px",
               borderBottom:`1px solid ${C.border}`,
               background:isPinned?`${C.pickle}08`:i%2===0?C.cardBg:"#FAFBFC",
               alignItems:"start", transition:"background 0.15s"
@@ -1857,28 +1863,44 @@ const Shots = () => {
                 <span>{shot.icon}</span>{shot.category}
               </div>
 
-              {/* Pts Won + trend if available */}
+              {/* Rally Won */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
-                  color:shot.wins>=15?C.mint:shot.wins>=8?C.amber:C.textMid}}>{shot.wins}</span>
-                {hasTrend
-                  ? <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
-                      {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
-                    </span>
-                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
-                }
+                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                  color:shot.wins>0?C.mint:C.textLight}}>{shot.wins||"—"}</span>
+                {hasTrend && (
+                  <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
+                    {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
+                  </span>
+                )}
               </div>
 
-              {/* Pts Lost + trend if available */}
+              {/* Rally Lost */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
-                  color:shot.misses>=10?C.rose:shot.misses>=6?C.amber:C.textMid}}>{shot.misses}</span>
-                {hasTrend
-                  ? <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
-                      {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
-                    </span>
-                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
-                }
+                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                  color:shot.misses>0?C.rose:C.textLight}}>{shot.misses||"—"}</span>
+                {hasTrend && (
+                  <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
+                    {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
+                  </span>
+                )}
+              </div>
+
+              {/* Positive count */}
+              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                  color:(shot.posCount||0)>0?C.mint:C.textLight}}>{shot.posCount||"—"}</span>
+              </div>
+
+              {/* Neutral count */}
+              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                  color:(shot.neuCount||0)>0?C.textMid:C.textLight}}>{shot.neuCount||"—"}</span>
+              </div>
+
+              {/* Negative count */}
+              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
+                  color:(shot.negCount||0)>0?C.rose:C.textLight}}>{shot.negCount||"—"}</span>
               </div>
 
             </div>
@@ -3510,30 +3532,54 @@ function VideoLoggerContent() {
     setSaving(true);
     try {
       const uid = getCurrentUserId();
-      const upsertShot = async (name, winAdd, missAdd, attAdd) => {
-        const cat = SHOT_CATS.find(c => c.shots.some(s => s.name === name));
-        let ex = null;
-        try { ex = await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); } catch(e) {}
-        const att = attAdd !== undefined ? attAdd : winAdd + missAdd;
-        await sb.upsert("shots", {
-          name, category: cat?.label || "",
-          attempts: (ex?.attempts || 0) + att,
-          wins:     (ex?.wins    || 0) + winAdd,
-          misses:   (ex?.misses  || 0) + missAdd,
-          win_history:  [...((ex?.win_history)  || [0,0,0,0]).slice(1), winAdd  > 0 ? 100 : 0],
-          miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), missAdd > 0 ? 100 : 0],
-          color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
-        }, "user_id,name");
+      // Fetch existing shot record
+      const fetchEx = async (name) => {
+        try { return await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); }
+        catch(e) { return null; }
       };
+
+      // Shot Tracker: writes pos_count / neu_count / neg_count + attempts
       if (hasShots) {
         for (const [name, d] of Object.entries(shotData)) {
           const total = d.pos + d.neu + d.neg;
-          if (total > 0) await upsertShot(name, d.pos, d.neg, total);
+          if (total === 0) continue;
+          const cat = SHOT_CATS.find(c => c.shots.some(s => s.name === name));
+          const ex  = await fetchEx(name);
+          await sb.upsert("shots", {
+            name, category: cat?.label || "",
+            attempts:  (ex?.attempts  || 0) + total,
+            wins:      ex?.wins   || 0,
+            misses:    ex?.misses || 0,
+            pos_count: (ex?.pos_count || 0) + d.pos,
+            neu_count: (ex?.neu_count || 0) + d.neu,
+            neg_count: (ex?.neg_count || 0) + d.neg,
+            win_history:  ex?.win_history  || [0,0,0,0],
+            miss_history: ex?.miss_history || [0,0,0,0],
+            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+          }, "user_id,name");
         }
       }
+
+      // Rally Ender: writes wins / misses only
       if (hasRally) {
         for (const [name, d] of Object.entries(rallyData)) {
-          if (d.won + d.lost > 0) await upsertShot(name, d.won, d.lost);
+          if (d.won + d.lost === 0) continue;
+          const cat = SHOT_CATS.find(c => c.shots.some(s => s.name === name));
+          const ex  = await fetchEx(name);
+          const winAdd  = d.won;
+          const missAdd = d.lost;
+          await sb.upsert("shots", {
+            name, category: cat?.label || "",
+            attempts:  (ex?.attempts || 0) + winAdd + missAdd,
+            wins:      (ex?.wins     || 0) + winAdd,
+            misses:    (ex?.misses   || 0) + missAdd,
+            pos_count: ex?.pos_count || 0,
+            neu_count: ex?.neu_count || 0,
+            neg_count: ex?.neg_count || 0,
+            win_history:  [...((ex?.win_history)  || [0,0,0,0]).slice(1), winAdd  > 0 ? 100 : 0],
+            miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), missAdd > 0 ? 100 : 0],
+            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+          }, "user_id,name");
         }
       }
       // Also update the match record with the in-match metrics
