@@ -3397,6 +3397,13 @@ function VideoLoggerContent() {
   const toggleShots = () => { const v = !trackShots; setTrackShots(v); savePref("pi_track_shots", v); };
   const toggleRally = () => { const v = !trackRally; setTrackRally(v); savePref("pi_track_rally", v); };
 
+  // ── In-match metrics ─────────────────────────────────────────────────────────
+  const [nvzArrived,  setNvzArrived]  = useState(0); // rallies both reached NVZ
+  const [nvzTotal,    setNvzTotal]    = useState(0); // total rallies for NVZ %
+  const [nvzWon,      setNvzWon]      = useState(0); // NVZ rallies won
+  const [nvzWonTotal, setNvzWonTotal] = useState(0); // NVZ rallies for win rate %
+  const [errors,      setErrors]      = useState(0); // unforced errors
+
   // ── Shot Tracker data: { shotName: { pos, neu, neg } } ───────────────────────
   const [shotData, setShotData] = useState({});
 
@@ -3528,6 +3535,22 @@ function VideoLoggerContent() {
         for (const [name, d] of Object.entries(rallyData)) {
           if (d.won + d.lost > 0) await upsertShot(name, d.won, d.lost);
         }
+      }
+      // Also update the match record with the in-match metrics
+      const serveReturnShots = ["Serve","Return BH","Return FH"];
+      const srNeuPos = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; }, 0);
+      const srTotal  = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; }, 0);
+      const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : 0;
+      const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived  / nvzTotal)    * 100) : 0;
+      const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon      / nvzWonTotal) * 100) : 0;
+      if (savedMatchId) {
+        await sb.upsert("matches", {
+          id: savedMatchId,
+          nvz_arrival: nvzArr,
+          nvz_win:     nvzWinR,
+          serve_neut:  serveNeut,
+          errors:      errors,
+        }, "id");
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -3836,10 +3859,103 @@ function VideoLoggerContent() {
               <video ref={videoRef} src={videoUrl} controls
                 style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
               {uploading && <div style={{ marginTop: 6, fontSize: 12, color: C.amber, textAlign: "center" }}>⏳ Uploading to cloud...</div>}
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); }}
+              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
+
+              {/* ── In-match metrics ── */}
+              {(() => {
+                // Auto-calc serve neut from Shot Tracker data
+                const srShots = ["Serve","Return BH","Return FH"];
+                const srNeuPos = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; },0);
+                const srTotal  = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; },0);
+                const serveNeut = srTotal > 0 ? Math.round((srNeuPos/srTotal)*100) : null;
+                const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived/nvzTotal)*100)    : null;
+                const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon/nvzWonTotal)*100)      : null;
+
+                // Counter row: label + − count + button
+                const MetricCounter = ({label, color, colorL, val, onDec, onInc, total, suffix=""}) => (
+                  <div style={{flex:1, background:colorL, border:`1.5px solid ${color}30`, borderRadius:10, padding:"10px 12px"}}>
+                    <div style={{fontSize:10, fontWeight:700, color, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6}}>{label}</div>
+                    <div style={{display:"flex", alignItems:"center", gap:6}}>
+                      <button onClick={onDec} style={{width:26,height:26,borderRadius:6,border:`1px solid ${color}40`,background:"white",fontSize:15,color:color,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>−</button>
+                      <span style={{fontFamily:"'DM Mono'",fontSize:18,fontWeight:700,color,minWidth:28,textAlign:"center"}}>{val}</span>
+                      <button onClick={onInc} style={{width:26,height:26,borderRadius:6,border:`1.5px solid ${color}`,background:color,fontSize:15,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>+</button>
+                      {total !== undefined && <span style={{fontSize:10,color,fontWeight:600,marginLeft:2}}>/ {total}</span>}
+                      {suffix && <span style={{fontSize:10,color,fontWeight:600,marginLeft:2}}>{suffix}</span>}
+                    </div>
+                    {total !== undefined && total > 0 && (
+                      <div style={{marginTop:4,fontSize:11,fontWeight:700,color}}>{Math.round(val/total*100)}%</div>
+                    )}
+                  </div>
+                );
+
+                return (
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>In-Match Metrics</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                      {/* NVZ Arrival */}
+                      <div style={{background:C.mintL, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"10px 12px"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Arrival</div>
+                        <div style={{fontSize:10,color:C.textLight,marginBottom:8,lineHeight:1.4}}>Rallies both reached kitchen</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
+                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Arrived:</span>
+                          <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.mint,minWidth:20,textAlign:"center"}}>{nvzArrived}</span>
+                          <button onClick={()=>{ setNvzArrived(nvzArrived+1); if(nvzArrived>=nvzTotal) setNvzTotal(nvzTotal+1); }} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.mint}`,background:C.mint,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
+                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Total:</span>
+                          <button onClick={()=>setNvzTotal(Math.max(nvzArrived,nvzTotal-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.mint,minWidth:20,textAlign:"center"}}>{nvzTotal}</span>
+                          <button onClick={()=>setNvzTotal(nvzTotal+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.mint}`,background:C.mint,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+                        </div>
+                        <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.mint}}>{nvzArr !== null ? nvzArr+"%" : "—"}</div>
+                      </div>
+
+                      {/* NVZ Win Rate */}
+                      <div style={{background:C.blueL, border:`1.5px solid ${C.blue}30`, borderRadius:10, padding:"10px 12px"}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.blue,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Win Rate</div>
+                        <div style={{fontSize:10,color:C.textLight,marginBottom:8,lineHeight:1.4}}>Rallies won at kitchen</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
+                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Won:</span>
+                          <button onClick={()=>setNvzWon(Math.max(0,nvzWon-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.blue}40`,background:"white",fontSize:13,color:C.blue,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.blue,minWidth:20,textAlign:"center"}}>{nvzWon}</span>
+                          <button onClick={()=>{ setNvzWon(nvzWon+1); if(nvzWon>=nvzWonTotal) setNvzWonTotal(nvzWonTotal+1); }} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.blue}`,background:C.blue,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
+                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Total:</span>
+                          <button onClick={()=>setNvzWonTotal(Math.max(nvzWon,nvzWonTotal-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.blue}40`,background:"white",fontSize:13,color:C.blue,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.blue,minWidth:20,textAlign:"center"}}>{nvzWonTotal}</span>
+                          <button onClick={()=>setNvzWonTotal(nvzWonTotal+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.blue}`,background:C.blue,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+                        </div>
+                        <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.blue}}>{nvzWinR !== null ? nvzWinR+"%" : "—"}</div>
+                      </div>
+
+                      {/* Errors + Serve Neut (stacked) */}
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {/* Unforced Errors */}
+                        <div style={{background:C.roseL, border:`1.5px solid ${C.rose}30`, borderRadius:10, padding:"10px 12px",flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Errors</div>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                            <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                            <span style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.rose,minWidth:28,textAlign:"center"}}>{errors}</span>
+                            <button onClick={()=>setErrors(errors+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.rose}`,background:C.rose,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+                          </div>
+                          <div style={{fontSize:10,color:C.textLight}}>Unforced errors</div>
+                        </div>
+                        {/* Serve Neut — auto from Shot Tracker */}
+                        <div style={{background:C.amberL, border:`1.5px solid ${C.amber}30`, borderRadius:10, padding:"10px 12px",flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:C.amber,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>Serve Neut.</div>
+                          <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.amber}}>{serveNeut !== null ? serveNeut+"%" : "—"}</div>
+                          <div style={{fontSize:9,color:C.textLight,marginTop:2,lineHeight:1.4}}>Auto from Shot Tracker{srTotal>0?` (${srNeuPos}/${srTotal})`:""}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Session summary + Save */}
               {totalLogged > 0 && (
