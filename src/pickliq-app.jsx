@@ -1726,9 +1726,12 @@ const Shots = () => {
 
   // Sort
   const sortFns = {
-    name:   (a,b) => a.name.localeCompare(b.name),
-    wins:   (a,b) => a.wins   - b.wins,
-    misses: (a,b) => a.misses - b.misses,
+    name:      (a,b) => a.name.localeCompare(b.name),
+    wins:      (a,b) => a.wins   - b.wins,
+    misses:    (a,b) => a.misses - b.misses,
+    posCount:  (a,b) => (a.posCount||0) - (b.posCount||0),
+    neuCount:  (a,b) => (a.neuCount||0) - (b.neuCount||0),
+    negCount:  (a,b) => (a.negCount||0) - (b.negCount||0),
     winTrend:  (a,b) => (a.winHistory[3]-a.winHistory[0])  - (b.winHistory[3]-b.winHistory[0]),
     missTrend: (a,b) => (a.missHistory[3]-a.missHistory[0])-(b.missHistory[3]-b.missHistory[0]),
     category:  (a,b) => a.category.localeCompare(b.category),
@@ -1895,9 +1898,9 @@ const Shots = () => {
           <ColHeader col="category" label="Category"   />
           <ColHeader col="wins"     label="Rally Won"  align="center"/>
           <ColHeader col="misses"   label="Rally Lost" align="center"/>
-          <div style={{fontSize:10,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Pos</div>
-          <div style={{fontSize:10,color:C.textMid,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>– Neu</div>
-          <div style={{fontSize:10,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ Neg</div>
+          <ColHeader col="posCount" label="✓ Pos"      align="center"/>
+          <ColHeader col="neuCount" label="– Neu"      align="center"/>
+          <ColHeader col="negCount" label="✕ Neg"      align="center"/>
         </div>
 
         {/* Rows */}
