@@ -3502,8 +3502,8 @@ function VideoLoggerContent() {
     const isVideo = file.type.startsWith("video/") || /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
     if (!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
     setVideoFile(file);
+    // Show local preview immediately — match + upload happen on Save
     setVideoUrl(URL.createObjectURL(file));
-    saveMatchAndUpload(file);
   };
 
   // ── Logging actions ───────────────────────────────────────────────────────────
@@ -3527,13 +3527,54 @@ function VideoLoggerContent() {
 
   // ── Save all ──────────────────────────────────────────────────────────────────
   const saveAll = async () => {
-    if (!savedMatchId) { alert("Please upload a video first so the match is saved."); return; }
+    if (!videoFile && !videoUrl) { alert("Please upload a video first."); return; }
     const hasShots = trackShots && Object.keys(shotData).some(k => { const d = shotData[k]; return d.pos+d.neu+d.neg > 0; });
     const hasRally = trackRally && Object.keys(rallyData).some(k => { const d = rallyData[k]; return d.won+d.lost > 0; });
     if (!hasShots && !hasRally) { alert("Nothing logged yet."); return; }
     setSaving(true);
     try {
       const uid = getCurrentUserId();
+      if (!uid) { alert("Session expired — please sign out and sign back in."); setSaving(false); return; }
+
+      // Step 1: Save match record now (with all current field values)
+      let matchId = savedMatchId;
+      if (!matchId) {
+        const dateFormatted = new Date(date).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+        const rows = await sb.insert("matches", {
+          date: dateFormatted, opponent, partner, result, score, notes,
+          nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced", user_id: uid,
+        });
+        matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
+        setSavedMatchId(matchId);
+        setMatchSaved(true);
+      }
+
+      // Step 2: Upload video file to Supabase storage if it's a local file
+      if (videoFile && matchId) {
+        setUploading(true);
+        try {
+          const ext = videoFile.name.split(".").pop();
+          const path = `${uid}/${Date.now()}.${ext}`;
+          const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
+            method: "POST",
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": videoFile.type || "video/mp4" },
+            body: videoFile,
+          });
+          if (res.ok) {
+            const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
+              method: "POST",
+              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ expiresIn: 7200 }),
+            });
+            const signData = await signRes.json();
+            const cloudUrl = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
+            await sb.upsert("matches", { id: matchId, video_url: cloudUrl }, "id");
+          }
+        } catch(uploadErr) {
+          console.warn("Video upload failed, continuing with shot save:", uploadErr);
+        }
+        setUploading(false);
+      }
       // Fetch existing shot record
       const fetchEx = async (name) => {
         try { return await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); }
@@ -3591,9 +3632,9 @@ function VideoLoggerContent() {
       const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : 0;
       const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived  / nvzTotal)    * 100) : 0;
       const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon      / nvzWonTotal) * 100) : 0;
-      if (savedMatchId) {
+      if (matchId) {
         await sb.upsert("matches", {
-          id: savedMatchId,
+          id: matchId,
           nvz_arrival: nvzArr,
           nvz_win:     nvzWinR,
           serve_neut:  serveNeut,
@@ -3835,8 +3876,39 @@ function VideoLoggerContent() {
           <Toggle label="🏁 Rally Ender"  active={trackRally} onToggle={toggleRally} color={C.mint} />
           <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Saved automatically</div>
         </div>
+
+        {/* Guidance row — always visible */}
+        <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
+            padding: "9px 13px", background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 9 }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>🎯</span>
+            <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
+              <span style={{ fontWeight: 700, color: C.blue }}>Shot Tracker</span> — log every shot you hit during the rally.
+              Rate each one <span style={{ color: C.mint, fontWeight: 600 }}>positive</span>, <span style={{ color: C.textMid, fontWeight: 600 }}>neutral</span>, or <span style={{ color: C.rose, fontWeight: 600 }}>negative</span> based on shot quality.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
+            padding: "9px 13px", background: `${C.mint}08`, border: `1px solid ${C.mint}20`, borderRadius: 9 }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>🏁</span>
+            <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
+              <span style={{ fontWeight: 700, color: C.mint }}>Rally Ender</span> — log only the final shot that ended the rally.
+              Mark it <span style={{ color: C.mint, fontWeight: 600 }}>Won</span> or <span style={{ color: C.rose, fontWeight: 600 }}>Lost</span>.
+            </div>
+          </div>
+        </div>
+
+        {/* Both on warning */}
+        {trackShots && trackRally && (
+          <div style={{ marginTop: 8, padding: "8px 13px", background: `${C.amber}12`, border: `1px solid ${C.amber}40`, borderRadius: 9,
+            fontSize: 11, color: C.amber, lineHeight: 1.6 }}>
+            ⚠️ <span style={{ fontWeight: 700 }}>Both modes are on.</span> Do not log the same shot in both panels —
+            use Shot Tracker for all shots during the rally, and Rally Ender only for the final shot that ends it.
+            Logging the same shot twice will double-count it.
+          </div>
+        )}
+
         {!anyTracking && (
-          <div style={{ marginTop: 10, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
+          <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
             ⚠️ Turn on at least one tracking mode above.
           </div>
         )}
@@ -3907,7 +3979,7 @@ function VideoLoggerContent() {
               <video ref={videoRef} src={videoUrl} controls
                 style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
               {uploading && <div style={{ marginTop: 6, fontSize: 12, color: C.amber, textAlign: "center" }}>⏳ Uploading to cloud...</div>}
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); }}
+              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
