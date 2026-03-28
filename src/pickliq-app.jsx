@@ -3497,7 +3497,6 @@ function VideoLoggerContent() {
   // ── Video ─────────────────────────────────────────────────────────────────────
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl,  setVideoUrl]  = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
   const videoRef = useRef(null);
 
@@ -3544,47 +3543,7 @@ function VideoLoggerContent() {
   };
 
   // ── Upload helpers ────────────────────────────────────────────────────────────
-  const saveMatchAndUpload = async (file) => {
-    setMatchSaving(true); setMatchErr("");
-    try {
-      const uid = getCurrentUserId();
-      const dateFormatted = new Date(date).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
-      const rows = await sb.insert("matches", {
-        date: dateFormatted, opponent, partner, result, score, notes,
-        nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced", user_id: uid,
-      });
-      const newMatchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
-      setSavedMatchId(newMatchId);
-      setMatchSaved(true);
-      await uploadVideo(file, newMatchId);
-    } catch(e) { setMatchErr("Failed to save match: " + (e.message || "Unknown error")); }
-    setMatchSaving(false);
-  };
-
-  const uploadVideo = async (file, matchId) => {
-    setUploading(true); setUploadErr("");
-    try {
-      const uid = getCurrentUserId();
-      const ext = file.name.split(".").pop();
-      const path = `${uid}/${Date.now()}.${ext}`;
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": file.type || "video/mp4" },
-        body: file,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ expiresIn: 7200 }),
-      });
-      const signData = await signRes.json();
-      const url = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
-      setVideoUrl(url);
-      if (matchId) await sb.upsert("matches", { id: matchId, video_url: url }, "id");
-    } catch(e) { setUploadErr("Upload failed: " + (e.message || "Unknown error")); }
-    setUploading(false);
-  };
+  // Video is local-only for playback — not uploaded to Supabase storage
 
   const processFile = (file) => {
     if (!file) return;
@@ -3648,34 +3607,7 @@ function VideoLoggerContent() {
         setMatchSaved(true);
       }
 
-      // Step 2: Fire video upload in background — don't block shot saving
-      if (videoFile && matchId) {
-        const uid2 = uid; const matchId2 = matchId;
-        setUploading(true);
-        (async () => {
-          try {
-            const ext = videoFile.name.split(".").pop();
-            const path = `${uid2}/${Date.now()}.${ext}`;
-            const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
-              method: "POST",
-              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": videoFile.type || "video/mp4" },
-              body: videoFile,
-            });
-            if (res.ok) {
-              const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
-                method: "POST",
-                headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ expiresIn: 7200 }),
-              });
-              const signData = await signRes.json();
-              const cloudUrl = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
-              await sb.upsert("matches", { id: matchId2, video_url: cloudUrl }, "id");
-            }
-          } catch(e) { console.warn("Video upload failed:", e); }
-          setUploading(false);
-        })();
-        // Continue immediately — don't await the upload
-      }
+      // Video is local-only — not uploaded to storage (saves on storage costs)
       // Fetch existing shot record
       const fetchEx = async (name) => {
         try { return await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); }
@@ -4039,7 +3971,7 @@ function VideoLoggerContent() {
                 <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, color: C.navy, letterSpacing: "0.04em", marginBottom: 5 }}>Drop video here or click to browse</div>
                 <div style={{ fontSize: 12, color: C.textLight }}>MP4, MOV, AVI · Max 2GB</div>
-                {uploading && <div style={{ marginTop: 10, fontSize: 13, color: C.amber, fontWeight: 600 }}>⏳ Uploading...</div>}
+
                 {uploadErr && <div style={{ marginTop: 10, fontSize: 12, color: C.rose }}>{uploadErr}</div>}
               </div>
               <input type="file" accept="video/*" onChange={e => processFile(e.target.files[0])} style={{ display: "none" }} />
@@ -4079,7 +4011,7 @@ function VideoLoggerContent() {
               )}
               <video ref={videoRef} src={videoUrl} controls
                 style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
-              {uploading && <div style={{ marginTop: 6, fontSize: 12, color: C.amber, textAlign: "center" }}>⏳ Uploading to cloud...</div>}
+
               <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
