@@ -939,9 +939,23 @@ const MatchHistoryContent=()=>{
       .then(p=>{ if(p?.player_name) setProfileName(p.player_name.split(" ")[0]); })
       .catch(()=>{});
   },[]);
-  const [editMatch, setEditMatch] = useState(null); // match being edited
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState("");
+  const [editMatch,   setEditMatch]   = useState(null);
+  const [editSaving,  setEditSaving]  = useState(false);
+  const [editError,   setEditError]   = useState("");
+  const [deleteId,    setDeleteId]    = useState(null); // id pending confirmation
+  const [deleting,    setDeleting]    = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await sb.delete("matches", `id=eq.${deleteId}`);
+      setDeleteId(null);
+      if (sel?.id === deleteId) setSel(null);
+      loadMatches();
+    } catch(e) { alert("Delete failed: " + e.message); }
+    setDeleting(false);
+  };
 
   const loadMatches = () => {
     setLoading(true);
@@ -1177,6 +1191,35 @@ const MatchHistoryContent=()=>{
   return(
     <div>
       {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
+
+      {/* ── Delete confirmation modal ── */}
+      {deleteId && (
+        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
+          zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:400,
+            boxShadow:"0 20px 60px rgba(0,0,0,0.25)",textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>
+              Delete Match?
+            </div>
+            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,marginBottom:24}}>
+              This will permanently delete this match and all its data. This cannot be undone.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setDeleteId(null)} style={{
+                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${C.border}`,
+                background:C.pageBg,fontFamily:"'Outfit'",fontWeight:600,fontSize:14,
+                color:C.textMid,cursor:"pointer"}}>Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting} style={{
+                flex:1,padding:"12px",borderRadius:12,border:"none",
+                background:deleting?C.border:C.rose,fontFamily:"'Outfit'",fontWeight:700,
+                fontSize:14,color:"white",cursor:deleting?"not-allowed":"pointer"}}>
+                {deleting?"Deleting…":"Yes, Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
@@ -1185,10 +1228,22 @@ const MatchHistoryContent=()=>{
             <div key={m.id} className="row" onClick={()=>setSel(m)} style={{
               padding:"13px 18px",borderBottom:`1px solid ${C.border}`,
               background:selMatch?.id===m.id?C.pageBg:C.cardBg,
-              borderLeft:`3px solid ${selMatch?.id===m.id?C.pickle:"transparent"}`}}>
+              borderLeft:`3px solid ${selMatch?.id===m.id?C.pickle:"transparent"}`,
+              position:"relative"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                 <span style={{fontSize:11,color:C.textLight}}>{m.date}</span>
-                <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
+                  <button onClick={e=>{e.stopPropagation();setDeleteId(m.id);}} style={{
+                    width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,
+                    background:"transparent",color:C.textLight,cursor:"pointer",
+                    fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",
+                    lineHeight:1,transition:"all 0.15s",flexShrink:0}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;e.currentTarget.style.background=`${C.rose}10`;}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textLight;e.currentTarget.style.background="transparent";}}>
+                    🗑
+                  </button>
+                </div>
               </div>
               <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:2}}>vs {m.opponent}</div>
               <div style={{fontSize:11,color:C.textLight}}>w/ {m.partner} · {m.score}</div>
@@ -3549,31 +3604,33 @@ function VideoLoggerContent() {
         setMatchSaved(true);
       }
 
-      // Step 2: Upload video file to Supabase storage if it's a local file
+      // Step 2: Fire video upload in background — don't block shot saving
       if (videoFile && matchId) {
+        const uid2 = uid; const matchId2 = matchId;
         setUploading(true);
-        try {
-          const ext = videoFile.name.split(".").pop();
-          const path = `${uid}/${Date.now()}.${ext}`;
-          const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
-            method: "POST",
-            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": videoFile.type || "video/mp4" },
-            body: videoFile,
-          });
-          if (res.ok) {
-            const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
+        (async () => {
+          try {
+            const ext = videoFile.name.split(".").pop();
+            const path = `${uid2}/${Date.now()}.${ext}`;
+            const res = await fetch(`${SUPABASE_URL}/storage/v1/object/match-videos/${path}`, {
               method: "POST",
-              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ expiresIn: 7200 }),
+              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": videoFile.type || "video/mp4" },
+              body: videoFile,
             });
-            const signData = await signRes.json();
-            const cloudUrl = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
-            await sb.upsert("matches", { id: matchId, video_url: cloudUrl }, "id");
-          }
-        } catch(uploadErr) {
-          console.warn("Video upload failed, continuing with shot save:", uploadErr);
-        }
-        setUploading(false);
+            if (res.ok) {
+              const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`, {
+                method: "POST",
+                headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${_authToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ expiresIn: 7200 }),
+              });
+              const signData = await signRes.json();
+              const cloudUrl = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
+              await sb.upsert("matches", { id: matchId2, video_url: cloudUrl }, "id");
+            }
+          } catch(e) { console.warn("Video upload failed:", e); }
+          setUploading(false);
+        })();
+        // Continue immediately — don't await the upload
       }
       // Fetch existing shot record
       const fetchEx = async (name) => {
