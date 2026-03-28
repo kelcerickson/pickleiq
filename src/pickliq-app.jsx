@@ -15,6 +15,37 @@ const getCurrentUserId = () => {
     return payload.sub || null;
   } catch(e) { return null; }
 };
+
+// Check if token is expired or about to expire (within 5 minutes)
+const isTokenExpired = () => {
+  if (!_authToken) return true;
+  try {
+    const payload = JSON.parse(atob(_authToken.split(".")[1]));
+    const expiresAt = payload.exp * 1000; // convert to ms
+    return Date.now() > expiresAt - 5 * 60 * 1000; // refresh if <5min left
+  } catch(e) { return true; }
+};
+
+// Ensure token is fresh before any DB write — refreshes automatically if needed
+const ensureFreshToken = async () => {
+  if (!isTokenExpired()) return true;
+  try {
+    const refresh = localStorage.getItem("pi_refresh");
+    if (!refresh) return false;
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    const data = await res.json();
+    if (!res.ok) return false;
+    _authToken = data.access_token;
+    localStorage.setItem("pi_token", data.access_token);
+    localStorage.setItem("pi_refresh", data.refresh_token);
+    return true;
+  } catch(e) { return false; }
+};
+
 const getAuthHeaders = () => ({
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${_authToken || SUPABASE_KEY}`,
@@ -86,6 +117,7 @@ const sb = {
     return res.json();
   },
   async insert(table, data) {
+    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
@@ -104,6 +136,7 @@ const sb = {
     return res.json();
   },
   async upsert(table, data, conflictCol="id") {
+    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
@@ -113,6 +146,7 @@ const sb = {
     return res.json();
   },
   async delete(table, filter) {
+    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
@@ -1189,13 +1223,15 @@ const MatchHistoryContent=()=>{
     </div>
   );
   return(
-    <div>
+    <>
       {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
+      {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
 
-      {/* ── Delete confirmation modal ── */}
+      {/* ── Delete confirmation modal — rendered at fragment root so fixed positioning works ── */}
       {deleteId && (
-        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
-          zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,
+          background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
+          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:400,
             boxShadow:"0 20px 60px rgba(0,0,0,0.25)",textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
@@ -1220,7 +1256,7 @@ const MatchHistoryContent=()=>{
           </div>
         </div>
       )}
-      {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
+
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><SLabel>Recent Matches</SLabel></div>
@@ -1320,7 +1356,7 @@ const MatchHistoryContent=()=>{
 
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -3588,6 +3624,14 @@ function VideoLoggerContent() {
     if (!hasShots && !hasRally) { alert("Nothing logged yet."); return; }
     setSaving(true);
     try {
+      // Refresh token if expired before any DB writes
+      const refreshed = await ensureFreshToken();
+      if (!refreshed) {
+        alert("Your session has expired. Please sign out and sign back in.");
+        setSaving(false);
+        return;
+      }
+
       const uid = getCurrentUserId();
       if (!uid) { alert("Session expired — please sign out and sign back in."); setSaving(false); return; }
 
