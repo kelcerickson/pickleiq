@@ -3500,6 +3500,12 @@ function VideoLoggerContent() {
   // ── Video ─────────────────────────────────────────────────────────────────────
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl,  setVideoUrl]  = useState(null);
+  const [isIframe,  setIsIframe]  = useState(false); // true when URL is a web page (iframe), false for direct video file
+
+  const isEmbeddableUrl = (url) => {
+    // Detect web page URLs that should be iframed rather than played as video
+    return !url.match(/\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)(\?.*)?$/i);
+  };
   const [uploadErr, setUploadErr] = useState("");
   const videoRef = useRef(null);
 
@@ -3555,6 +3561,7 @@ function VideoLoggerContent() {
     const isVideo = file.type.startsWith("video/") || /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
     if (!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
     setVideoFile(file);
+    setIsIframe(false);
     // Show local preview immediately — match + upload happen on Save
     setVideoUrl(URL.createObjectURL(file));
   };
@@ -3965,10 +3972,12 @@ function VideoLoggerContent() {
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 11, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 5 }}>Paste a video URL (optional)</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input type="text" id="videoUrlInput3" placeholder="https://... (direct .mp4 link)"
+                <input type="text" id="videoUrlInput3" placeholder="Paste any video URL or PlaySight share link…"
                   style={{ flex: 1, background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 11px", color: C.text, fontSize: 13, fontFamily: "'Outfit'" }} />
-                <button onClick={() => { const url = document.getElementById("videoUrlInput3").value.trim(); if (url) setVideoUrl(url); }}
-                  style={{ padding: "8px 16px", background: C.navy, border: "none", borderRadius: 9, color: C.pickle, fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Load</button>
+                <button onClick={() => {
+                  const url = document.getElementById("videoUrlInput3").value.trim();
+                  if (url) { setIsIframe(isEmbeddableUrl(url)); setVideoUrl(url); }
+                }} style={{ padding: "8px 16px", background: C.navy, border: "none", borderRadius: 9, color: C.pickle, fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Load</button>
               </div>
             </div>
             <label style={{ display: "block", cursor: "pointer" }}>
@@ -4017,10 +4026,20 @@ function VideoLoggerContent() {
                   {flashMsg}
                 </div>
               )}
-              <video ref={videoRef} src={videoUrl} controls
-                style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
+              {isIframe ? (
+                <iframe
+                  src={videoUrl}
+                  style={{ width: "100%", height: 460, borderRadius: 10, border: "none", background: "#000" }}
+                  allowFullScreen
+                  allow="autoplay; fullscreen"
+                  title="Match Video"
+                />
+              ) : (
+                <video ref={videoRef} src={videoUrl} controls
+                  style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
+              )}
 
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
+              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setIsIframe(false); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
