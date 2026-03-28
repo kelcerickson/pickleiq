@@ -2781,8 +2781,8 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
   useEffect(()=>{
     (async()=>{
       try {
-        const rows = await sb.query("profile", { select:"player_name,dupr" });
-        setAllPlayers(Array.isArray(rows) ? rows : []);
+        const rows = await sb.query("players", { select:"name,dupr", order:"name.asc" });
+        setAllPlayers(Array.isArray(rows) ? rows.map(r=>({player_name:r.name, dupr:r.dupr})) : []);
       } catch(e){}
     })();
   }, []);
@@ -2831,13 +2831,15 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
     if(!name || saving) return;
     setSaving(true);
     try {
-      const existing = await sb.query("profile",{select:"player_name",filter:`player_name=ilike.${encodeURIComponent(name)}`});
-      if(!Array.isArray(existing)||existing.length===0) {
-        await sb.insert("profile", { player_name: name, user_id: getCurrentUserId() });
+      // Check if player already exists in shared players table
+      const existing = await sb.query("players", { select:"name", filter:`name=ilike.${encodeURIComponent(name)}` });
+      if(!Array.isArray(existing) || existing.length === 0) {
+        // Insert into shared players table — readable by all users
+        await sb.insert("players", { name, created_by: getCurrentUserId() });
         setAllPlayers(prev=>[...prev, {player_name:name}]);
       }
       addChip(name);
-    } catch(e){ addChip(name); } // still add chip even if DB save fails
+    } catch(e) { addChip(name); } // still add chip even if DB save fails
     setSaving(false);
   };
 
