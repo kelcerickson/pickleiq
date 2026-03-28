@@ -3896,42 +3896,88 @@ function VideoLoggerContent() {
                     <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>In-Match Metrics</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
                       {/* NVZ Arrival */}
-                      <div style={{background:C.mintL, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"10px 12px"}}>
-                        <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Arrival</div>
-                        <div style={{fontSize:10,color:C.textLight,marginBottom:8,lineHeight:1.4}}>Rallies both reached kitchen</div>
-                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
-                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Arrived:</span>
-                          <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.mint,minWidth:20,textAlign:"center"}}>{nvzArrived}</span>
-                          <button onClick={()=>{ setNvzArrived(nvzArrived+1); if(nvzArrived>=nvzTotal) setNvzTotal(nvzTotal+1); }} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.mint}`,background:C.mint,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
-                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Total:</span>
-                          <button onClick={()=>setNvzTotal(Math.max(nvzArrived,nvzTotal-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.mint,minWidth:20,textAlign:"center"}}>{nvzTotal}</span>
-                          <button onClick={()=>setNvzTotal(nvzTotal+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.mint}`,background:C.mint,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-                        </div>
-                        <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.mint}}>{nvzArr !== null ? nvzArr+"%" : "—"}</div>
-                      </div>
+                      {(()=>{
+                        const nvzMissed = nvzTotal - nvzArrived;
+                        const arrBg     = nvzArrived > 0 ? "#A7F3D0" : "#E8FAF5";
+                        const arrBorder = nvzArrived > 0 ? C.mint    : "#A0EDD5";
+                        const arrColor  = nvzArrived > 0 ? "#059669" : "#6EE0B5";
+                        const misBg     = nvzMissed  > 0 ? "#FECDCE" : "#FEF0F3";
+                        const misBorder = nvzMissed  > 0 ? C.rose    : "#F9C4CA";
+                        const misColor  = nvzMissed  > 0 ? C.rose    : "#E8A0A8";
+                        return (
+                          <div style={{background:C.mintL, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"10px 12px"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Arrival</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
+                              {/* Arrived row */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
+                                <button onClick={()=>{ setNvzArrived(nvzArrived+1); setNvzTotal(nvzTotal+1); }}
+                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${arrBorder}`,background:arrBg,color:arrColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
+                                  onMouseEnter={e=>{e.currentTarget.style.background="#A7F3D0";e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.color="#059669";}}
+                                  onMouseLeave={e=>{e.currentTarget.style.background=arrBg;e.currentTarget.style.borderColor=arrBorder;e.currentTarget.style.color=arrColor;}}>
+                                  ✓ Arrived{nvzArrived>0?` (${nvzArrived})`:""}
+                                </button>
+                                <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))}
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                              </div>
+                              {/* Did not arrive row */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
+                                <button onClick={()=>{ setNvzTotal(nvzTotal+1); }}
+                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${misBorder}`,background:misBg,color:misColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
+                                  onMouseEnter={e=>{e.currentTarget.style.background="#FECDCE";e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;}}
+                                  onMouseLeave={e=>{e.currentTarget.style.background=misBg;e.currentTarget.style.borderColor=misBorder;e.currentTarget.style.color=misColor;}}>
+                                  ✕ Not Arrived{nvzMissed>0?` (${nvzMissed})`:""}
+                                </button>
+                                <button onClick={()=>{ if(nvzTotal>nvzArrived) setNvzTotal(nvzTotal-1); }}
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                              </div>
+                            </div>
+                            <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.mint}}>{nvzArr !== null ? nvzArr+"%" : "—"}</div>
+                            {nvzTotal>0 && <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{nvzArrived} of {nvzTotal} rallies</div>}
+                          </div>
+                        );
+                      })()}
 
                       {/* NVZ Win Rate */}
-                      <div style={{background:C.blueL, border:`1.5px solid ${C.blue}30`, borderRadius:10, padding:"10px 12px"}}>
-                        <div style={{fontSize:10,fontWeight:700,color:C.blue,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Win Rate</div>
-                        <div style={{fontSize:10,color:C.textLight,marginBottom:8,lineHeight:1.4}}>Rallies won at kitchen</div>
-                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
-                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Won:</span>
-                          <button onClick={()=>setNvzWon(Math.max(0,nvzWon-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.blue}40`,background:"white",fontSize:13,color:C.blue,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.blue,minWidth:20,textAlign:"center"}}>{nvzWon}</span>
-                          <button onClick={()=>{ setNvzWon(nvzWon+1); if(nvzWon>=nvzWonTotal) setNvzWonTotal(nvzWonTotal+1); }} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.blue}`,background:C.blue,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
-                          <span style={{fontSize:10,color:C.textMid,fontWeight:600}}>Total:</span>
-                          <button onClick={()=>setNvzWonTotal(Math.max(nvzWon,nvzWonTotal-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.blue}40`,background:"white",fontSize:13,color:C.blue,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                          <span style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:C.blue,minWidth:20,textAlign:"center"}}>{nvzWonTotal}</span>
-                          <button onClick={()=>setNvzWonTotal(nvzWonTotal+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.blue}`,background:C.blue,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-                        </div>
-                        <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.blue}}>{nvzWinR !== null ? nvzWinR+"%" : "—"}</div>
-                      </div>
+                      {(()=>{
+                        const nvzLost   = nvzWonTotal - nvzWon;
+                        const wonBg     = nvzWon  > 0 ? "#A7F3D0" : "#E8FAF5";
+                        const wonBorder = nvzWon  > 0 ? C.mint    : "#A0EDD5";
+                        const wonColor  = nvzWon  > 0 ? "#059669" : "#6EE0B5";
+                        const lostBg     = nvzLost > 0 ? "#FECDCE" : "#FEF0F3";
+                        const lostBorder = nvzLost > 0 ? C.rose    : "#F9C4CA";
+                        const lostColor  = nvzLost > 0 ? C.rose    : "#E8A0A8";
+                        return (
+                          <div style={{background:C.blueL, border:`1.5px solid ${C.blue}30`, borderRadius:10, padding:"10px 12px"}}>
+                            <div style={{fontSize:10,fontWeight:700,color:C.blue,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Win Rate</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
+                              {/* Won row */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
+                                <button onClick={()=>{ setNvzWon(nvzWon+1); setNvzWonTotal(nvzWonTotal+1); }}
+                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${wonBorder}`,background:wonBg,color:wonColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
+                                  onMouseEnter={e=>{e.currentTarget.style.background="#A7F3D0";e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.color="#059669";}}
+                                  onMouseLeave={e=>{e.currentTarget.style.background=wonBg;e.currentTarget.style.borderColor=wonBorder;e.currentTarget.style.color=wonColor;}}>
+                                  ✓ Won{nvzWon>0?` (${nvzWon})`:""}
+                                </button>
+                                <button onClick={()=>{ setNvzWon(Math.max(0,nvzWon-1)); if(nvzWonTotal>0) setNvzWonTotal(nvzWonTotal-1); }}
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                              </div>
+                              {/* Lost row */}
+                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
+                                <button onClick={()=>setNvzWonTotal(nvzWonTotal+1)}
+                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${lostBorder}`,background:lostBg,color:lostColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
+                                  onMouseEnter={e=>{e.currentTarget.style.background="#FECDCE";e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;}}
+                                  onMouseLeave={e=>{e.currentTarget.style.background=lostBg;e.currentTarget.style.borderColor=lostBorder;e.currentTarget.style.color=lostColor;}}>
+                                  ✕ Lost{nvzLost>0?` (${nvzLost})`:""}
+                                </button>
+                                <button onClick={()=>{ if(nvzWonTotal>nvzWon) setNvzWonTotal(nvzWonTotal-1); }}
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                              </div>
+                            </div>
+                            <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.blue}}>{nvzWinR !== null ? nvzWinR+"%" : "—"}</div>
+                            {nvzWonTotal>0 && <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{nvzWon} of {nvzWonTotal} rallies</div>}
+                          </div>
+                        );
+                      })()}
 
                       {/* Errors + Serve Neut (stacked) */}
                       <div style={{display:"flex",flexDirection:"column",gap:8}}>
