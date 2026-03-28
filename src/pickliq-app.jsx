@@ -3597,7 +3597,12 @@ function VideoLoggerContent() {
       // Step 1: Save match record now (with all current field values)
       let matchId = savedMatchId;
       if (!matchId) {
-        const dateFormatted = new Date(date).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+        // Parse date parts directly to avoid timezone off-by-one issues
+        const dateParts = date ? date.split("-") : null;
+        const dateFormatted = dateParts
+          ? new Date(+dateParts[0], +dateParts[1]-1, +dateParts[2])
+              .toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })
+          : new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
         const rows = await sb.insert("matches", {
           date: dateFormatted, opponent, partner, result, score, notes,
           nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced", user_id: uid,
