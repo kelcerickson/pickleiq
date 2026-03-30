@@ -2600,54 +2600,19 @@ const Profile=({setPage})=>{
         </div>
       </Card>
 
-      {/* ── Section 2: Stats & DUPR Progression ── */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:20,marginBottom:20}}>
-        <Card>
-          <SLabel>Season Stats</SLabel>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}}>
-            <KPICard label="DUPR"      value={dupr?String(dupr):"—"} color={C.blue}   colorL={C.blueL}/>
-            <KPICard label="Win Rate"  value={CORE_KPIS[0].value} color={C.mint}   colorL={C.mintL}/>
-            <KPICard label="Matches"   value="—" color={C.amber}  colorL={C.amberL}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10}}>
-            {[
-              {label:"Avg Errors",   value:CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—", color:C.rose},
-              {label:"NVZ Arrival",  value:CORE_KPIS[3].value, color:C.mint},
-              {label:"NVZ Win Rate", value:CORE_KPIS[4].value, color:C.blue},
-              {label:"My Serve Neut.",  value:CORE_KPIS[2].value, color:C.amber},
-            ].map(s=>(
-              <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"10px 12px"}}>
-                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>{s.label}</div>
-                <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:s.color}}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <SLabel>DUPR Progression</SLabel>
-          <div style={{fontFamily:"'Bebas Neue'",fontSize:30,color:C.blue,letterSpacing:"0.04em",marginBottom:16}}>
-            — <span style={{fontSize:18,color:C.textLight}}>enter in Profile</span>
-          </div>
-          <svg width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="duprGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={C.blue} stopOpacity="0.2"/>
-                <stop offset="100%" stopColor={C.blue} stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <path d={areaPath} fill="url(#duprGrad)"/>
-            <polyline points={polylineStr} fill="none" stroke={C.blue} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            {chartPts.map((p,i)=>(
-              <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={C.blue} stroke="white" strokeWidth="2"/>
-            ))}
-          </svg>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
-            {months.map(mo=>(
-              <span key={mo} style={{fontSize:9,color:C.textLight}}>{mo}</span>
-            ))}
-          </div>
-        </Card>
-      </div>
+      {/* ── Section 2: Season Stats (full width) ── */}
+      <Card style={{marginBottom:20}}>
+        <SLabel>Season Stats</SLabel>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:12}}>
+          <KPICard label="DUPR"         value={dupr?String(dupr):"—"}                                    color={C.blue}   colorL={C.blueL}/>
+          <KPICard label="Win Rate"     value={CORE_KPIS[0].value}                                       color={C.mint}   colorL={C.mintL}/>
+          <KPICard label="Avg Errors"   value={CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—"} color={C.rose}   colorL={C.roseL}/>
+          <KPICard label="NVZ Arrival"  value={CORE_KPIS[3].value}                                       color={C.mint}   colorL={C.mintL}/>
+          <KPICard label="NVZ Win Rate" value={CORE_KPIS[4].value}                                       color={C.blue}   colorL={C.blueL}/>
+          <KPICard label="Serve Neut."  value={CORE_KPIS[2].value}                                       color={C.amber}  colorL={C.amberL}/>
+          <KPICard label="Matches"      value="—"                                                         color={C.purple} colorL={C.purpleL}/>
+        </div>
+      </Card>
 
 
       {/* ── Pickleball Identity ── */}
