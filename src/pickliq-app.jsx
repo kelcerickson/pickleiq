@@ -285,7 +285,7 @@ const SHOT_CATS = [
 // In production this lives in a database. For the prototype we use a simple
 // module-level object that Profile writes to and KPICards read from.
 const GOALS = {
-  targets: { winRate:65, errors:8, serveNeut:70, nvzArrival:80, nvzWin:65 },
+  targets: { winRate:65, errors:5, serveNeut:70, nvzArrival:80, nvzWin:65 },
   priorityShots: [],
 };
 
@@ -2227,6 +2227,15 @@ const Profile=({setPage})=>{
   const [email,setEmail]                 = useState("");
   const [dupr,setDupr]                   = useState("");
 
+  // Load shots for identity analysis
+  const [profileShots, setProfileShots] = useState([]);
+  useEffect(() => {
+    const uid = getCurrentUserId();
+    sb.query("shots", { filter: `user_id=eq.${uid}`, order: "name.asc" })
+      .then(rows => { if (rows) setProfileShots(rows); })
+      .catch(() => {});
+  }, []);
+
   // Load profile from Supabase on mount
   useEffect(() => {
     const uid = getCurrentUserId();
@@ -2641,6 +2650,279 @@ const Profile=({setPage})=>{
       </div>
 
 
+      {/* ── Pickleball Identity ── */}
+      {(()=>{
+        // ── Derive identity from shot data ──────────────────────────────────────
+        const shots = profileShots;
+        const get = (name) => shots.find(s => s.name === name) || {};
+        const sum = (names, field) => names.reduce((a,n) => a + (get(n)[field] || 0), 0);
+
+        // Shot volume by style category
+        const kitchenAttempts  = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "attempts");
+        const transitionAttempts = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "attempts");
+        const driveAttempts    = sum(["Drive BH","Drive FH"], "attempts");
+        const attackAttempts   = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "attempts");
+        const totalAttempts    = kitchenAttempts + transitionAttempts + driveAttempts + attackAttempts;
+
+        // Win rates by category
+        const kitchenWins   = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "wins");
+        const driveWins     = sum(["Drive BH","Drive FH"], "wins");
+        const attackWins    = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "wins");
+        const dropWins      = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "wins");
+
+        const kitchenWR  = kitchenAttempts  > 0 ? Math.round(kitchenWins  / kitchenAttempts  * 100) : 0;
+        const driveWR    = driveAttempts    > 0 ? Math.round(driveWins    / driveAttempts    * 100) : 0;
+        const attackWR   = attackAttempts   > 0 ? Math.round(attackWins   / attackAttempts   * 100) : 0;
+        const dropWR     = transitionAttempts > 0 ? Math.round(dropWins   / transitionAttempts* 100) : 0;
+
+        const kitchenPct  = totalAttempts > 0 ? Math.round(kitchenAttempts  / totalAttempts * 100) : 0;
+        const drivePct    = totalAttempts > 0 ? Math.round(driveAttempts    / totalAttempts * 100) : 0;
+        const attackPct   = totalAttempts > 0 ? Math.round(attackAttempts   / totalAttempts * 100) : 0;
+        const dropPct     = totalAttempts > 0 ? Math.round(transitionAttempts/ totalAttempts * 100) : 0;
+        const nvzArrival  = CORE_KPIS[3].numVal || 0;
+        const errors      = CORE_KPIS[1].numVal || 0;
+
+        const hasData = totalAttempts > 10;
+
+        // ── Identity assignment algorithm ──────────────────────────────────────
+        // Score each style based on shot mix + performance metrics
+        let scores = { Resetter: 0, Driver: 0, Attacker: 0, Balanced: 0 };
+        if (hasData) {
+          // Resetter: high kitchen %, high NVZ arrival, low errors, good drop WR
+          scores.Resetter += kitchenPct > 40 ? 30 : kitchenPct > 25 ? 15 : 0;
+          scores.Resetter += nvzArrival > 70 ? 25 : nvzArrival > 55 ? 12 : 0;
+          scores.Resetter += errors < 3 ? 20 : errors < 5 ? 10 : 0;
+          scores.Resetter += dropWR > 60 ? 15 : dropWR > 45 ? 7 : 0;
+          scores.Resetter += dropPct > 15 ? 10 : 0;
+
+          // Driver: high drive %, high drive WR
+          scores.Driver += drivePct > 20 ? 35 : drivePct > 12 ? 18 : 0;
+          scores.Driver += driveWR > 55 ? 25 : driveWR > 40 ? 12 : 0;
+          scores.Driver += transitionAttempts > 0 ? 10 : 0;
+          scores.Driver += errors > 8 ? -10 : 0; // penalise high errors
+
+          // Attacker: high attack %, high attack WR
+          scores.Attacker += attackPct > 15 ? 35 : attackPct > 8 ? 18 : 0;
+          scores.Attacker += attackWR > 60 ? 30 : attackWR > 45 ? 15 : 0;
+          scores.Attacker += kitchenWR > 65 ? 10 : 0; // good setup for attacks
+          scores.Attacker += errors > 10 ? -15 : 0;
+
+          // Balanced: no single style dominates
+          const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
+          scores.Balanced += maxPct < 40 ? 30 : maxPct < 55 ? 15 : 0;
+          scores.Balanced += kitchenPct > 15 && drivePct > 8 && attackPct > 5 ? 20 : 0;
+          scores.Balanced += nvzArrival > 55 && attackWR > 40 ? 15 : 0;
+        }
+
+        const identity = hasData
+          ? Object.entries(scores).reduce((a,b) => b[1] > a[1] ? b : a)[0]
+          : null;
+
+        const STYLES = {
+          Resetter: {
+            icon:"🔄", color:C.mint, colorL:C.mintL,
+            tagline:"Patient. NVZ-first. Outlast the opponent.",
+            description:"You win by controlling the kitchen, minimising errors, and forcing opponents into mistakes. Your 3rd/4th shot drops are a primary weapon — you get to the NVZ consistently and let the opponent self-destruct.",
+            strengths:["Elite NVZ arrival rate","Low unforced errors","Strong reset game under pressure","Makes opponents impatient"],
+            improvements:["Develop a speed-up to punish high balls","Add an occasional drive to keep opponents honest","Work on transition speed to reach NVZ even faster"],
+            proPrinciple:"Ben Johns philosophy: 'Never force pace from a weak position. Reset until you have a ball above the net, then attack.'",
+            strategy:"Stay patient at the kitchen. Your goal every rally is to arrive at the NVZ together and out-dink the opponent. Only speed up when the ball is above the net tape and you have a clear angle. Protect your backhand side in transition.",
+          },
+          Driver: {
+            icon:"💥", color:C.blue, colorL:C.blueL,
+            tagline:"Aggressive. Transition-focused. Apply pressure from mid-court.",
+            description:"You use pace and power to disrupt opponents in transition. Your drives prevent opponents from settling into a dinking game and force weak responses you can attack.",
+            strengths:["Strong transition game","Effective use of pace","Keeps opponents back","Creates offensive opportunities"],
+            improvements:["Improve drop accuracy to complement driving","Reduce errors by choosing drives more selectively","Develop more NVZ patience once you arrive at the kitchen"],
+            proPrinciple:"Tyson McGuffin: 'Your drive needs a purpose — either to win the point outright or force a weak pop-up you can put away.'",
+            strategy:"Use your drive strategically — not on every ball, but when the opponent is off-balance or out of position. Pair every drive with a plan for the next ball. Work on the drive-drop combination to keep opponents guessing.",
+          },
+          Attacker: {
+            icon:"⚡", color:C.rose, colorL:C.roseL,
+            tagline:"Explosive. Speed-up specialist. Win at the net.",
+            description:"You look to end rallies with aggressive NVZ attacks. Your speed-ups and slams are your primary finishing weapons. You play to win points, not just avoid losing them.",
+            strengths:["High attack win rate","Strong speed-up recognition","Creates pressure at the NVZ","Can end rallies quickly"],
+            improvements:["Be more selective — only attack balls you win 70%+","Develop more patience to set up better attack opportunities","Strengthen your reset game to recover when attacks are countered"],
+            proPrinciple:"Anna Leigh Waters: 'Be selective with your attacks. The best attackers only speed up when the percentage is strongly in their favour.'",
+            strategy:"Your attack game is a weapon — protect it by being selective. Build the rally through quality dinks until you create a ball above the net tape with a clear angle. When the moment comes, commit fully. Work on your reset to handle counter-attacks.",
+          },
+          Balanced: {
+            icon:"⚖️", color:C.purple, colorL:C.purpleL,
+            tagline:"Versatile. Adaptable. Hard to read.",
+            description:"You have a well-rounded game without an obvious pattern opponents can exploit. You can reset, drive, or attack depending on what the match demands — making you an unpredictable and dangerous partner.",
+            strengths:["No obvious weakness for opponents to target","Can adapt to any partner's style","Effective in multiple game situations","Strong all-court awareness"],
+            improvements:["Identify your single strongest shot and make it elite","Develop a clear identity for high-pressure moments","Sharpen your decision-making — know when to reset vs attack"],
+            proPrinciple:"Simone Jardim: 'Know your strengths deeply. Versatility is only powerful when backed by at least one shot you can rely on under pressure.'",
+            strategy:"Your adaptability is your edge — use it. In close games, identify what's working and lean into it. Communicate with your partner to establish clear roles: one player covers the middle, one covers angles. Your balanced game makes you an excellent partner for specialists.",
+          },
+        };
+
+        const style = identity ? STYLES[identity] : null;
+
+        return (
+          <Card style={{marginBottom:20, overflow:"hidden"}}>
+            {/* Header */}
+            <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
+              margin:"-1px -1px 0", padding:"20px 24px", borderRadius:"14px 14px 0 0"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:11,color:C.pickle,fontWeight:700,textTransform:"uppercase",
+                    letterSpacing:"0.1em",marginBottom:4}}>Pickleball Identity</div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:"white",letterSpacing:"0.04em",lineHeight:1}}>
+                    Your Playing Style
+                  </div>
+                  <div style={{fontSize:12,color:"#94A3B8",marginTop:4}}>
+                    Derived from your shot data · updates automatically as you log more matches
+                  </div>
+                </div>
+                {style && (
+                  <div style={{textAlign:"center",flexShrink:0}}>
+                    <div style={{fontSize:36,marginBottom:4}}>{style.icon}</div>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:style.color,
+                      letterSpacing:"0.06em"}}>{identity}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{padding:"20px 24px"}}>
+              {!hasData ? (
+                <div style={{textAlign:"center",padding:"32px 16px",background:C.pageBg,borderRadius:12,
+                  border:`2px dashed ${C.border}`}}>
+                  <div style={{fontSize:32,marginBottom:10}}>🎾</div>
+                  <div style={{fontSize:14,fontWeight:700,color:C.textMid,marginBottom:6}}>Not enough data yet</div>
+                  <div style={{fontSize:12,color:C.textLight,lineHeight:1.6,maxWidth:320,margin:"0 auto"}}>
+                    Log at least 10 shots across a few matches and your playing identity will be automatically calculated here.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Identity badge + tagline */}
+                  <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20,
+                    padding:"16px 20px",background:`${style.color}10`,
+                    border:`2px solid ${style.color}40`,borderRadius:14}}>
+                    <div style={{fontSize:48,flexShrink:0}}>{style.icon}</div>
+                    <div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:style.color,
+                        letterSpacing:"0.05em",lineHeight:1}}>{identity}</div>
+                      <div style={{fontSize:14,fontWeight:600,color:C.text,marginTop:4,fontStyle:"italic"}}>
+                        "{style.tagline}"
+                      </div>
+                      <div style={{fontSize:12,color:C.textMid,marginTop:6,lineHeight:1.6}}>
+                        {style.description}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Shot mix breakdown */}
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",
+                      letterSpacing:"0.08em",marginBottom:10}}>Your Shot Mix</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+                      {[
+                        {label:"Kitchen",  pct:kitchenPct,  wr:kitchenWR,  color:C.mint},
+                        {label:"Drops",    pct:dropPct,     wr:dropWR,     color:C.blue},
+                        {label:"Drives",   pct:drivePct,    wr:driveWR,    color:C.amber},
+                        {label:"Attacks",  pct:attackPct,   wr:attackWR,   color:C.rose},
+                      ].map(s=>(
+                        <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"12px 10px",textAlign:"center",
+                          border:`1.5px solid ${s.pct > 0 ? s.color+"40" : C.border}`}}>
+                          <div style={{fontSize:10,color:s.color,fontWeight:700,textTransform:"uppercase",
+                            letterSpacing:"0.06em",marginBottom:4}}>{s.label}</div>
+                          <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:s.pct>0?s.color:C.textLight}}>
+                            {s.pct}%
+                          </div>
+                          <div style={{fontSize:9,color:C.textLight,marginTop:2}}>of shots</div>
+                          {s.wr > 0 && (
+                            <div style={{marginTop:4,fontSize:10,fontWeight:700,
+                              color:s.wr>=60?C.mint:s.wr>=45?C.amber:C.rose}}>
+                              {s.wr}% win rate
+                            </div>
+                          )}
+                          {/* Volume bar */}
+                          <div style={{height:3,background:C.border,borderRadius:2,marginTop:6}}>
+                            <div style={{height:"100%",width:`${s.pct}%`,background:s.color,borderRadius:2,transition:"width 0.5s"}}/>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Two columns: Strengths + Improvements */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
+                    <div style={{background:`${C.mint}08`,border:`1px solid ${C.mint}30`,borderRadius:12,padding:"14px 16px"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.mint,textTransform:"uppercase",
+                        letterSpacing:"0.08em",marginBottom:10}}>✓ Your Strengths</div>
+                      {style.strengths.map((s,i)=>(
+                        <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
+                          <span style={{color:C.mint,fontWeight:700,fontSize:12,flexShrink:0}}>✓</span>
+                          <span style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{background:`${C.amber}08`,border:`1px solid ${C.amber}30`,borderRadius:12,padding:"14px 16px"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.amber,textTransform:"uppercase",
+                        letterSpacing:"0.08em",marginBottom:10}}>↑ Areas to Develop</div>
+                      {style.improvements.map((s,i)=>(
+                        <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
+                          <span style={{color:C.amber,fontWeight:700,fontSize:12,flexShrink:0}}>→</span>
+                          <span style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Winning Strategy */}
+                  <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
+                    borderRadius:12,padding:"16px 20px",marginBottom:16}}>
+                    <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
+                      <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,
+                        background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
+                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
+                      <div>
+                        <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:4}}>
+                          Your Winning Strategy
+                        </div>
+                        <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.7}}>{style.strategy}</div>
+                      </div>
+                    </div>
+                    <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,
+                      fontSize:11,color:"#64748B",fontStyle:"italic",lineHeight:1.6}}>
+                      💬 Pro principle: {style.proPrinciple}
+                    </div>
+                  </div>
+
+                  {/* Style selector — override if desired */}
+                  <div>
+                    <div style={{fontSize:11,color:C.textLight,marginBottom:8}}>
+                      Not quite right? Override your style manually:
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+                      {Object.entries(STYLES).map(([key,s])=>(
+                        <div key={key} style={{
+                          padding:"10px 8px",borderRadius:10,textAlign:"center",cursor:"default",
+                          border:`2px solid ${identity===key?s.color:C.border}`,
+                          background:identity===key?`${s.color}12`:C.pageBg}}>
+                          <div style={{fontSize:20,marginBottom:2}}>{s.icon}</div>
+                          <div style={{fontSize:11,fontWeight:700,
+                            color:identity===key?s.color:C.textMid}}>{key}</div>
+                          {identity===key&&(
+                            <div style={{fontSize:9,color:s.color,fontWeight:600,marginTop:2}}>✓ Your style</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:11,color:C.textLight,marginTop:8,textAlign:"center"}}>
+                      Style is auto-assigned based on your shot data · log more matches for a more accurate result
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
+
       {/* ── Core Metric Targets ── */}
       <Card style={{marginBottom:20}}>
         <SLabel>Core Metric Targets</SLabel>
@@ -2653,8 +2935,8 @@ const Profile=({setPage})=>{
               desc:"% of matches won",
               guidance:"3.5 players average ~50%. Elite 4.5+ players target 65–75%. Ben Johns-level: 85%+."},
             {id:"errors",    label:"My Errors / Match", current:CORE_KPIS[1].numVal||0, unit:"",  min:0,  max:20,  step:0.5, higherIsBetter:false, color:C.rose,
-              desc:"Your personal unforced errors per match (lower = better)",
-              guidance:"Recreational: 12–15/match. Competitive 4.0: under 8. Elite 4.5+: under 5. Ben Johns principle: never force pace from a weak position."},
+              desc:"YOUR personal unforced errors per match — not including your partner (lower = better)",
+              guidance:"Individual benchmarks: Recreational 3.5: 8–12/match. Competitive 4.0: under 5. Elite 4.5+: under 3. Note: team benchmarks are roughly double these numbers."},
             {id:"serveNeut", label:"My Serve Neut.",    current:CORE_KPIS[2].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.amber,
               desc:"% of YOUR serves/returns that prevent opponent attacks",
               guidance:"Good: 60–70%. Strong: 75–85%. Elite: 90%+. Deep, low returns to the opponent's feet are key."},
