@@ -1135,20 +1135,10 @@ const MatchHistoryContent=()=>{
 
             {/* Opponent + Partner */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Opponent(s)</div>
-                <input type="text" value={opponent} onChange={e=>setOpponent(e.target.value)}
-                  placeholder="Opponent name"
-                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
-                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Partner</div>
-                <input type="text" value={partner} onChange={e=>setPartner(e.target.value)}
-                  placeholder="Partner name"
-                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
-                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
-              </div>
+              <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
+                placeholder="Search or type name…" multi={true}/>
+              <PlayerSearch label="Partner" value={partner} onChange={setPartner}
+                placeholder="Search or type name…"/>
             </div>
 
             {/* Notes */}
@@ -3477,7 +3467,7 @@ const LogMatchContent=()=>{
 const SHOT_BUTTONS = [
   { cat:"Serve/Return", color:C.amber,  shots:["Serve","Return BH","Return FH"] },
   { cat:"Transition",   color:C.blue,   shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
-  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH"] },
+  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
   { cat:"Attack",       color:C.rose,   shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
   { cat:"Defense",      color:C.purple, shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
 ];
@@ -3577,12 +3567,29 @@ function VideoLoggerContent() {
     showFlash(`${shotName} — ${lbl}`, col);
   };
 
+  const unlogShot = (shotName, outcome) => {
+    setShotData(prev => {
+      const curr = prev[shotName] || { pos:0, neu:0, neg:0 };
+      if (curr[outcome] <= 0) return prev;
+      return { ...prev, [shotName]: { ...curr, [outcome]: curr[outcome] - 1 } };
+    });
+  };
+
   const logRally = (shotName, res) => {
     setRallyData(prev => {
       const curr = prev[shotName] || { won:0, lost:0 };
       return { ...prev, [shotName]: { ...curr, [res === "W" ? "won" : "lost"]: curr[res === "W" ? "won" : "lost"] + 1 } };
     });
     showFlash(`${res === "W" ? "✓ Won" : "✕ Lost"} — ${shotName}`, res === "W" ? C.mint : C.rose);
+  };
+
+  const unlogRally = (shotName, res) => {
+    setRallyData(prev => {
+      const curr = prev[shotName] || { won:0, lost:0 };
+      const key = res === "W" ? "won" : "lost";
+      if (curr[key] <= 0) return prev;
+      return { ...prev, [shotName]: { ...curr, [key]: curr[key] - 1 } };
+    });
   };
 
   // ── Save all ──────────────────────────────────────────────────────────────────
@@ -3738,44 +3745,61 @@ function VideoLoggerContent() {
               const posBg     = d.pos > 0 ? "#A7F3D0" : "#E8FAF5";
               const posBorder = d.pos > 0 ? C.mint     : "#A0EDD5";
               const posColor  = d.pos > 0 ? "#059669"  : "#6EE0B5";
+              const UndoBtn = ({outcome, col}) => d[outcome] > 0 ? (
+                <button onClick={e => { e.stopPropagation(); unlogShot(shot, outcome); }}
+                  title="Undo last"
+                  style={{ width:16, height:16, borderRadius:4, border:`1px solid ${col}60`,
+                    background:`${col}15`, color:col, fontSize:10, fontWeight:700,
+                    cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                    flexShrink:0, lineHeight:1, padding:0 }}>−</button>
+              ) : null;
               return (
                 <div key={shot} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 3, alignItems: "center" }}>
                   {/* Negative */}
-                  <button onClick={() => logShot(shot, "neg")} style={{
-                    padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${negBorder}`,
-                    background: negBg, color: negColor,
-                    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                    cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = negBg; e.currentTarget.style.borderColor = negBorder; e.currentTarget.style.color = negColor; }}>
-                    ✕ {shot}{d.neg > 0 ? ` (${d.neg})` : ""}
-                  </button>
+                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
+                    <button onClick={() => logShot(shot, "neg")} style={{
+                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${negBorder}`,
+                      background: negBg, color: negColor,
+                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
+                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = negBg; e.currentTarget.style.borderColor = negBorder; e.currentTarget.style.color = negColor; }}>
+                      ✕ {shot}{d.neg > 0 ? ` (${d.neg})` : ""}
+                    </button>
+                    <UndoBtn outcome="neg" col={C.rose}/>
+                  </div>
                   {/* Neutral */}
-                  <button onClick={() => logShot(shot, "neu")} style={{
-                    padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${neuBorder}`,
-                    background: neuBg, color: neuColor,
-                    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                    cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#D1D5DB"; e.currentTarget.style.borderColor = "#6B7280"; e.currentTarget.style.color = "#374151"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = neuBg; e.currentTarget.style.borderColor = neuBorder; e.currentTarget.style.color = neuColor; }}>
-                    – {shot}{d.neu > 0 ? ` (${d.neu})` : ""}
-                  </button>
+                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
+                    <button onClick={() => logShot(shot, "neu")} style={{
+                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${neuBorder}`,
+                      background: neuBg, color: neuColor,
+                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
+                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "#D1D5DB"; e.currentTarget.style.borderColor = "#6B7280"; e.currentTarget.style.color = "#374151"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = neuBg; e.currentTarget.style.borderColor = neuBorder; e.currentTarget.style.color = neuColor; }}>
+                      – {shot}{d.neu > 0 ? ` (${d.neu})` : ""}
+                    </button>
+                    <UndoBtn outcome="neu" col={C.textMid}/>
+                  </div>
                   {/* Positive */}
-                  <button onClick={() => logShot(shot, "pos")} style={{
-                    padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${posBorder}`,
-                    background: posBg, color: posColor,
-                    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                    cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = posBg; e.currentTarget.style.borderColor = posBorder; e.currentTarget.style.color = posColor; }}>
-                    ✓ {shot}{d.pos > 0 ? ` (${d.pos})` : ""}
-                  </button>
+                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
+                    <button onClick={() => logShot(shot, "pos")} style={{
+                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${posBorder}`,
+                      background: posBg, color: posColor,
+                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
+                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = posBg; e.currentTarget.style.borderColor = posBorder; e.currentTarget.style.color = posColor; }}>
+                      ✓ {shot}{d.pos > 0 ? ` (${d.pos})` : ""}
+                    </button>
+                    <UndoBtn outcome="pos" col={C.mint}/>
+                  </div>
                   {/* Total */}
                   <div style={{
                     fontFamily: "'DM Mono'", fontSize: 12, fontWeight: 700, textAlign: "center", minWidth: 24,
@@ -3815,29 +3839,45 @@ function VideoLoggerContent() {
               return (
                 <div key={shot} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 3, alignItems: "center" }}>
                   {/* Lost */}
-                  <button onClick={() => logRally(shot, "L")} style={{
-                    padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${lostBorder}`,
-                    background: lostBg, color: lostColor,
-                    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                    cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = lostBg; e.currentTarget.style.borderColor = lostBorder; e.currentTarget.style.color = lostColor; }}>
-                    ✕ {shot}{d.lost > 0 ? ` (${d.lost})` : ""}
-                  </button>
+                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
+                    <button onClick={() => logRally(shot, "L")} style={{
+                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${lostBorder}`,
+                      background: lostBg, color: lostColor,
+                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
+                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = lostBg; e.currentTarget.style.borderColor = lostBorder; e.currentTarget.style.color = lostColor; }}>
+                      ✕ {shot}{d.lost > 0 ? ` (${d.lost})` : ""}
+                    </button>
+                    {d.lost > 0 && <button onClick={e => { e.stopPropagation(); unlogRally(shot, "L"); }}
+                      title="Undo last" style={{ width:16, height:16, borderRadius:4,
+                        border:`1px solid ${C.rose}60`, background:`${C.rose}15`, color:C.rose,
+                        fontSize:10, fontWeight:700, cursor:"pointer",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        flexShrink:0, lineHeight:1, padding:0 }}>−</button>}
+                  </div>
                   {/* Won */}
-                  <button onClick={() => logRally(shot, "W")} style={{
-                    padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${wonBorder}`,
-                    background: wonBg, color: wonColor,
-                    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                    cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = wonBg; e.currentTarget.style.borderColor = wonBorder; e.currentTarget.style.color = wonColor; }}>
-                    ✓ {shot}{d.won > 0 ? ` (${d.won})` : ""}
-                  </button>
+                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
+                    <button onClick={() => logRally(shot, "W")} style={{
+                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${wonBorder}`,
+                      background: wonBg, color: wonColor,
+                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
+                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = wonBg; e.currentTarget.style.borderColor = wonBorder; e.currentTarget.style.color = wonColor; }}>
+                      ✓ {shot}{d.won > 0 ? ` (${d.won})` : ""}
+                    </button>
+                    {d.won > 0 && <button onClick={e => { e.stopPropagation(); unlogRally(shot, "W"); }}
+                      title="Undo last" style={{ width:16, height:16, borderRadius:4,
+                        border:`1px solid ${C.mint}60`, background:`${C.mint}15`, color:C.mint,
+                        fontSize:10, fontWeight:700, cursor:"pointer",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        flexShrink:0, lineHeight:1, padding:0 }}>−</button>}
+                  </div>
                   {/* Total */}
                   <div style={{
                     fontFamily: "'DM Mono'", fontSize: 12, fontWeight: 700, textAlign: "center", minWidth: 24,
