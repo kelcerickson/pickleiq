@@ -2649,27 +2649,54 @@ const Profile=({setPage})=>{
         </p>
         <div style={{display:"flex",flexDirection:"column",gap:0}}>
           {[
-            {id:"winRate",   label:"Win Rate",            current:CORE_KPIS[0].numVal||0, unit:"%",  min:50, max:100, higherIsBetter:true,  color:C.pickle, desc:"% of matches won"},
-            {id:"errors",    label:"My Errors / Match",       current:CORE_KPIS[1].numVal||0, unit:"",  min:2,  max:20,  higherIsBetter:false, color:C.rose,   desc:"Your personal unforced errors per match (lower = better)"},
-            {id:"serveNeut", label:"My Serve Neut.", current:CORE_KPIS[2].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.amber,  desc:"% of YOUR serves/returns preventing opponent attacks"},
-            {id:"nvzArrival",label:"NVZ Arrival",          current:CORE_KPIS[3].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.mint,   desc:"% of rallies both players reach the kitchen"},
-            {id:"nvzWin",    label:"NVZ Win Rate",         current:CORE_KPIS[4].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.blue,   desc:"% of kitchen rallies your team wins"},
+            {id:"winRate",   label:"Win Rate",          current:CORE_KPIS[0].numVal||0, unit:"%", min:50, max:100, step:1,   higherIsBetter:true,  color:C.pickle,
+              desc:"% of matches won",
+              guidance:"3.5 players average ~50%. Elite 4.5+ players target 65–75%. Ben Johns-level: 85%+."},
+            {id:"errors",    label:"My Errors / Match", current:CORE_KPIS[1].numVal||0, unit:"",  min:0,  max:20,  step:0.5, higherIsBetter:false, color:C.rose,
+              desc:"Your personal unforced errors per match (lower = better)",
+              guidance:"Recreational: 12–15/match. Competitive 4.0: under 8. Elite 4.5+: under 5. Ben Johns principle: never force pace from a weak position."},
+            {id:"serveNeut", label:"My Serve Neut.",    current:CORE_KPIS[2].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.amber,
+              desc:"% of YOUR serves/returns that prevent opponent attacks",
+              guidance:"Good: 60–70%. Strong: 75–85%. Elite: 90%+. Deep, low returns to the opponent's feet are key."},
+            {id:"nvzArrival",label:"NVZ Arrival",       current:CORE_KPIS[3].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.mint,
+              desc:"% of rallies both players reach the kitchen line",
+              guidance:"Recreational: ~50%. Competitive 4.0 target: 70–80%. Elite: 85%+. Teams that arrive together consistently win significantly more rallies."},
+            {id:"nvzWin",    label:"NVZ Win Rate",      current:CORE_KPIS[4].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.blue,
+              desc:"% of kitchen rallies your team wins",
+              guidance:"Average: ~50%. Competitive 4.0 target: 60–65%. Elite: 70%+. Patience and shot selection at the kitchen define this stat."},
           ].map((m,i,arr)=>{
             const tgt = GOALS.targets[m.id];
             const gap = m.higherIsBetter ? tgt - m.current : m.current - tgt;
             const gapColor = gap <= 0 ? C.mint : gap <= 8 ? C.amber : C.rose;
+
+            // Auto-save targets to DB on slider change
+            const handleTargetChange = async (val) => {
+              GOALS.targets[m.id] = val;
+              setGoalVer(v=>v+1);
+              // Persist immediately
+              try {
+                const uid = getCurrentUserId();
+                await sb.upsert("profile", { user_id: uid, goals: {...GOALS.targets} }, "user_id");
+              } catch(e) { console.warn("Target save failed:", e); }
+            };
+
             return(
               <div key={m.id} style={{
                 padding:"18px 0",
                 borderBottom: i < arr.length-1 ? `1px solid ${C.border}` : "none"
               }}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                  <div>
+                  <div style={{flex:1,marginRight:16}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{width:10,height:10,borderRadius:2,background:m.color,flexShrink:0}}/>
                       <span style={{fontSize:14,fontWeight:700,color:C.text}}>{m.label}</span>
                     </div>
                     <div style={{fontSize:11,color:C.textLight,marginTop:2,marginLeft:18}}>{m.desc}</div>
+                    {/* Pro guidance */}
+                    <div style={{marginTop:6,marginLeft:18,padding:"6px 10px",background:`${m.color}0C`,
+                      border:`1px solid ${m.color}25`,borderRadius:8,fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                      💡 {m.guidance}
+                    </div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"baseline",gap:10}}>
@@ -2688,13 +2715,13 @@ const Profile=({setPage})=>{
                     </div>
                   </div>
                 </div>
-                <input type="range" min={m.min} max={m.max} step={m.id==="errors"?0.5:1}
+                <input type="range" min={m.min} max={m.max} step={m.step}
                   value={tgt}
-                  onChange={e=>{GOALS.targets[m.id]=+e.target.value; setGoalVer(v=>v+1);}}
+                  onChange={e => handleTargetChange(+e.target.value)}
                   style={{width:"100%",accentColor:m.color,cursor:"pointer"}}/>
                 <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
-                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Conservative":""}{m.min}{m.unit}</span>
-                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Elite":""}{m.max}{m.unit}</span>
+                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Conservative ":""}{m.min}{m.unit}</span>
+                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Elite ":""}{m.max}{m.unit}</span>
                 </div>
               </div>
             );
