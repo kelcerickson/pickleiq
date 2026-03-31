@@ -15,37 +15,6 @@ const getCurrentUserId = () => {
     return payload.sub || null;
   } catch(e) { return null; }
 };
-
-// Check if token is expired or about to expire (within 5 minutes)
-const isTokenExpired = () => {
-  if (!_authToken) return true;
-  try {
-    const payload = JSON.parse(atob(_authToken.split(".")[1]));
-    const expiresAt = payload.exp * 1000; // convert to ms
-    return Date.now() > expiresAt - 5 * 60 * 1000; // refresh if <5min left
-  } catch(e) { return true; }
-};
-
-// Ensure token is fresh before any DB write — refreshes automatically if needed
-const ensureFreshToken = async () => {
-  if (!isTokenExpired()) return true;
-  try {
-    const refresh = localStorage.getItem("pi_refresh");
-    if (!refresh) return false;
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
-    const data = await res.json();
-    if (!res.ok) return false;
-    _authToken = data.access_token;
-    localStorage.setItem("pi_token", data.access_token);
-    localStorage.setItem("pi_refresh", data.refresh_token);
-    return true;
-  } catch(e) { return false; }
-};
-
 const getAuthHeaders = () => ({
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${_authToken || SUPABASE_KEY}`,
@@ -117,7 +86,6 @@ const sb = {
     return res.json();
   },
   async insert(table, data) {
-    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
@@ -136,7 +104,6 @@ const sb = {
     return res.json();
   },
   async upsert(table, data, conflictCol="id") {
-    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation,resolution=merge-duplicates" },
@@ -146,7 +113,6 @@ const sb = {
     return res.json();
   },
   async delete(table, filter) {
-    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
@@ -285,7 +251,7 @@ const SHOT_CATS = [
 // In production this lives in a database. For the prototype we use a simple
 // module-level object that Profile writes to and KPICards read from.
 const GOALS = {
-  targets: { winRate:65, errors:5, serveNeut:70, nvzArrival:80, nvzWin:65 },
+  targets: { winRate:65, errors:8, serveNeut:70, nvzArrival:80, nvzWin:65 },
   priorityShots: [],
 };
 
@@ -973,23 +939,9 @@ const MatchHistoryContent=()=>{
       .then(p=>{ if(p?.player_name) setProfileName(p.player_name.split(" ")[0]); })
       .catch(()=>{});
   },[]);
-  const [editMatch,   setEditMatch]   = useState(null);
-  const [editSaving,  setEditSaving]  = useState(false);
-  const [editError,   setEditError]   = useState("");
-  const [deleteId,    setDeleteId]    = useState(null); // id pending confirmation
-  const [deleting,    setDeleting]    = useState(false);
-
-  const confirmDelete = async () => {
-    if (!deleteId) return;
-    setDeleting(true);
-    try {
-      await sb.delete("matches", `id=eq.${deleteId}`);
-      setDeleteId(null);
-      if (sel?.id === deleteId) setSel(null);
-      loadMatches();
-    } catch(e) { alert("Delete failed: " + e.message); }
-    setDeleting(false);
-  };
+  const [editMatch, setEditMatch] = useState(null); // match being edited
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const loadMatches = () => {
     setLoading(true);
@@ -1135,10 +1087,20 @@ const MatchHistoryContent=()=>{
 
             {/* Opponent + Partner */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
-                placeholder="Search or type name…" multi={true}/>
-              <PlayerSearch label="Partner" value={partner} onChange={setPartner}
-                placeholder="Search or type name…"/>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Opponent(s)</div>
+                <input type="text" value={opponent} onChange={e=>setOpponent(e.target.value)}
+                  placeholder="Opponent name"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Partner</div>
+                <input type="text" value={partner} onChange={e=>setPartner(e.target.value)}
+                  placeholder="Partner name"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
             </div>
 
             {/* Notes */}
@@ -1213,40 +1175,9 @@ const MatchHistoryContent=()=>{
     </div>
   );
   return(
-    <>
+    <div>
       {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
-
-      {/* ── Delete confirmation modal — rendered at fragment root so fixed positioning works ── */}
-      {deleteId && (
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,
-          background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
-          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:400,
-            boxShadow:"0 20px 60px rgba(0,0,0,0.25)",textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>
-              Delete Match?
-            </div>
-            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,marginBottom:24}}>
-              This will permanently delete this match and all its data. This cannot be undone.
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setDeleteId(null)} style={{
-                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${C.border}`,
-                background:C.pageBg,fontFamily:"'Outfit'",fontWeight:600,fontSize:14,
-                color:C.textMid,cursor:"pointer"}}>Cancel</button>
-              <button onClick={confirmDelete} disabled={deleting} style={{
-                flex:1,padding:"12px",borderRadius:12,border:"none",
-                background:deleting?C.border:C.rose,fontFamily:"'Outfit'",fontWeight:700,
-                fontSize:14,color:"white",cursor:deleting?"not-allowed":"pointer"}}>
-                {deleting?"Deleting…":"Yes, Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><SLabel>Recent Matches</SLabel></div>
@@ -1254,22 +1185,10 @@ const MatchHistoryContent=()=>{
             <div key={m.id} className="row" onClick={()=>setSel(m)} style={{
               padding:"13px 18px",borderBottom:`1px solid ${C.border}`,
               background:selMatch?.id===m.id?C.pageBg:C.cardBg,
-              borderLeft:`3px solid ${selMatch?.id===m.id?C.pickle:"transparent"}`,
-              position:"relative"}}>
+              borderLeft:`3px solid ${selMatch?.id===m.id?C.pickle:"transparent"}`}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                 <span style={{fontSize:11,color:C.textLight}}>{m.date}</span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
-                  <button onClick={e=>{e.stopPropagation();setDeleteId(m.id);}} style={{
-                    width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,
-                    background:"transparent",color:C.textLight,cursor:"pointer",
-                    fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",
-                    lineHeight:1,transition:"all 0.15s",flexShrink:0}}
-                    onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;e.currentTarget.style.background=`${C.rose}10`;}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textLight;e.currentTarget.style.background="transparent";}}>
-                    🗑
-                  </button>
-                </div>
+                <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
               </div>
               <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:2}}>vs {m.opponent}</div>
               <div style={{fontSize:11,color:C.textLight}}>w/ {m.partner} · {m.score}</div>
@@ -1346,7 +1265,7 @@ const MatchHistoryContent=()=>{
 
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
@@ -1679,9 +1598,6 @@ const Shots = () => {
                 shot.attempts    = row.attempts    || 0;
                 shot.wins        = row.wins        || 0;
                 shot.misses      = row.misses      || 0;
-                shot.posCount    = row.pos_count   || 0;
-                shot.neuCount    = row.neu_count   || 0;
-                shot.negCount    = row.neg_count   || 0;
                 shot.winHistory  = row.win_history  || [0,0,0,0];
                 shot.missHistory = row.miss_history || [0,0,0,0];
                 if (row.tip) shot.tip = row.tip;
@@ -1716,12 +1632,9 @@ const Shots = () => {
 
   // Sort
   const sortFns = {
-    name:      (a,b) => a.name.localeCompare(b.name),
-    wins:      (a,b) => a.wins   - b.wins,
-    misses:    (a,b) => a.misses - b.misses,
-    posCount:  (a,b) => (a.posCount||0) - (b.posCount||0),
-    neuCount:  (a,b) => (a.neuCount||0) - (b.neuCount||0),
-    negCount:  (a,b) => (a.negCount||0) - (b.negCount||0),
+    name:   (a,b) => a.name.localeCompare(b.name),
+    wins:   (a,b) => a.wins   - b.wins,
+    misses: (a,b) => a.misses - b.misses,
     winTrend:  (a,b) => (a.winHistory[3]-a.winHistory[0])  - (b.winHistory[3]-b.winHistory[0]),
     missTrend: (a,b) => (a.missHistory[3]-a.missHistory[0])-(b.missHistory[3]-b.missHistory[0]),
     category:  (a,b) => a.category.localeCompare(b.category),
@@ -1875,22 +1788,19 @@ const Shots = () => {
 
       {/* ── SORTABLE TABLE ── */}
       <Card style={{ padding:0, overflow:"hidden" }}>
-        {/* Header */}
+        {/* Header — no trend columns, tip lives under shot name */}
         <div style={{
           display:"grid",
-          gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
-          gap:8, padding:"10px 18px",
+          gridTemplateColumns:"36px 1fr 90px 90px 90px",
+          gap:10, padding:"10px 18px",
           borderBottom:`2px solid ${C.border}`, background:C.pageBg,
           alignItems:"center"
         }}>
           <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯</div>
-          <ColHeader col="name"     label="Shot / Tip" />
-          <ColHeader col="category" label="Category"   />
-          <ColHeader col="wins"     label="Rally Won"  align="center"/>
-          <ColHeader col="misses"   label="Rally Lost" align="center"/>
-          <ColHeader col="posCount" label="✓ Pos"      align="center"/>
-          <ColHeader col="neuCount" label="– Neu"      align="center"/>
-          <ColHeader col="negCount" label="✕ Neg"      align="center"/>
+          <ColHeader col="name"     label="Shot / Tip"  />
+          <ColHeader col="category" label="Category"    />
+          <ColHeader col="wins"     label="Pts Won"  align="center"/>
+          <ColHeader col="misses"   label="Pts Lost" align="center"/>
         </div>
 
         {/* Rows */}
@@ -1903,8 +1813,8 @@ const Shots = () => {
           return (
             <div key={shot.name} style={{
               display:"grid",
-              gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
-              gap:8, padding:"12px 18px",
+              gridTemplateColumns:"36px 1fr 90px 90px 90px",
+              gap:10, padding:"12px 18px",
               borderBottom:`1px solid ${C.border}`,
               background:isPinned?`${C.pickle}08`:i%2===0?C.cardBg:"#FAFBFC",
               alignItems:"start", transition:"background 0.15s"
@@ -1947,44 +1857,28 @@ const Shots = () => {
                 <span>{shot.icon}</span>{shot.category}
               </div>
 
-              {/* Rally Won */}
+              {/* Pts Won + trend if available */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:shot.wins>0?C.mint:C.textLight}}>{shot.wins||"—"}</span>
-                {hasTrend && (
-                  <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
-                    {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
-                  </span>
-                )}
+                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
+                  color:shot.wins>=15?C.mint:shot.wins>=8?C.amber:C.textMid}}>{shot.wins}</span>
+                {hasTrend
+                  ? <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
+                      {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
+                    </span>
+                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
+                }
               </div>
 
-              {/* Rally Lost */}
+              {/* Pts Lost + trend if available */}
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:shot.misses>0?C.rose:C.textLight}}>{shot.misses||"—"}</span>
-                {hasTrend && (
-                  <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
-                    {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
-                  </span>
-                )}
-              </div>
-
-              {/* Positive count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.posCount||0)>0?C.mint:C.textLight}}>{shot.posCount||"—"}</span>
-              </div>
-
-              {/* Neutral count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.neuCount||0)>0?C.textMid:C.textLight}}>{shot.neuCount||"—"}</span>
-              </div>
-
-              {/* Negative count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.negCount||0)>0?C.rose:C.textLight}}>{shot.negCount||"—"}</span>
+                <span style={{fontFamily:"'DM Mono'",fontSize:16,fontWeight:700,
+                  color:shot.misses>=10?C.rose:shot.misses>=6?C.amber:C.textMid}}>{shot.misses}</span>
+                {hasTrend
+                  ? <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
+                      {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
+                    </span>
+                  : <span style={{fontSize:10,color:C.textLight,letterSpacing:"0.03em"}}>—</span>
+                }
               </div>
 
             </div>
@@ -2226,15 +2120,6 @@ const Profile=({setPage})=>{
   const [homeClub,setHomeClub]           = useState("");
   const [email,setEmail]                 = useState("");
   const [dupr,setDupr]                   = useState("");
-
-  // Load shots for identity analysis
-  const [profileShots, setProfileShots] = useState([]);
-  useEffect(() => {
-    const uid = getCurrentUserId();
-    sb.query("shots", { filter: `user_id=eq.${uid}`, order: "name.asc" })
-      .then(rows => { if (rows) setProfileShots(rows); })
-      .catch(() => {});
-  }, []);
 
   // Load profile from Supabase on mount
   useEffect(() => {
@@ -2600,293 +2485,55 @@ const Profile=({setPage})=>{
         </div>
       </Card>
 
-      {/* ── Section 2: Season Stats (full width) ── */}
-      <Card style={{marginBottom:20}}>
-        <SLabel>Season Stats</SLabel>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:12}}>
-          <KPICard label="DUPR"         value={dupr?String(dupr):"—"}                                    color={C.blue}   colorL={C.blueL}/>
-          <KPICard label="Win Rate"     value={CORE_KPIS[0].value}                                       color={C.mint}   colorL={C.mintL}/>
-          <KPICard label="Avg Errors"   value={CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—"} color={C.rose}   colorL={C.roseL}/>
-          <KPICard label="NVZ Arrival"  value={CORE_KPIS[3].value}                                       color={C.mint}   colorL={C.mintL}/>
-          <KPICard label="NVZ Win Rate" value={CORE_KPIS[4].value}                                       color={C.blue}   colorL={C.blueL}/>
-          <KPICard label="Serve Neut."  value={CORE_KPIS[2].value}                                       color={C.amber}  colorL={C.amberL}/>
-          <KPICard label="Matches"      value="—"                                                         color={C.purple} colorL={C.purpleL}/>
-        </div>
-      </Card>
-
-
-      {/* ── Pickleball Identity ── */}
-      {(()=>{
-        // ── Derive identity from shot data ──────────────────────────────────────
-        const shots = profileShots;
-        const get = (name) => shots.find(s => s.name === name) || {};
-        const sum = (names, field) => names.reduce((a,n) => a + (get(n)[field] || 0), 0);
-
-        // Shot volume by style category
-        const kitchenAttempts  = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "attempts");
-        const transitionAttempts = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "attempts");
-        const driveAttempts    = sum(["Drive BH","Drive FH"], "attempts");
-        const attackAttempts   = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "attempts");
-        const totalAttempts    = kitchenAttempts + transitionAttempts + driveAttempts + attackAttempts;
-
-        // Win rates by category
-        const kitchenWins   = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "wins");
-        const driveWins     = sum(["Drive BH","Drive FH"], "wins");
-        const attackWins    = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "wins");
-        const dropWins      = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "wins");
-
-        const kitchenWR  = kitchenAttempts  > 0 ? Math.round(kitchenWins  / kitchenAttempts  * 100) : 0;
-        const driveWR    = driveAttempts    > 0 ? Math.round(driveWins    / driveAttempts    * 100) : 0;
-        const attackWR   = attackAttempts   > 0 ? Math.round(attackWins   / attackAttempts   * 100) : 0;
-        const dropWR     = transitionAttempts > 0 ? Math.round(dropWins   / transitionAttempts* 100) : 0;
-
-        const kitchenPct  = totalAttempts > 0 ? Math.round(kitchenAttempts  / totalAttempts * 100) : 0;
-        const drivePct    = totalAttempts > 0 ? Math.round(driveAttempts    / totalAttempts * 100) : 0;
-        const attackPct   = totalAttempts > 0 ? Math.round(attackAttempts   / totalAttempts * 100) : 0;
-        const dropPct     = totalAttempts > 0 ? Math.round(transitionAttempts/ totalAttempts * 100) : 0;
-        const nvzArrival  = CORE_KPIS[3].numVal || 0;
-        const errors      = CORE_KPIS[1].numVal || 0;
-
-        const hasData = totalAttempts > 10;
-
-        // ── Identity assignment algorithm ──────────────────────────────────────
-        // Score each style based on shot mix + performance metrics
-        let scores = { Resetter: 0, Driver: 0, Attacker: 0, Balanced: 0 };
-        if (hasData) {
-          // Resetter: high kitchen %, high NVZ arrival, low errors, good drop WR
-          scores.Resetter += kitchenPct > 40 ? 30 : kitchenPct > 25 ? 15 : 0;
-          scores.Resetter += nvzArrival > 70 ? 25 : nvzArrival > 55 ? 12 : 0;
-          scores.Resetter += errors < 3 ? 20 : errors < 5 ? 10 : 0;
-          scores.Resetter += dropWR > 60 ? 15 : dropWR > 45 ? 7 : 0;
-          scores.Resetter += dropPct > 15 ? 10 : 0;
-
-          // Driver: high drive %, high drive WR
-          scores.Driver += drivePct > 20 ? 35 : drivePct > 12 ? 18 : 0;
-          scores.Driver += driveWR > 55 ? 25 : driveWR > 40 ? 12 : 0;
-          scores.Driver += transitionAttempts > 0 ? 10 : 0;
-          scores.Driver += errors > 8 ? -10 : 0; // penalise high errors
-
-          // Attacker: high attack %, high attack WR
-          scores.Attacker += attackPct > 15 ? 35 : attackPct > 8 ? 18 : 0;
-          scores.Attacker += attackWR > 60 ? 30 : attackWR > 45 ? 15 : 0;
-          scores.Attacker += kitchenWR > 65 ? 10 : 0; // good setup for attacks
-          scores.Attacker += errors > 10 ? -15 : 0;
-
-          // Balanced: no single style dominates
-          const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
-          scores.Balanced += maxPct < 40 ? 30 : maxPct < 55 ? 15 : 0;
-          scores.Balanced += kitchenPct > 15 && drivePct > 8 && attackPct > 5 ? 20 : 0;
-          scores.Balanced += nvzArrival > 55 && attackWR > 40 ? 15 : 0;
-        }
-
-        const identity = hasData
-          ? Object.entries(scores).reduce((a,b) => b[1] > a[1] ? b : a)[0]
-          : null;
-
-        const STYLES = {
-          Resetter: {
-            icon:"🔄", color:C.mint, colorL:C.mintL,
-            tagline:"Patient. NVZ-first. Outlast the opponent.",
-            description:"You win by controlling the kitchen, minimising errors, and forcing opponents into mistakes. Your 3rd/4th shot drops are a primary weapon — you get to the NVZ consistently and let the opponent self-destruct.",
-            strengths:["Elite NVZ arrival rate","Low unforced errors","Strong reset game under pressure","Makes opponents impatient"],
-            improvements:["Develop a speed-up to punish high balls","Add an occasional drive to keep opponents honest","Work on transition speed to reach NVZ even faster"],
-            proPrinciple:"Ben Johns philosophy: 'Never force pace from a weak position. Reset until you have a ball above the net, then attack.'",
-            strategy:"Stay patient at the kitchen. Your goal every rally is to arrive at the NVZ together and out-dink the opponent. Only speed up when the ball is above the net tape and you have a clear angle. Protect your backhand side in transition.",
-          },
-          Driver: {
-            icon:"💥", color:C.blue, colorL:C.blueL,
-            tagline:"Aggressive. Transition-focused. Apply pressure from mid-court.",
-            description:"You use pace and power to disrupt opponents in transition. Your drives prevent opponents from settling into a dinking game and force weak responses you can attack.",
-            strengths:["Strong transition game","Effective use of pace","Keeps opponents back","Creates offensive opportunities"],
-            improvements:["Improve drop accuracy to complement driving","Reduce errors by choosing drives more selectively","Develop more NVZ patience once you arrive at the kitchen"],
-            proPrinciple:"Tyson McGuffin: 'Your drive needs a purpose — either to win the point outright or force a weak pop-up you can put away.'",
-            strategy:"Use your drive strategically — not on every ball, but when the opponent is off-balance or out of position. Pair every drive with a plan for the next ball. Work on the drive-drop combination to keep opponents guessing.",
-          },
-          Attacker: {
-            icon:"⚡", color:C.rose, colorL:C.roseL,
-            tagline:"Explosive. Speed-up specialist. Win at the net.",
-            description:"You look to end rallies with aggressive NVZ attacks. Your speed-ups and slams are your primary finishing weapons. You play to win points, not just avoid losing them.",
-            strengths:["High attack win rate","Strong speed-up recognition","Creates pressure at the NVZ","Can end rallies quickly"],
-            improvements:["Be more selective — only attack balls you win 70%+","Develop more patience to set up better attack opportunities","Strengthen your reset game to recover when attacks are countered"],
-            proPrinciple:"Anna Leigh Waters: 'Be selective with your attacks. The best attackers only speed up when the percentage is strongly in their favour.'",
-            strategy:"Your attack game is a weapon — protect it by being selective. Build the rally through quality dinks until you create a ball above the net tape with a clear angle. When the moment comes, commit fully. Work on your reset to handle counter-attacks.",
-          },
-          Balanced: {
-            icon:"⚖️", color:C.purple, colorL:C.purpleL,
-            tagline:"Versatile. Adaptable. Hard to read.",
-            description:"You have a well-rounded game without an obvious pattern opponents can exploit. You can reset, drive, or attack depending on what the match demands — making you an unpredictable and dangerous partner.",
-            strengths:["No obvious weakness for opponents to target","Can adapt to any partner's style","Effective in multiple game situations","Strong all-court awareness"],
-            improvements:["Identify your single strongest shot and make it elite","Develop a clear identity for high-pressure moments","Sharpen your decision-making — know when to reset vs attack"],
-            proPrinciple:"Simone Jardim: 'Know your strengths deeply. Versatility is only powerful when backed by at least one shot you can rely on under pressure.'",
-            strategy:"Your adaptability is your edge — use it. In close games, identify what's working and lean into it. Communicate with your partner to establish clear roles: one player covers the middle, one covers angles. Your balanced game makes you an excellent partner for specialists.",
-          },
-        };
-
-        const style = identity ? STYLES[identity] : null;
-
-        return (
-          <Card style={{marginBottom:20, overflow:"hidden"}}>
-            {/* Header */}
-            <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
-              margin:"-1px -1px 0", padding:"20px 24px", borderRadius:"14px 14px 0 0"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div style={{fontSize:11,color:C.pickle,fontWeight:700,textTransform:"uppercase",
-                    letterSpacing:"0.1em",marginBottom:4}}>Pickleball Identity</div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:"white",letterSpacing:"0.04em",lineHeight:1}}>
-                    Your Playing Style
-                  </div>
-                  <div style={{fontSize:12,color:"#94A3B8",marginTop:4}}>
-                    Derived from your shot data · updates automatically as you log more matches
-                  </div>
-                </div>
-                {style && (
-                  <div style={{textAlign:"center",flexShrink:0}}>
-                    <div style={{fontSize:36,marginBottom:4}}>{style.icon}</div>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:style.color,
-                      letterSpacing:"0.06em"}}>{identity}</div>
-                  </div>
-                )}
+      {/* ── Section 2: Stats & DUPR Progression ── */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:20,marginBottom:20}}>
+        <Card>
+          <SLabel>Season Stats</SLabel>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12,marginBottom:16}}>
+            <KPICard label="DUPR"      value={dupr?String(dupr):"—"} color={C.blue}   colorL={C.blueL}/>
+            <KPICard label="Win Rate"  value={CORE_KPIS[0].value} color={C.mint}   colorL={C.mintL}/>
+            <KPICard label="Matches"   value="—" color={C.amber}  colorL={C.amberL}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10}}>
+            {[
+              {label:"Avg Errors",   value:CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—", color:C.rose},
+              {label:"NVZ Arrival",  value:CORE_KPIS[3].value, color:C.mint},
+              {label:"NVZ Win Rate", value:CORE_KPIS[4].value, color:C.blue},
+              {label:"My Serve Neut.",  value:CORE_KPIS[2].value, color:C.amber},
+            ].map(s=>(
+              <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>{s.label}</div>
+                <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:s.color}}>{s.value}</div>
               </div>
-            </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <SLabel>DUPR Progression</SLabel>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:30,color:C.blue,letterSpacing:"0.04em",marginBottom:16}}>
+            — <span style={{fontSize:18,color:C.textLight}}>enter in Profile</span>
+          </div>
+          <svg width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="duprGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={C.blue} stopOpacity="0.2"/>
+                <stop offset="100%" stopColor={C.blue} stopOpacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d={areaPath} fill="url(#duprGrad)"/>
+            <polyline points={polylineStr} fill="none" stroke={C.blue} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            {chartPts.map((p,i)=>(
+              <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={C.blue} stroke="white" strokeWidth="2"/>
+            ))}
+          </svg>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:8}}>
+            {months.map(mo=>(
+              <span key={mo} style={{fontSize:9,color:C.textLight}}>{mo}</span>
+            ))}
+          </div>
+        </Card>
+      </div>
 
-            <div style={{padding:"20px 24px"}}>
-              {!hasData ? (
-                <div style={{textAlign:"center",padding:"32px 16px",background:C.pageBg,borderRadius:12,
-                  border:`2px dashed ${C.border}`}}>
-                  <div style={{fontSize:32,marginBottom:10}}>🎾</div>
-                  <div style={{fontSize:14,fontWeight:700,color:C.textMid,marginBottom:6}}>Not enough data yet</div>
-                  <div style={{fontSize:12,color:C.textLight,lineHeight:1.6,maxWidth:320,margin:"0 auto"}}>
-                    Log at least 10 shots across a few matches and your playing identity will be automatically calculated here.
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Identity badge + tagline */}
-                  <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20,
-                    padding:"16px 20px",background:`${style.color}10`,
-                    border:`2px solid ${style.color}40`,borderRadius:14}}>
-                    <div style={{fontSize:48,flexShrink:0}}>{style.icon}</div>
-                    <div>
-                      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:style.color,
-                        letterSpacing:"0.05em",lineHeight:1}}>{identity}</div>
-                      <div style={{fontSize:14,fontWeight:600,color:C.text,marginTop:4,fontStyle:"italic"}}>
-                        "{style.tagline}"
-                      </div>
-                      <div style={{fontSize:12,color:C.textMid,marginTop:6,lineHeight:1.6}}>
-                        {style.description}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Shot mix breakdown */}
-                  <div style={{marginBottom:20}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",
-                      letterSpacing:"0.08em",marginBottom:10}}>Your Shot Mix</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-                      {[
-                        {label:"Kitchen",  pct:kitchenPct,  wr:kitchenWR,  color:C.mint},
-                        {label:"Drops",    pct:dropPct,     wr:dropWR,     color:C.blue},
-                        {label:"Drives",   pct:drivePct,    wr:driveWR,    color:C.amber},
-                        {label:"Attacks",  pct:attackPct,   wr:attackWR,   color:C.rose},
-                      ].map(s=>(
-                        <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"12px 10px",textAlign:"center",
-                          border:`1.5px solid ${s.pct > 0 ? s.color+"40" : C.border}`}}>
-                          <div style={{fontSize:10,color:s.color,fontWeight:700,textTransform:"uppercase",
-                            letterSpacing:"0.06em",marginBottom:4}}>{s.label}</div>
-                          <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:s.pct>0?s.color:C.textLight}}>
-                            {s.pct}%
-                          </div>
-                          <div style={{fontSize:9,color:C.textLight,marginTop:2}}>of shots</div>
-                          {s.wr > 0 && (
-                            <div style={{marginTop:4,fontSize:10,fontWeight:700,
-                              color:s.wr>=60?C.mint:s.wr>=45?C.amber:C.rose}}>
-                              {s.wr}% win rate
-                            </div>
-                          )}
-                          {/* Volume bar */}
-                          <div style={{height:3,background:C.border,borderRadius:2,marginTop:6}}>
-                            <div style={{height:"100%",width:`${s.pct}%`,background:s.color,borderRadius:2,transition:"width 0.5s"}}/>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Two columns: Strengths + Improvements */}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-                    <div style={{background:`${C.mint}08`,border:`1px solid ${C.mint}30`,borderRadius:12,padding:"14px 16px"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:C.mint,textTransform:"uppercase",
-                        letterSpacing:"0.08em",marginBottom:10}}>✓ Your Strengths</div>
-                      {style.strengths.map((s,i)=>(
-                        <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
-                          <span style={{color:C.mint,fontWeight:700,fontSize:12,flexShrink:0}}>✓</span>
-                          <span style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{s}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{background:`${C.amber}08`,border:`1px solid ${C.amber}30`,borderRadius:12,padding:"14px 16px"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:C.amber,textTransform:"uppercase",
-                        letterSpacing:"0.08em",marginBottom:10}}>↑ Areas to Develop</div>
-                      {style.improvements.map((s,i)=>(
-                        <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:6}}>
-                          <span style={{color:C.amber,fontWeight:700,fontSize:12,flexShrink:0}}>→</span>
-                          <span style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{s}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Winning Strategy */}
-                  <div style={{background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
-                    borderRadius:12,padding:"16px 20px",marginBottom:16}}>
-                    <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
-                      <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,
-                        background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
-                      <div>
-                        <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:4}}>
-                          Your Winning Strategy
-                        </div>
-                        <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.7}}>{style.strategy}</div>
-                      </div>
-                    </div>
-                    <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,
-                      fontSize:11,color:"#64748B",fontStyle:"italic",lineHeight:1.6}}>
-                      💬 Pro principle: {style.proPrinciple}
-                    </div>
-                  </div>
-
-                  {/* Style selector — override if desired */}
-                  <div>
-                    <div style={{fontSize:11,color:C.textLight,marginBottom:8}}>
-                      Not quite right? Override your style manually:
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-                      {Object.entries(STYLES).map(([key,s])=>(
-                        <div key={key} style={{
-                          padding:"10px 8px",borderRadius:10,textAlign:"center",cursor:"default",
-                          border:`2px solid ${identity===key?s.color:C.border}`,
-                          background:identity===key?`${s.color}12`:C.pageBg}}>
-                          <div style={{fontSize:20,marginBottom:2}}>{s.icon}</div>
-                          <div style={{fontSize:11,fontWeight:700,
-                            color:identity===key?s.color:C.textMid}}>{key}</div>
-                          {identity===key&&(
-                            <div style={{fontSize:9,color:s.color,fontWeight:600,marginTop:2}}>✓ Your style</div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{fontSize:11,color:C.textLight,marginTop:8,textAlign:"center"}}>
-                      Style is auto-assigned based on your shot data · log more matches for a more accurate result
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
-        );
-      })()}
 
       {/* ── Core Metric Targets ── */}
       <Card style={{marginBottom:20}}>
@@ -2896,54 +2543,27 @@ const Profile=({setPage})=>{
         </p>
         <div style={{display:"flex",flexDirection:"column",gap:0}}>
           {[
-            {id:"winRate",   label:"Win Rate",          current:CORE_KPIS[0].numVal||0, unit:"%", min:50, max:100, step:1,   higherIsBetter:true,  color:C.pickle,
-              desc:"% of matches won",
-              guidance:"3.5 players average ~50%. Elite 4.5+ players target 65–75%. Ben Johns-level: 85%+."},
-            {id:"errors",    label:"My Errors / Match", current:CORE_KPIS[1].numVal||0, unit:"",  min:0,  max:20,  step:0.5, higherIsBetter:false, color:C.rose,
-              desc:"YOUR personal unforced errors per match — not including your partner (lower = better)",
-              guidance:"Individual benchmarks: Recreational 3.5: 8–12/match. Competitive 4.0: under 5. Elite 4.5+: under 3. Note: team benchmarks are roughly double these numbers."},
-            {id:"serveNeut", label:"My Serve Neut.",    current:CORE_KPIS[2].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.amber,
-              desc:"% of YOUR serves/returns that prevent opponent attacks",
-              guidance:"Good: 60–70%. Strong: 75–85%. Elite: 90%+. Deep, low returns to the opponent's feet are key."},
-            {id:"nvzArrival",label:"NVZ Arrival",       current:CORE_KPIS[3].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.mint,
-              desc:"% of rallies both players reach the kitchen line",
-              guidance:"Recreational: ~50%. Competitive 4.0 target: 70–80%. Elite: 85%+. Teams that arrive together consistently win significantly more rallies."},
-            {id:"nvzWin",    label:"NVZ Win Rate",      current:CORE_KPIS[4].numVal||0, unit:"%", min:30, max:100, step:1,   higherIsBetter:true,  color:C.blue,
-              desc:"% of kitchen rallies your team wins",
-              guidance:"Average: ~50%. Competitive 4.0 target: 60–65%. Elite: 70%+. Patience and shot selection at the kitchen define this stat."},
+            {id:"winRate",   label:"Win Rate",            current:CORE_KPIS[0].numVal||0, unit:"%",  min:50, max:100, higherIsBetter:true,  color:C.pickle, desc:"% of matches won"},
+            {id:"errors",    label:"My Errors / Match",       current:CORE_KPIS[1].numVal||0, unit:"",  min:2,  max:20,  higherIsBetter:false, color:C.rose,   desc:"Your personal unforced errors per match (lower = better)"},
+            {id:"serveNeut", label:"My Serve Neut.", current:CORE_KPIS[2].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.amber,  desc:"% of YOUR serves/returns preventing opponent attacks"},
+            {id:"nvzArrival",label:"NVZ Arrival",          current:CORE_KPIS[3].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.mint,   desc:"% of rallies both players reach the kitchen"},
+            {id:"nvzWin",    label:"NVZ Win Rate",         current:CORE_KPIS[4].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.blue,   desc:"% of kitchen rallies your team wins"},
           ].map((m,i,arr)=>{
             const tgt = GOALS.targets[m.id];
             const gap = m.higherIsBetter ? tgt - m.current : m.current - tgt;
             const gapColor = gap <= 0 ? C.mint : gap <= 8 ? C.amber : C.rose;
-
-            // Auto-save targets to DB on slider change
-            const handleTargetChange = async (val) => {
-              GOALS.targets[m.id] = val;
-              setGoalVer(v=>v+1);
-              // Persist immediately
-              try {
-                const uid = getCurrentUserId();
-                await sb.upsert("profile", { user_id: uid, goals: {...GOALS.targets} }, "user_id");
-              } catch(e) { console.warn("Target save failed:", e); }
-            };
-
             return(
               <div key={m.id} style={{
                 padding:"18px 0",
                 borderBottom: i < arr.length-1 ? `1px solid ${C.border}` : "none"
               }}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                  <div style={{flex:1,marginRight:16}}>
+                  <div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{width:10,height:10,borderRadius:2,background:m.color,flexShrink:0}}/>
                       <span style={{fontSize:14,fontWeight:700,color:C.text}}>{m.label}</span>
                     </div>
                     <div style={{fontSize:11,color:C.textLight,marginTop:2,marginLeft:18}}>{m.desc}</div>
-                    {/* Pro guidance */}
-                    <div style={{marginTop:6,marginLeft:18,padding:"6px 10px",background:`${m.color}0C`,
-                      border:`1px solid ${m.color}25`,borderRadius:8,fontSize:11,color:C.textMid,lineHeight:1.5}}>
-                      💡 {m.guidance}
-                    </div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"baseline",gap:10}}>
@@ -2962,13 +2582,13 @@ const Profile=({setPage})=>{
                     </div>
                   </div>
                 </div>
-                <input type="range" min={m.min} max={m.max} step={m.step}
+                <input type="range" min={m.min} max={m.max} step={m.id==="errors"?0.5:1}
                   value={tgt}
-                  onChange={e => handleTargetChange(+e.target.value)}
+                  onChange={e=>{GOALS.targets[m.id]=+e.target.value; setGoalVer(v=>v+1);}}
                   style={{width:"100%",accentColor:m.color,cursor:"pointer"}}/>
                 <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
-                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Conservative ":""}{m.min}{m.unit}</span>
-                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Elite ":""}{m.max}{m.unit}</span>
+                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Conservative":""}{m.min}{m.unit}</span>
+                  <span style={{fontSize:10,color:C.textLight}}>{m.higherIsBetter?"Elite":""}{m.max}{m.unit}</span>
                 </div>
               </div>
             );
@@ -3139,8 +2759,8 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
   useEffect(()=>{
     (async()=>{
       try {
-        const rows = await sb.query("players", { select:"name,dupr", order:"name.asc" });
-        setAllPlayers(Array.isArray(rows) ? rows.map(r=>({player_name:r.name, dupr:r.dupr})) : []);
+        const rows = await sb.query("profile", { select:"player_name,dupr" });
+        setAllPlayers(Array.isArray(rows) ? rows : []);
       } catch(e){}
     })();
   }, []);
@@ -3189,15 +2809,13 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
     if(!name || saving) return;
     setSaving(true);
     try {
-      // Check if player already exists in shared players table
-      const existing = await sb.query("players", { select:"name", filter:`name=ilike.${encodeURIComponent(name)}` });
-      if(!Array.isArray(existing) || existing.length === 0) {
-        // Insert into shared players table — readable by all users
-        await sb.insert("players", { name, created_by: getCurrentUserId() });
+      const existing = await sb.query("profile",{select:"player_name",filter:`player_name=ilike.${encodeURIComponent(name)}`});
+      if(!Array.isArray(existing)||existing.length===0) {
+        await sb.insert("profile", { player_name: name, user_id: getCurrentUserId() });
         setAllPlayers(prev=>[...prev, {player_name:name}]);
       }
       addChip(name);
-    } catch(e) { addChip(name); } // still add chip even if DB save fails
+    } catch(e){ addChip(name); } // still add chip even if DB save fails
     setSaving(false);
   };
 
@@ -3741,823 +3359,759 @@ const LogMatchContent=()=>{
 const SHOT_BUTTONS = [
   { cat:"Serve/Return", color:C.amber,  shots:["Serve","Return BH","Return FH"] },
   { cat:"Transition",   color:C.blue,   shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
-  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
+  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH"] },
   { cat:"Attack",       color:C.rose,   shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
   { cat:"Defense",      color:C.purple, shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
 ];
 
-function VideoLoggerContent() {
+
+// ── ManualLogSection — performance stats + shot log for manual entry mode ─────
+function ManualLogSection({ matchSaved, savedMatchId, onMatchSave, matchSaving }) {
+  const INIT_SHOTS = Object.fromEntries(
+    SHOT_CATS.flatMap(c=>c.shots.map(s=>[s.name,{wins:0,misses:0}]))
+  );
+  const [shots, setShots]           = useState(INIT_SHOTS);
+  const [nvzArrived, setNvzArrived] = useState(0);
+  const [nvzMissed,  setNvzMissed]  = useState(0);
+  const [nvzWon,     setNvzWon]     = useState(0);
+  const [nvzLost,    setNvzLost]    = useState(0);
+  const [servNeut,   setServNeut]   = useState(0);
+  const [servFailed, setServFailed] = useState(0);
+  const [errors,     setErrors]     = useState(0);
+  const [partnerRole,setPartnerRole]= useState("Balanced");
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [saveError,  setSaveError]  = useState("");
   const isMobile = useIsMobile();
 
-  // ── Match info ────────────────────────────────────────────────────────────────
-  const [date,         setDate]         = useState(new Date().toISOString().slice(0,10));
-  const [opponent,     setOpponent]     = useState("");
-  const [partner,      setPartner]      = useState("");
-  const [score,        setScore]        = useState("");
-  const [result,       setResult]       = useState("W");
-  const [notes,        setNotes]        = useState("");
-  const [savedMatchId, setSavedMatchId] = useState(null);
-  const [matchSaved,   setMatchSaved]   = useState(false);
-  const [matchSaving,  setMatchSaving]  = useState(false);
-  const [matchErr,     setMatchErr]     = useState("");
+  const nvzTotal    = nvzArrived + nvzMissed;
+  const nvzKitchen  = nvzWon + nvzLost;
+  const servTotal   = servNeut + servFailed;
+  const nvzArrival  = nvzTotal>0  ? Math.round(nvzArrived/nvzTotal*100)  : 0;
+  const nvzWin      = nvzKitchen>0? Math.round(nvzWon/nvzKitchen*100)    : 0;
+  const serve       = servTotal>0 ? Math.round(servNeut/servTotal*100)   : 0;
 
-  // ── Video ─────────────────────────────────────────────────────────────────────
-  const [videoFile, setVideoFile] = useState(null);
-  const [videoUrl,  setVideoUrl]  = useState(null);
-  const [isIframe,  setIsIframe]  = useState(false); // true when URL is a web page (iframe), false for direct video file
+  const setShot = (name,field,val) => setShots(prev=>({...prev,[name]:{...prev[name],[field]:val}}));
 
-  const isEmbeddableUrl = (url) => {
-    // Detect web page URLs that should be iframed rather than played as video
-    return !url.match(/\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)(\?.*)?$/i);
-  };
-  const [uploadErr, setUploadErr] = useState("");
-  const videoRef = useRef(null);
+  const SHOT_LOG_FIELDS = SHOT_CATS.map(cat=>({cat:cat.label,shots:cat.shots.map(s=>s.name)}));
+  const totalWins   = Object.values(shots).reduce((a,s)=>a+s.wins,0);
+  const totalMisses = Object.values(shots).reduce((a,s)=>a+s.misses,0);
+  const shotsLogged = totalWins>0||totalMisses>0;
 
-  // ── Tracking toggles (persisted) ─────────────────────────────────────────────
-  const loadPref = (key, def) => {
-    try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); }
-    catch(e) { return def; }
-  };
-  const [trackShots, setTrackShots] = useState(() => loadPref("pi_track_shots", false));
-  const [trackRally, setTrackRally] = useState(() => loadPref("pi_track_rally", true));
-  const savePref = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} };
-  const toggleShots = () => { const v = !trackShots; setTrackShots(v); savePref("pi_track_shots", v); };
-  const toggleRally = () => { const v = !trackRally; setTrackRally(v); savePref("pi_track_rally", v); };
-
-  // ── In-match metrics ─────────────────────────────────────────────────────────
-  const [nvzArrived,  setNvzArrived]  = useState(0); // rallies both reached NVZ
-  const [nvzTotal,    setNvzTotal]    = useState(0); // total rallies for NVZ %
-  const [nvzWon,      setNvzWon]      = useState(0); // NVZ rallies won
-  const [nvzWonTotal, setNvzWonTotal] = useState(0); // NVZ rallies for win rate %
-  const [errors,      setErrors]      = useState(0); // unforced errors
-
-  // ── Shot Tracker data: { shotName: { pos, neu, neg } } ───────────────────────
-  const [shotData, setShotData] = useState({});
-
-  // ── Rally Ender data: { shotName: { won, lost } } ────────────────────────────
-  const [rallyData, setRallyData] = useState({});
-
-  // ── Save state ────────────────────────────────────────────────────────────────
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-
-  // ── Flash feedback ────────────────────────────────────────────────────────────
-  const [flashMsg,   setFlashMsg]   = useState(null);
-  const [flashColor, setFlashColor] = useState(C.mint);
-  const showFlash = (msg, color) => {
-    setFlashMsg(msg); setFlashColor(color);
-    setTimeout(() => setFlashMsg(null), 900);
-  };
-
-  const formatTs = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
-
-  // ── Upload helpers ────────────────────────────────────────────────────────────
-  // Video is local-only for playback — not uploaded to Supabase storage
-
-  const processFile = (file) => {
-    if (!file) return;
-    setUploadErr("");
-    if (file.size > 2048 * 1024 * 1024) { setUploadErr("File must be under 2GB."); return; }
-    const isVideo = file.type.startsWith("video/") || /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
-    if (!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
-    setVideoFile(file);
-    setIsIframe(false);
-    // Show local preview immediately — match + upload happen on Save
-    setVideoUrl(URL.createObjectURL(file));
-  };
-
-  // ── Logging actions ───────────────────────────────────────────────────────────
-  const logShot = (shotName, outcome) => {
-    setShotData(prev => {
-      const curr = prev[shotName] || { pos:0, neu:0, neg:0 };
-      return { ...prev, [shotName]: { ...curr, [outcome]: curr[outcome] + 1 } };
-    });
-    const col = outcome === "pos" ? C.mint : outcome === "neg" ? C.rose : C.textMid;
-    const lbl = { pos:"Positive", neu:"Neutral", neg:"Negative" }[outcome];
-    showFlash(`${shotName} — ${lbl}`, col);
-  };
-
-  const unlogShot = (shotName, outcome) => {
-    setShotData(prev => {
-      const curr = prev[shotName] || { pos:0, neu:0, neg:0 };
-      if (curr[outcome] <= 0) return prev;
-      return { ...prev, [shotName]: { ...curr, [outcome]: curr[outcome] - 1 } };
-    });
-  };
-
-  const logRally = (shotName, res) => {
-    setRallyData(prev => {
-      const curr = prev[shotName] || { won:0, lost:0 };
-      return { ...prev, [shotName]: { ...curr, [res === "W" ? "won" : "lost"]: curr[res === "W" ? "won" : "lost"] + 1 } };
-    });
-    showFlash(`${res === "W" ? "✓ Won" : "✕ Lost"} — ${shotName}`, res === "W" ? C.mint : C.rose);
-  };
-
-  const unlogRally = (shotName, res) => {
-    setRallyData(prev => {
-      const curr = prev[shotName] || { won:0, lost:0 };
-      const key = res === "W" ? "won" : "lost";
-      if (curr[key] <= 0) return prev;
-      return { ...prev, [shotName]: { ...curr, [key]: curr[key] - 1 } };
-    });
-  };
-
-  // ── Save all ──────────────────────────────────────────────────────────────────
   const saveAll = async () => {
-    if (!videoFile && !videoUrl) { alert("Please upload a video first."); return; }
-    const hasShots = trackShots && Object.keys(shotData).some(k => { const d = shotData[k]; return d.pos+d.neu+d.neg > 0; });
-    const hasRally = trackRally && Object.keys(rallyData).some(k => { const d = rallyData[k]; return d.won+d.lost > 0; });
-    if (!hasShots && !hasRally) { alert("Nothing logged yet."); return; }
-    setSaving(true);
+    setSaving(true); setSaveError("");
     try {
-      // Refresh token if expired before any DB writes
-      const refreshed = await ensureFreshToken();
-      if (!refreshed) {
-        alert("Your session has expired. Please sign out and sign back in.");
-        setSaving(false);
-        return;
-      }
-
-      const uid = getCurrentUserId();
-      if (!uid) { alert("Session expired — please sign out and sign back in."); setSaving(false); return; }
-
-      // Step 1: Save match record now (with all current field values)
+      // Save match if not already saved
       let matchId = savedMatchId;
-      if (!matchId) {
-        // Parse date parts directly to avoid timezone off-by-one issues
-        const dateParts = date ? date.split("-") : null;
-        const dateFormatted = dateParts
-          ? new Date(+dateParts[0], +dateParts[1]-1, +dateParts[2])
-              .toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })
-          : new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
-        const rows = await sb.insert("matches", {
-          date: dateFormatted, opponent, partner, result, score, notes,
-          nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced", user_id: uid,
-        });
-        matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
-        setSavedMatchId(matchId);
-        setMatchSaved(true);
+      if(!matchId) {
+        await onMatchSave();
+        // Wait briefly for state to update — use a local ref approach
+        matchId = savedMatchId; // may still be null, handled below
       }
+      if(!matchId) { setSaveError("Please fill in match info above first."); setSaving(false); return; }
 
-      // Video is local-only — not uploaded to storage (saves on storage costs)
-      // Fetch existing shot record
-      const fetchEx = async (name) => {
-        try { return await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); }
-        catch(e) { return null; }
-      };
+      // Update match with performance stats
+      await sb.upsert("matches",{
+        id: matchId,
+        nvz_arrival: nvzArrival,
+        nvz_win:     nvzWin,
+        serve_neut:  serve,
+        errors:      parseFloat(errors),
+        partner_role: partnerRole,
+      },"id");
 
-      // Shot Tracker: writes pos_count / neu_count / neg_count + attempts
-      if (hasShots) {
-        for (const [name, d] of Object.entries(shotData)) {
-          const total = d.pos + d.neu + d.neg;
-          if (total === 0) continue;
-          const cat = SHOT_CATS.find(c => c.shots.some(s => s.name === name));
-          const ex  = await fetchEx(name);
-          await sb.upsert("shots", {
-            name, category: cat?.label || "",
-            attempts:  (ex?.attempts  || 0) + total,
-            wins:      ex?.wins   || 0,
-            misses:    ex?.misses || 0,
-            pos_count: (ex?.pos_count || 0) + d.pos,
-            neu_count: (ex?.neu_count || 0) + d.neu,
-            neg_count: (ex?.neg_count || 0) + d.neg,
-            win_history:  ex?.win_history  || [0,0,0,0],
-            miss_history: ex?.miss_history || [0,0,0,0],
-            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
-          }, "user_id,name");
-        }
-      }
-
-      // Rally Ender: writes wins / misses only
-      if (hasRally) {
-        for (const [name, d] of Object.entries(rallyData)) {
-          if (d.won + d.lost === 0) continue;
-          const cat = SHOT_CATS.find(c => c.shots.some(s => s.name === name));
-          const ex  = await fetchEx(name);
-          const winAdd  = d.won;
-          const missAdd = d.lost;
-          await sb.upsert("shots", {
-            name, category: cat?.label || "",
-            attempts:  (ex?.attempts || 0) + winAdd + missAdd,
-            wins:      (ex?.wins     || 0) + winAdd,
-            misses:    (ex?.misses   || 0) + missAdd,
-            pos_count: ex?.pos_count || 0,
-            neu_count: ex?.neu_count || 0,
-            neg_count: ex?.neg_count || 0,
-            win_history:  [...((ex?.win_history)  || [0,0,0,0]).slice(1), winAdd  > 0 ? 100 : 0],
-            miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), missAdd > 0 ? 100 : 0],
-            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
-          }, "user_id,name");
-        }
-      }
-      // Also update the match record with the in-match metrics
-      const serveReturnShots = ["Serve","Return BH","Return FH"];
-      const srNeuPos = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; }, 0);
-      const srTotal  = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; }, 0);
-      const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : 0;
-      const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived  / nvzTotal)    * 100) : 0;
-      const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon      / nvzWonTotal) * 100) : 0;
-      if (matchId) {
-        await sb.upsert("matches", {
-          id: matchId,
-          nvz_arrival: nvzArr,
-          nvz_win:     nvzWinR,
-          serve_neut:  serveNeut,
-          errors:      errors,
-        }, "id");
+      // Save shot stats
+      const uid = getCurrentUserId();
+      const shotEntries = Object.entries(shots).filter(([,s])=>s.wins>0||s.misses>0);
+      for(const [name,s] of shotEntries) {
+        const cat = SHOT_CATS.find(c=>c.shots.some(sh=>sh.name===name));
+        const shotMeta = cat?.shots.find(sh=>sh.name===name);
+        let existing = null;
+        try { existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        const newWinPct  = s.wins+s.misses>0?Math.round(s.wins/(s.wins+s.misses)*100):0;
+        const newMissPct = s.wins+s.misses>0?Math.round(s.misses/(s.wins+s.misses)*100):0;
+        await sb.upsert("shots",{
+          name,
+          category: cat?.label||"",
+          attempts: (existing?.attempts||0)+s.wins+s.misses,
+          wins:     (existing?.wins||0)+s.wins,
+          misses:   (existing?.misses||0)+s.misses,
+          win_history:  [...((existing?.win_history)||[0,0,0,0]).slice(1), newWinPct],
+          miss_history: [...((existing?.miss_history)||[0,0,0,0]).slice(1), newMissPct],
+          tip:   shotMeta?.tip||"",
+          color: cat?.color||C.blue,
+          icon:  cat?.icon||"🎾",
+          user_id: uid,
+        },"user_id,name");
       }
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch(e) { alert("Save failed: " + e.message); }
+    } catch(e){ setSaveError(e.message||"Save failed"); }
     setSaving(false);
   };
 
-  // ── Toggle switch component ───────────────────────────────────────────────────
-  const Toggle = ({ label, active, onToggle, color }) => (
-    <div onClick={onToggle} style={{
-      display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
-      borderRadius: 10, border: `1.5px solid ${active ? color : C.border}`,
-      background: active ? `${color}10` : C.pageBg,
-      cursor: "pointer", transition: "all 0.18s", userSelect: "none", flexShrink: 0,
-    }}>
-      <div style={{ width: 36, height: 20, borderRadius: 10, background: active ? color : C.border, position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-        <div style={{ position: "absolute", top: 2, left: active ? 17 : 2, width: 16, height: 16, borderRadius: "50%", background: "white", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
-      </div>
-      <span style={{ fontSize: 12, fontWeight: 700, color: active ? C.text : C.textMid, whiteSpace: "nowrap" }}>{label}</span>
+  if(saved) return(
+    <div style={{textAlign:"center",padding:"40px 20px"}}>
+      <div style={{fontSize:48,marginBottom:12}}>✅</div>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>Match Saved!</div>
+      <div style={{fontSize:14,color:C.textMid}}>Your stats and shot data have been logged.</div>
     </div>
   );
 
-  // ── Shot Tracker grid ─────────────────────────────────────────────────────────
-  // Default: light tint. After click: darker tint + colored text/border.
-  const ShotTrackerGrid = () => (
-    <div>
-      {/* Column headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 3, marginBottom: 6 }}>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.rose,    textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>✕ Negative</div>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>– Neutral</div>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.mint,    textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>✓ Positive</div>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.textLight,textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center", minWidth: 24 }}>#</div>
-      </div>
-      {SHOT_BUTTONS.map(cat => (
-        <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {cat.shots.map(shot => {
-              const d     = shotData[shot] || { pos:0, neu:0, neg:0 };
-              const total = d.pos + d.neu + d.neg;
-              // colour helpers
-              const negBg     = d.neg > 0 ? "#FECDCE" : "#FEF0F3";
-              const negBorder = d.neg > 0 ? C.rose     : "#F9C4CA";
-              const negColor  = d.neg > 0 ? C.rose     : "#E8A0A8";
-              const neuBg     = d.neu > 0 ? "#D1D5DB" : "#F3F4F6";
-              const neuBorder = d.neu > 0 ? "#6B7280"  : "#D1D5DB";
-              const neuColor  = d.neu > 0 ? "#374151"  : "#9CA3AF";
-              const posBg     = d.pos > 0 ? "#A7F3D0" : "#E8FAF5";
-              const posBorder = d.pos > 0 ? C.mint     : "#A0EDD5";
-              const posColor  = d.pos > 0 ? "#059669"  : "#6EE0B5";
-              const UndoBtn = ({outcome, col}) => d[outcome] > 0 ? (
-                <button onClick={e => { e.stopPropagation(); unlogShot(shot, outcome); }}
-                  title="Undo last"
-                  style={{ width:16, height:16, borderRadius:4, border:`1px solid ${col}60`,
-                    background:`${col}15`, color:col, fontSize:10, fontWeight:700,
-                    cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
-                    flexShrink:0, lineHeight:1, padding:0 }}>−</button>
-              ) : null;
-              return (
-                <div key={shot} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 3, alignItems: "center" }}>
-                  {/* Negative */}
-                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
-                    <button onClick={() => logShot(shot, "neg")} style={{
-                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${negBorder}`,
-                      background: negBg, color: negColor,
-                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = negBg; e.currentTarget.style.borderColor = negBorder; e.currentTarget.style.color = negColor; }}>
-                      ✕ {shot}{d.neg > 0 ? ` (${d.neg})` : ""}
-                    </button>
-                    <UndoBtn outcome="neg" col={C.rose}/>
-                  </div>
-                  {/* Neutral */}
-                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
-                    <button onClick={() => logShot(shot, "neu")} style={{
-                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${neuBorder}`,
-                      background: neuBg, color: neuColor,
-                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "#D1D5DB"; e.currentTarget.style.borderColor = "#6B7280"; e.currentTarget.style.color = "#374151"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = neuBg; e.currentTarget.style.borderColor = neuBorder; e.currentTarget.style.color = neuColor; }}>
-                      – {shot}{d.neu > 0 ? ` (${d.neu})` : ""}
-                    </button>
-                    <UndoBtn outcome="neu" col={C.textMid}/>
-                  </div>
-                  {/* Positive */}
-                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
-                    <button onClick={() => logShot(shot, "pos")} style={{
-                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${posBorder}`,
-                      background: posBg, color: posColor,
-                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = posBg; e.currentTarget.style.borderColor = posBorder; e.currentTarget.style.color = posColor; }}>
-                      ✓ {shot}{d.pos > 0 ? ` (${d.pos})` : ""}
-                    </button>
-                    <UndoBtn outcome="pos" col={C.mint}/>
-                  </div>
-                  {/* Total */}
-                  <div style={{
-                    fontFamily: "'DM Mono'", fontSize: 12, fontWeight: 700, textAlign: "center", minWidth: 24,
-                    color: total > 0 ? C.text : C.textLight,
-                  }}>{total > 0 ? total : "–"}</div>
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* Save match button (if not yet saved) */}
+      {!matchSaved && (
+        <button onClick={onMatchSave} disabled={matchSaving} style={{
+          width:"100%",background:matchSaving?C.border:C.navy,border:"none",borderRadius:12,
+          padding:"12px",fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
+          color:matchSaving?C.textMid:C.pickle,cursor:matchSaving?"not-allowed":"pointer"}}>
+          {matchSaving?"Saving match…":"✓ Confirm Match Info & Continue"}
+        </button>
+      )}
+
+      {matchSaved && <>
+        {/* Performance Stats — 2 col */}
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr"}}>
+            <div style={{borderRight:isMobile?"none":`1px solid ${C.border}`}}>
+              <div style={{padding:"7px 14px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px"}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>Metric</div>
+                  <div style={{fontSize:9,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Yes</div>
+                  <div style={{fontSize:9,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ No</div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── Rally Ender grid — same visual language as Shot Tracker ───────────────────
-  const RallyGrid = () => (
-    <div>
-      {/* Column headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 3, marginBottom: 6 }}>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.rose, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>✕ Lost</div>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.mint, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>✓ Won</div>
-        <div style={{ fontSize: 9, fontWeight: 800, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center", minWidth: 24 }}>#</div>
-      </div>
-      {SHOT_BUTTONS.map(cat => (
-        <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {cat.shots.map(shot => {
-              const d     = rallyData[shot] || { won:0, lost:0 };
-              const total = d.won + d.lost;
-              const lostBg     = d.lost > 0 ? "#FECDCE" : "#FEF0F3";
-              const lostBorder = d.lost > 0 ? C.rose     : "#F9C4CA";
-              const lostColor  = d.lost > 0 ? C.rose     : "#E8A0A8";
-              const wonBg      = d.won  > 0 ? "#A7F3D0" : "#E8FAF5";
-              const wonBorder  = d.won  > 0 ? C.mint     : "#A0EDD5";
-              const wonColor   = d.won  > 0 ? "#059669"  : "#6EE0B5";
-              return (
-                <div key={shot} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 3, alignItems: "center" }}>
-                  {/* Lost */}
-                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
-                    <button onClick={() => logRally(shot, "L")} style={{
-                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${lostBorder}`,
-                      background: lostBg, color: lostColor,
-                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "#FECDCE"; e.currentTarget.style.borderColor = C.rose; e.currentTarget.style.color = C.rose; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = lostBg; e.currentTarget.style.borderColor = lostBorder; e.currentTarget.style.color = lostColor; }}>
-                      ✕ {shot}{d.lost > 0 ? ` (${d.lost})` : ""}
-                    </button>
-                    {d.lost > 0 && <button onClick={e => { e.stopPropagation(); unlogRally(shot, "L"); }}
-                      title="Undo last" style={{ width:16, height:16, borderRadius:4,
-                        border:`1px solid ${C.rose}60`, background:`${C.rose}15`, color:C.rose,
-                        fontSize:10, fontWeight:700, cursor:"pointer",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        flexShrink:0, lineHeight:1, padding:0 }}>−</button>}
+              </div>
+              {[
+                {label:"NVZ Arrival", hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
+                  yv:nvzArrived,yi:()=>setNvzArrived(nvzArrived+1),yd:()=>setNvzArrived(Math.max(0,nvzArrived-1)),
+                  nv:nvzMissed, ni:()=>setNvzMissed(nvzMissed+1),nd:()=>setNvzMissed(Math.max(0,nvzMissed-1)),showHint:nvzTotal>0},
+                {label:"NVZ Win Rate",hint:nvzKitchen>0?nvzWin+"%":"Won the rally?",hintColor:C.blue,
+                  yv:nvzWon,yi:()=>setNvzWon(nvzWon+1),yd:()=>setNvzWon(Math.max(0,nvzWon-1)),
+                  nv:nvzLost,ni:()=>setNvzLost(nvzLost+1),nd:()=>setNvzLost(Math.max(0,nvzLost-1)),showHint:nvzKitchen>0},
+              ].map(row=>{
+                const hd=row.yv>0||row.nv>0;
+                return(
+                  <div key={row.label} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                    padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.pickle}08`:C.cardBg}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>{row.label}</div>
+                      <div style={{fontSize:9,color:row.showHint?row.hintColor:C.textLight,fontFamily:row.showHint?"'DM Mono'":"'Outfit'",fontWeight:row.showHint?700:400}}>{row.hint}</div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <button onClick={row.yd} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                      <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:row.yv>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{row.yv}</span>
+                      <button onClick={row.yi} style={{width:24,height:24,borderRadius:6,border:`1px solid ${row.yv>0?C.mint:C.border}`,background:row.yv>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                      <button onClick={row.nd} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                      <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:row.nv>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{row.nv}</span>
+                      <button onClick={row.ni} style={{width:24,height:24,borderRadius:6,border:`1px solid ${row.nv>0?C.rose:C.border}`,background:row.nv>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                    </div>
                   </div>
-                  {/* Won */}
-                  <div style={{ display:"flex", gap:2, alignItems:"center" }}>
-                    <button onClick={() => logRally(shot, "W")} style={{
-                      flex:1, padding: "6px 4px", borderRadius: 7, border: `1.5px solid ${wonBorder}`,
-                      background: wonBg, color: wonColor,
-                      fontFamily: "'Outfit'", fontWeight: 700, fontSize: 10,
-                      cursor: "pointer", transition: "all 0.15s", textAlign: "center",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}
-                      onMouseEnter={e => { e.currentTarget.style.background = "#A7F3D0"; e.currentTarget.style.borderColor = C.mint; e.currentTarget.style.color = "#059669"; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = wonBg; e.currentTarget.style.borderColor = wonBorder; e.currentTarget.style.color = wonColor; }}>
-                      ✓ {shot}{d.won > 0 ? ` (${d.won})` : ""}
-                    </button>
-                    {d.won > 0 && <button onClick={e => { e.stopPropagation(); unlogRally(shot, "W"); }}
-                      title="Undo last" style={{ width:16, height:16, borderRadius:4,
-                        border:`1px solid ${C.mint}60`, background:`${C.mint}15`, color:C.mint,
-                        fontSize:10, fontWeight:700, cursor:"pointer",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        flexShrink:0, lineHeight:1, padding:0 }}>−</button>}
-                  </div>
-                  {/* Total */}
-                  <div style={{
-                    fontFamily: "'DM Mono'", fontSize: 12, fontWeight: 700, textAlign: "center", minWidth: 24,
-                    color: total > 0 ? C.text : C.textLight,
-                  }}>{total > 0 ? total : "–"}</div>
+                );
+              })}
+            </div>
+            <div>
+              <div style={{padding:"7px 14px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px"}}>
+                  <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>Metric</div>
+                  <div style={{fontSize:9,color:C.mint,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✓ Yes</div>
+                  <div style={{fontSize:9,color:C.rose,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,textAlign:"center"}}>✕ No</div>
                 </div>
-              );
-            })}
+              </div>
+              {(()=>{const hd=servNeut>0||servFailed>0;return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                  padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.pickle}08`:C.cardBg}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>My Serve Neut.</div>
+                    <div style={{fontSize:9,color:servTotal>0?C.amber:C.textLight,fontFamily:servTotal>0?"'DM Mono'":"'Outfit'",fontWeight:servTotal>0?700:400}}>{servTotal>0?serve+"%":"Couldn't attack?"}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setServNeut(Math.max(0,servNeut-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:servNeut>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{servNeut}</span>
+                    <button onClick={()=>setServNeut(servNeut+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${servNeut>0?C.mint:C.border}`,background:servNeut>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setServFailed(Math.max(0,servFailed-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:servFailed>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{servFailed}</span>
+                    <button onClick={()=>setServFailed(servFailed+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${servFailed>0?C.rose:C.border}`,background:servFailed>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  </div>
+                </div>
+              );})()}
+              {(()=>{const hd=errors>0;return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",alignItems:"center",
+                  padding:"8px 14px",borderBottom:`1px solid ${C.border}`,background:hd?`${C.rose}08`:C.cardBg}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:hd?600:400,color:hd?C.text:C.textMid}}>My Errors</div>
+                    <div style={{fontSize:9,color:C.textLight}}>My unforced errors</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                    <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:errors>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{errors}</span>
+                    <button onClick={()=>setErrors(errors+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${errors>0?C.rose:C.border}`,background:errors>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  </div>
+                  <div/>
+                </div>
+              );})()}
+              <div style={{padding:"8px 14px"}}>
+                <div style={{fontSize:9,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700,marginBottom:6}}>Your Role</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+                  {["Resetter","Driver","Attacker","Balanced"].map(r=>(
+                    <button key={r} onClick={()=>setPartnerRole(r)} style={{
+                      padding:"6px 4px",borderRadius:8,fontWeight:600,fontSize:11,cursor:"pointer",
+                      fontFamily:"'Outfit'",background:partnerRole===r?C.navy:C.pageBg,
+                      border:`2px solid ${partnerRole===r?C.navy:C.border}`,
+                      color:partnerRole===r?"white":C.textMid}}>{r}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
-  );
+        </Card>
 
-  // ── Computed totals ───────────────────────────────────────────────────────────
-  const shotTotal  = Object.values(shotData).reduce((a, d) => a + d.pos + d.neu + d.neg, 0);
-  const rallyTotal = Object.values(rallyData).reduce((a, d) => a + d.won + d.lost, 0);
-  const totalLogged = shotTotal + rallyTotal;
-  const anyTracking = trackShots || trackRally;
-  const bothActive  = trackShots && trackRally;
-
-  // ── Layout: adaptive columns based on active toggles ─────────────────────────
-  // Shot Tracker LEFT · Video CENTER · Rally Ender RIGHT
-  // If only one panel active, video fills the other half.
-  const gridCols = bothActive
-    ? "340px 1fr 340px"       // both panels
-    : trackShots
-      ? "340px 1fr"           // shot tracker left, video right
-      : "1fr 340px";          // video left, rally right
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
-
-      {/* ── Step 1: Match Info ── */}
-      <Card style={{ padding: 0, overflow: "visible" }}>
-        <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <SLabel style={{ marginBottom: 0 }}>Step 1 — Match Info</SLabel>
-          {matchSaved && <span style={{ fontSize: 12, fontWeight: 600, color: C.mint }}>✓ Match saved</span>}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "12px 18px 0" }}>
-          <div>
-            <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 4 }}>Date</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} disabled={matchSaved}
-              style={{ width: "100%", background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 10px", color: C.text, fontSize: 13, fontFamily: "'Outfit'", boxSizing: "border-box" }} />
+        {/* Shot Log */}
+        <div style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.cardBg}}>
+          <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.border}`,
+            display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.text}}>Shot Log</div>
+              {shotsLogged&&<span style={{fontSize:11,fontWeight:600,color:C.pickle,background:`${C.pickle}18`,borderRadius:20,padding:"2px 8px"}}>{totalWins}W · {totalMisses}L</span>}
+              <div style={{fontSize:11,color:C.textLight}}>Optional — tap + each time a shot wins or loses a rally</div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 4 }}>Score</div>
-            <input type="text" value={score} onChange={e => setScore(e.target.value)} placeholder="e.g. 11-7" disabled={matchSaved}
-              style={{ width: "100%", background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 10px", color: C.text, fontSize: 13, fontFamily: "'Outfit'", boxSizing: "border-box" }} />
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 4 }}>Result</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-              {[["W","Win"],["L","Loss"]].map(([v,lbl]) => (
-                <button key={v} onClick={() => !matchSaved && setResult(v)} style={{
-                  padding: "8px 4px", borderRadius: 9, fontWeight: 700, fontSize: 12,
-                  cursor: matchSaved ? "default" : "pointer", fontFamily: "'Outfit'",
-                  background: result === v ? (v === "W" ? `${C.mint}20` : `${C.rose}20`) : C.pageBg,
-                  border: `2px solid ${result === v ? (v === "W" ? C.mint : C.rose) : C.border}`,
-                  color: result === v ? (v === "W" ? C.mint : C.rose) : C.textMid,
-                }}>{lbl}</button>
+          <div style={{borderTop:`1px solid ${C.border}`}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px",padding:"7px 16px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600}}>Shot</div>
+              <div style={{fontSize:10,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✓ Won</div>
+              <div style={{fontSize:10,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,textAlign:"center"}}>✕ Lost</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:0,borderBottom:`1px solid ${C.border}`}}>
+              {SHOT_LOG_FIELDS.map((cat,ci)=>(
+                <div key={cat.cat} style={{borderRight:(isMobile?(ci%2===0):(ci%3!==2))?`1px solid ${C.border}`:"none",borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{padding:"5px 14px",background:C.pageBg,borderBottom:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.1em"}}>{cat.cat}</span>
+                  </div>
+                  {cat.shots.map(sName=>{
+                    const w=shots[sName]?.wins||0;
+                    const m=shots[sName]?.misses||0;
+                    const hasData=w>0||m>0;
+                    return(
+                      <div key={sName} style={{display:"grid",gridTemplateColumns:"1fr 90px 90px",alignItems:"center",
+                        padding:"6px 14px",borderTop:`1px solid ${C.border}`,
+                        background:hasData?`${C.pickle}08`:C.cardBg}}>
+                        <div style={{fontSize:12,fontWeight:hasData?600:400,color:hasData?C.text:C.textMid,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sName}</div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                          <button onClick={()=>setShot(sName,"wins",Math.max(0,w-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:w>0?C.mint:C.textLight,minWidth:18,textAlign:"center"}}>{w}</span>
+                          <button onClick={()=>setShot(sName,"wins",w+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${w>0?C.mint:C.border}`,background:w>0?`${C.mint}18`:C.pageBg,fontSize:15,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                          <button onClick={()=>setShot(sName,"misses",Math.max(0,m-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,fontSize:15,color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>−</button>
+                          <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:m>0?C.rose:C.textLight,minWidth:18,textAlign:"center"}}>{m}</span>
+                          <button onClick={()=>setShot(sName,"misses",m+1)} style={{width:24,height:24,borderRadius:6,border:`1px solid ${m>0?C.rose:C.border}`,background:m>0?`${C.rose}18`:C.pageBg,fontSize:15,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ))}
             </div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: "10px 18px 0" }}>
-          <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent} placeholder="Search or type name..." multi={true} />
-          <PlayerSearch label="Partner" value={partner} onChange={setPartner} placeholder="Search or type name..." />
-        </div>
-        <div style={{ padding: "10px 18px 14px" }}>
-          <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 4 }}>Notes (optional)</div>
-          <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything notable..." disabled={matchSaved}
-            style={{ width: "100%", background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 10px", color: C.text, fontSize: 13, fontFamily: "'Outfit'", boxSizing: "border-box" }} />
-        </div>
-        {matchErr && <div style={{ margin: "0 18px 12px", background: `${C.rose}15`, border: `1px solid ${C.rose}40`, borderRadius: 9, padding: "9px 13px", fontSize: 12, color: C.rose }}>{matchErr}</div>}
-      </Card>
 
-      {/* ── Step 2: Tracking Toggles ── */}
-      <Card style={{ padding: "14px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginRight: 4 }}>Track:</div>
-          {/* Shot Tracker FIRST (left) */}
-          <Toggle label="🎯 Shot Tracker" active={trackShots} onToggle={toggleShots} color={C.blue} />
-          <Toggle label="🏁 Rally Ender"  active={trackRally} onToggle={toggleRally} color={C.mint} />
-          <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Saved automatically</div>
-        </div>
+        {saveError&&<div style={{background:`${C.rose}15`,border:`1px solid ${C.rose}40`,borderRadius:10,padding:"10px 14px",fontSize:12,color:C.rose}}>{saveError}</div>}
 
-        {/* Guidance row — always visible */}
-        <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
-            padding: "9px 13px", background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 9 }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🎯</span>
-            <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
-              <span style={{ fontWeight: 700, color: C.blue }}>Shot Tracker</span> — log every shot you hit during the rally.
-              Rate each one <span style={{ color: C.mint, fontWeight: 600 }}>positive</span>, <span style={{ color: C.textMid, fontWeight: 600 }}>neutral</span>, or <span style={{ color: C.rose, fontWeight: 600 }}>negative</span> based on shot quality.
-            </div>
+        <button onClick={saveAll} disabled={saving} style={{
+          width:"100%",background:saving?C.border:C.pickle,border:"none",borderRadius:14,
+          padding:"15px",fontFamily:"'Outfit'",fontWeight:700,fontSize:16,
+          color:C.navy,cursor:saving?"not-allowed":"pointer"}}>
+          {saving?"Saving…":"✓ Save Match"}
+        </button>
+      </>}
+    </div>
+  );
+}
+
+function VideoLoggerContent() {
+  const isMobile = useIsMobile();
+
+  // Logging mode: "choose" | "url" | "upload" | "manual"
+  const [logMode,   setLogMode]   = useState("choose");
+
+  // Match info (created at save time)
+  const [date,      setDate]      = useState(new Date().toISOString().slice(0,10));
+  const [opponent,  setOpponent]  = useState("");
+  const [partner,   setPartner]   = useState("");
+  const [score,     setScore]     = useState("");
+  const [result,    setResult]    = useState("W");
+  const [notes,     setNotes]     = useState("");
+  const [savedMatchId, setSavedMatchId] = useState(null); // set after match is created
+
+  // Video state
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoUrl,  setVideoUrl]  = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const videoRef = useRef(null);
+
+  // Shot logging state
+  const [shotLog,   setShotLog]   = useState([]);
+  const [lastShot,  setLastShot]  = useState(null);
+  const [outcome,   setOutcome]   = useState("W");
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+  const [matchSaved, setMatchSaved] = useState(false);
+  const [matchSaving, setMatchSaving] = useState(false);
+  const [matchErr,  setMatchErr]  = useState("");
+
+  const formatTs = (secs) => {
+    const m = Math.floor(secs/60);
+    const s = Math.floor(secs%60);
+    return `${m}:${s.toString().padStart(2,"0")}`;
+  };
+
+  // Save match info first, then upload video
+  const saveMatchAndUpload = async (file) => {
+    setMatchSaving(true); setMatchErr("");
+    try {
+      const uid = getCurrentUserId();
+      const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+      const rows = await sb.insert("matches", {
+        date: dateFormatted, opponent, partner, result, score, notes,
+        nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced",
+        user_id: uid,
+      });
+      const newMatchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
+      setSavedMatchId(newMatchId);
+      setMatchSaved(true);
+      // Now upload video
+      await uploadVideo(file, newMatchId);
+    } catch(e) {
+      setMatchErr("Failed to save match: " + (e.message||"Unknown error"));
+    }
+    setMatchSaving(false);
+  };
+
+  // Upload video to Supabase Storage
+  const uploadVideo = async (file, matchId) => {
+    setUploading(true); setUploadErr("");
+    try {
+      const uid = getCurrentUserId();
+      const ext = file.name.split(".").pop();
+      const path = `${uid}/${Date.now()}.${ext}`;
+      const res = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/match-videos/${path}`,
+        {
+          method:"POST",
+          headers:{
+            apikey: SUPABASE_KEY,
+            Authorization:`Bearer ${_authToken}`,
+            "Content-Type": file.type||"video/mp4",
+          },
+          body: file,
+        }
+      );
+      if(!res.ok) throw new Error(await res.text());
+      // Get signed URL for playback
+      const signRes = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/sign/match-videos/${path}`,
+        {
+          method:"POST",
+          headers:{
+            apikey: SUPABASE_KEY,
+            Authorization:`Bearer ${_authToken}`,
+            "Content-Type":"application/json",
+          },
+          body: JSON.stringify({expiresIn: 7200}),
+        }
+      );
+      const signData = await signRes.json();
+      const url = `${SUPABASE_URL}/storage/v1${signData.signedURL}`;
+      setVideoUrl(url);
+      if(matchId) {
+        await sb.upsert("matches",{id:matchId, video_url:url},"id");
+      }
+    } catch(e) {
+      setUploadErr("Upload failed: " + (e.message||"Unknown error"));
+    }
+    setUploading(false);
+  };
+
+  const processFile = (file) => {
+    if(!file) return;
+    setUploadErr("");
+    if(file.size > 500 * 1024 * 1024) { setUploadErr("File must be under 500MB."); return; }
+    const isVideo = file.type.startsWith("video/") ||
+      /\.(mp4|mov|avi|mkv|m4v|wmv|webm|mts|m2ts)$/i.test(file.name);
+    if(!isVideo) { setUploadErr("Please select a video file (MP4, MOV, AVI, etc.)"); return; }
+    setVideoFile(file);
+    // Show local preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setVideoUrl(localUrl);
+    // Save match + upload in background
+    saveMatchAndUpload(file);
+  };
+
+  const handleFileChange = (e) => {
+    processFile(e.target.files[0]);
+  };
+
+  // Log a shot at current video timestamp
+  const logShot = (shotName) => {
+    const ts = videoRef.current?.currentTime || 0;
+    const entry = {ts, name:shotName, result:outcome, id:Date.now()};
+    setShotLog(prev=>[...prev, entry].sort((a,b)=>a.ts-b.ts));
+    setLastShot(entry);
+    // Flash feedback
+    setTimeout(()=>setLastShot(null), 800);
+  };
+
+  const removeShot = (id) => setShotLog(prev=>prev.filter(s=>s.id!==id));
+
+  // Save all logged shots to DB
+  const saveShots = async () => {
+    if(!savedMatchId || shotLog.length===0) { alert(savedMatchId?"No shots to save yet.":"Please fill in match info and upload a video first."); return; }
+    setSaving(true);
+    try {
+      const uid = getCurrentUserId();
+      for(const shot of shotLog) {
+        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===shot.name));
+        let existing = null;
+        try { existing = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(shot.name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        const w = shot.result==="W"?1:0;
+        const m = shot.result==="L"?1:0;
+        await sb.upsert("shots",{
+          name: shot.name,
+          category: cat?.label||"",
+          attempts: (existing?.attempts||0)+1,
+          wins:     (existing?.wins||0)+w,
+          misses:   (existing?.misses||0)+m,
+          win_history:  [...((existing?.win_history)||[0,0,0,0]).slice(1), w*100],
+          miss_history: [...((existing?.miss_history)||[0,0,0,0]).slice(1), m*100],
+          color: cat?.color||C.blue,
+          icon:  cat?.icon||"🎾",
+          user_id: uid,
+        }, "user_id,name");
+      }
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 3000);
+    } catch(e) { alert("Save failed: "+e.message); }
+    setSaving(false);
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16,width:"100%"}}>
+
+      {/* ── Mode Selector (shown until a mode is chosen) ── */}
+      {logMode==="choose" && (
+        <div>
+          <div style={{marginBottom:20}}>
+            <h2 style={{fontFamily:"'Bebas Neue'",fontSize:26,color:C.navy,letterSpacing:"0.04em",marginBottom:4}}>
+              How would you like to log this match?
+            </h2>
+            <p style={{fontSize:13,color:C.textMid}}>Choose a method — you can always add video later.</p>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
-            padding: "9px 13px", background: `${C.mint}08`, border: `1px solid ${C.mint}20`, borderRadius: 9 }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🏁</span>
-            <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
-              <span style={{ fontWeight: 700, color: C.mint }}>Rally Ender</span> — log only the final shot that ended the rally.
-              Mark it <span style={{ color: C.mint, fontWeight: 600 }}>Won</span> or <span style={{ color: C.rose, fontWeight: 600 }}>Lost</span>.
-            </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:14}}>
+            {[
+              { id:"url",    icon:"🔗", title:"From a URL",        desc:"Paste a PlaySight or external video link and log shots while watching.",      badge:null },
+              { id:"upload", icon:"🎬", title:"Upload a Video",    desc:"Upload an MP4, MOV, or other video file from your device and log shots.",     badge:null },
+              { id:"manual", icon:"✏️", title:"Manual Entry",      desc:"No video? Log shots and performance stats by hand — same data, no upload.",   badge:"Most common" },
+            ].map(opt=>(
+              <button key={opt.id} onClick={()=>setLogMode(opt.id)} style={{
+                background:C.cardBg,border:`2px solid ${C.border}`,borderRadius:16,
+                padding:"22px 20px",cursor:"pointer",textAlign:"left",fontFamily:"'Outfit'",
+                transition:"all 0.15s",position:"relative"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=C.pickle;e.currentTarget.style.transform="translateY(-2px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.transform="translateY(0)";}}>
+                {opt.badge&&(
+                  <div style={{position:"absolute",top:12,right:12,background:C.pickle,color:C.navy,
+                    fontSize:9,fontWeight:700,borderRadius:20,padding:"2px 8px",letterSpacing:"0.05em",
+                    textTransform:"uppercase"}}>{opt.badge}</div>
+                )}
+                <div style={{fontSize:32,marginBottom:10}}>{opt.icon}</div>
+                <div style={{fontWeight:700,fontSize:15,color:C.navy,marginBottom:6}}>{opt.title}</div>
+                <div style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{opt.desc}</div>
+              </button>
+            ))}
           </div>
         </div>
+      )}
 
-        {/* Both on warning */}
-        {trackShots && trackRally && (
-          <div style={{ marginTop: 8, padding: "8px 13px", background: `${C.amber}12`, border: `1px solid ${C.amber}40`, borderRadius: 9,
-            fontSize: 11, color: C.amber, lineHeight: 1.6 }}>
-            ⚠️ <span style={{ fontWeight: 700 }}>Both modes are on.</span> Do not log the same shot in both panels —
-            use Shot Tracker for all shots during the rally, and Rally Ender only for the final shot that ends it.
-            Logging the same shot twice will double-count it.
-          </div>
-        )}
+      {/* ── Back button (shown once mode chosen) ── */}
+      {logMode!=="choose" && (
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>{setLogMode("choose");setVideoUrl(null);setVideoFile(null);setShotLog([]);setMatchSaved(false);setSavedMatchId(null);}}
+            style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 14px",
+              cursor:"pointer",fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,
+              display:"flex",alignItems:"center",gap:6}}>
+            ← Change method
+          </button>
+          <span style={{fontSize:13,color:C.textMid}}>
+            {logMode==="url"?"🔗 Logging from URL":logMode==="upload"?"🎬 Logging from video upload":"✏️ Manual entry"}
+          </span>
+        </div>
+      )}
 
-        {!anyTracking && (
-          <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
-            ⚠️ Turn on at least one tracking mode above.
-          </div>
-        )}
-      </Card>
+      {/* ── Step 1: Match Info (shown for all modes once chosen) ── */}
+      {logMode!=="choose" && <div>
+      <Card style={{padding:0,overflow:"visible"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,
+          display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <SLabel style={{marginBottom:0}}>Step 1 — Match Info</SLabel>
+          {matchSaved && (
+            <span style={{fontSize:12,fontWeight:600,color:C.mint}}>✓ Match saved</span>
+          )}
+        </div>
 
-      {/* ── Step 3: Upload / Video + Side Panels ── */}
-      <Card style={{ padding: "14px 16px" }}>
-        <SLabel>Step 3 — Upload Video</SLabel>
-
-        {!videoUrl ? (
-          /* ── No video yet: upload UI ── */
+        {/* Row 1: Date · Score · Result */}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",
+          gap:12,padding:"14px 18px 0"}}>
           <div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 5 }}>Paste a video URL (optional)</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type="text" id="videoUrlInput3" placeholder="Paste any video URL or PlaySight share link…"
-                  style={{ flex: 1, background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 11px", color: C.text, fontSize: 13, fontFamily: "'Outfit'" }} />
-                <button onClick={() => {
-                  const url = document.getElementById("videoUrlInput3").value.trim();
-                  if (url) { setIsIframe(isEmbeddableUrl(url)); setVideoUrl(url); }
-                }} style={{ padding: "8px 16px", background: C.navy, border: "none", borderRadius: 9, color: C.pickle, fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Load</button>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Date</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Score</div>
+            <input type="text" value={score} onChange={e=>setScore(e.target.value)}
+              placeholder="e.g. 11-7" disabled={matchSaved}
+              style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+                borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+                fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>!matchSaved&&setResult(v)} style={{
+                  padding:"9px 4px",borderRadius:10,fontWeight:700,fontSize:12,
+                  cursor:matchSaved?"default":"pointer",fontFamily:"'Outfit'",
+                  background:result===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):C.pageBg,
+                  border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
+                  color:result===v?(v==="W"?C.mint:C.rose):C.textMid}}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Opponent · Partner */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"12px 18px 0"}}>
+          <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
+            placeholder="Search or type name…" multi={true}/>
+          <PlayerSearch label="Partner" value={partner} onChange={setPartner}
+            placeholder="Search or type name…"/>
+        </div>
+
+        {/* Row 3: Notes */}
+        <div style={{padding:"12px 18px 16px"}}>
+          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes (optional)</div>
+          <input type="text" value={notes} onChange={e=>setNotes(e.target.value)}
+            placeholder="Anything notable — tactics, conditions, how you felt…" disabled={matchSaved}
+            style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,
+              borderRadius:10,padding:"9px 12px",color:C.text,fontSize:13,
+              fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+        </div>
+
+        {matchErr&&<div style={{margin:"0 18px 14px",background:`${C.rose}15`,border:`1px solid ${C.rose}40`,
+          borderRadius:10,padding:"10px 14px",fontSize:12,color:C.rose}}>{matchErr}</div>}
+      </Card>
+
+      {/* ── Step 2: Upload video ── */}
+      <Card style={{padding:"16px 20px"}}>
+        <SLabel>Step 2 — Upload Video</SLabel>
+        {!videoUrl ? (
+          <div>
+            {/* URL input for PlaySight / external links */}
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",
+                letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Paste a video URL (optional)</div>
+              <div style={{display:"flex",gap:8}}>
+                <input type="text" id="videoUrlInput"
+                  placeholder="https://... (direct .mp4 link)"
+                  style={{flex:1,background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'"}}/>
+                <button onClick={()=>{
+                  const url = document.getElementById("videoUrlInput").value.trim();
+                  if(url) setVideoUrl(url);
+                }} style={{padding:"9px 16px",background:C.navy,border:"none",borderRadius:10,
+                  color:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                  Load
+                </button>
+              </div>
+              <div style={{fontSize:11,color:C.textLight,marginTop:4}}>
+                Or upload a file below ↓
               </div>
             </div>
-            <label style={{ display: "block", cursor: "pointer" }}>
-              <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: "36px 20px", textAlign: "center", background: C.pageBg, transition: "all 0.2s" }}
-                onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.pickle; }}
-                onDragLeave={e => { e.currentTarget.style.borderColor = C.border; }}
-                onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.border; processFile(e.dataTransfer.files[0]); }}>
-                <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, color: C.navy, letterSpacing: "0.04em", marginBottom: 5 }}>Drop video here or click to browse</div>
-                <div style={{ fontSize: 12, color: C.textLight }}>MP4, MOV, AVI · Max 2GB</div>
-
-                {uploadErr && <div style={{ marginTop: 10, fontSize: 12, color: C.rose }}>{uploadErr}</div>}
+          <label style={{display:"block",cursor:"pointer"}}>
+            <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"40px 20px",
+              textAlign:"center",background:C.pageBg,transition:"all 0.2s"}}
+              onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=C.pickle;}}
+              onDragLeave={e=>{e.currentTarget.style.borderColor=C.border;}}
+              onDrop={e=>{
+                e.preventDefault();
+                e.currentTarget.style.borderColor=C.border;
+                processFile(e.dataTransfer.files[0]);
+              }}>
+              <div style={{fontSize:40,marginBottom:12}}>🎬</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:6}}>
+                Drop video here or click to browse
               </div>
-              <input type="file" accept="video/*" onChange={e => processFile(e.target.files[0])} style={{ display: "none" }} />
-            </label>
+              <div style={{fontSize:12,color:C.textLight}}>MP4, MOV, AVI · Max 500MB</div>
+              {uploading&&<div style={{marginTop:12,fontSize:13,color:C.amber,fontWeight:600}}>⏳ Uploading…</div>}
+              {uploadErr&&<div style={{marginTop:12,fontSize:12,color:C.rose}}>{uploadErr}</div>}
+            </div>
+            <input type="file" accept="video/*" onChange={handleFileChange} style={{display:"none"}}/>
+          </label>
           </div>
         ) : (
-          /* ── Video loaded: adaptive 3-column layout ── */
-          <div style={{ display: "grid", gridTemplateColumns: gridCols, gap: 14, alignItems: "start" }}>
-
-            {/* Column 1: Shot Tracker (only if active) */}
-            {trackShots && (
-              <div style={{ background: `${C.blue}06`, border: `1.5px solid ${C.blue}30`, borderRadius: 12, padding: "12px 14px", maxHeight: 580, overflowY: "auto" }}>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>🎯 Shot Tracker</div>
-                <ShotTrackerGrid />
-                {shotTotal > 0 && (
-                  <div style={{ marginTop: 8, padding: "6px 10px", background: C.pageBg, borderRadius: 8, fontSize: 11, display: "flex", gap: 10 }}>
-                    <span style={{ color: C.mint,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.pos,0)} pos</span>
-                    <span style={{ color: C.textMid, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neu,0)} neu</span>
-                    <span style={{ color: C.rose,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neg,0)} neg</span>
-                    <span style={{ color: C.textLight, marginLeft: "auto" }}>{shotTotal} total</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Column 2: Video (always center / fills space adaptively) */}
-            <div>
-              {/* Flash feedback */}
-              {flashMsg && (
-                <div style={{
-                  marginBottom: 8, padding: "8px 12px", borderRadius: 9, fontSize: 13, fontWeight: 700,
-                  color: flashColor, background: `${flashColor}18`, border: `1px solid ${flashColor}50`,
-                  animation: "fadeUp 0.15s ease", textAlign: "center",
-                }}>
-                  {flashMsg}
-                </div>
-              )}
-              {isIframe ? (
-                <iframe
-                  src={videoUrl}
-                  style={{ width: "100%", height: 460, borderRadius: 10, border: "none", background: "#000" }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen"
-                  title="Match Video"
-                />
-              ) : (
-                <video ref={videoRef} src={videoUrl} controls
-                  style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
-              )}
-
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setIsIframe(false); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
-                style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
-                ✕ Remove video
-              </button>
-
-              {/* ── In-match metrics ── */}
-              {(() => {
-                // Auto-calc serve neut from Shot Tracker data
-                const srShots = ["Serve","Return BH","Return FH"];
-                const srNeuPos = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; },0);
-                const srTotal  = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; },0);
-                const serveNeut = srTotal > 0 ? Math.round((srNeuPos/srTotal)*100) : null;
-                const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived/nvzTotal)*100)    : null;
-                const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon/nvzWonTotal)*100)      : null;
-
-                // Counter row: label + − count + button
-                const MetricCounter = ({label, color, colorL, val, onDec, onInc, total, suffix=""}) => (
-                  <div style={{flex:1, background:colorL, border:`1.5px solid ${color}30`, borderRadius:10, padding:"10px 12px"}}>
-                    <div style={{fontSize:10, fontWeight:700, color, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6}}>{label}</div>
-                    <div style={{display:"flex", alignItems:"center", gap:6}}>
-                      <button onClick={onDec} style={{width:26,height:26,borderRadius:6,border:`1px solid ${color}40`,background:"white",fontSize:15,color:color,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>−</button>
-                      <span style={{fontFamily:"'DM Mono'",fontSize:18,fontWeight:700,color,minWidth:28,textAlign:"center"}}>{val}</span>
-                      <button onClick={onInc} style={{width:26,height:26,borderRadius:6,border:`1.5px solid ${color}`,background:color,fontSize:15,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>+</button>
-                      {total !== undefined && <span style={{fontSize:10,color,fontWeight:600,marginLeft:2}}>/ {total}</span>}
-                      {suffix && <span style={{fontSize:10,color,fontWeight:600,marginLeft:2}}>{suffix}</span>}
-                    </div>
-                    {total !== undefined && total > 0 && (
-                      <div style={{marginTop:4,fontSize:11,fontWeight:700,color}}>{Math.round(val/total*100)}%</div>
-                    )}
-                  </div>
-                );
-
-                return (
-                  <div style={{marginTop:14}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.textMid,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>In-Match Metrics</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-                      {/* NVZ Arrival */}
-                      {(()=>{
-                        const nvzMissed = nvzTotal - nvzArrived;
-                        const arrBg     = nvzArrived > 0 ? "#A7F3D0" : "#E8FAF5";
-                        const arrBorder = nvzArrived > 0 ? C.mint    : "#A0EDD5";
-                        const arrColor  = nvzArrived > 0 ? "#059669" : "#6EE0B5";
-                        const misBg     = nvzMissed  > 0 ? "#FECDCE" : "#FEF0F3";
-                        const misBorder = nvzMissed  > 0 ? C.rose    : "#F9C4CA";
-                        const misColor  = nvzMissed  > 0 ? C.rose    : "#E8A0A8";
-                        return (
-                          <div style={{background:C.mintL, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"10px 12px"}}>
-                            <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Arrival</div>
-                            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
-                              {/* Arrived row */}
-                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
-                                <button onClick={()=>{ setNvzArrived(nvzArrived+1); setNvzTotal(nvzTotal+1); }}
-                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${arrBorder}`,background:arrBg,color:arrColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
-                                  onMouseEnter={e=>{e.currentTarget.style.background="#A7F3D0";e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.color="#059669";}}
-                                  onMouseLeave={e=>{e.currentTarget.style.background=arrBg;e.currentTarget.style.borderColor=arrBorder;e.currentTarget.style.color=arrColor;}}>
-                                  ✓ Arrived{nvzArrived>0?` (${nvzArrived})`:""}
-                                </button>
-                                <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                              </div>
-                              {/* Did not arrive row */}
-                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
-                                <button onClick={()=>{ setNvzTotal(nvzTotal+1); }}
-                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${misBorder}`,background:misBg,color:misColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
-                                  onMouseEnter={e=>{e.currentTarget.style.background="#FECDCE";e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;}}
-                                  onMouseLeave={e=>{e.currentTarget.style.background=misBg;e.currentTarget.style.borderColor=misBorder;e.currentTarget.style.color=misColor;}}>
-                                  ✕ Not Arrived{nvzMissed>0?` (${nvzMissed})`:""}
-                                </button>
-                                <button onClick={()=>{ if(nvzTotal>nvzArrived) setNvzTotal(nvzTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                              </div>
-                            </div>
-                            <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.mint}}>{nvzArr !== null ? nvzArr+"%" : "—"}</div>
-                            {nvzTotal>0 && <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{nvzArrived} of {nvzTotal} rallies</div>}
-                          </div>
-                        );
-                      })()}
-
-                      {/* NVZ Win Rate */}
-                      {(()=>{
-                        const nvzLost   = nvzWonTotal - nvzWon;
-                        const wonBg     = nvzWon  > 0 ? "#A7F3D0" : "#E8FAF5";
-                        const wonBorder = nvzWon  > 0 ? C.mint    : "#A0EDD5";
-                        const wonColor  = nvzWon  > 0 ? "#059669" : "#6EE0B5";
-                        const lostBg     = nvzLost > 0 ? "#FECDCE" : "#FEF0F3";
-                        const lostBorder = nvzLost > 0 ? C.rose    : "#F9C4CA";
-                        const lostColor  = nvzLost > 0 ? C.rose    : "#E8A0A8";
-                        return (
-                          <div style={{background:C.blueL, border:`1.5px solid ${C.blue}30`, borderRadius:10, padding:"10px 12px"}}>
-                            <div style={{fontSize:10,fontWeight:700,color:C.blue,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Win Rate</div>
-                            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
-                              {/* Won row */}
-                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
-                                <button onClick={()=>{ setNvzWon(nvzWon+1); setNvzWonTotal(nvzWonTotal+1); }}
-                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${wonBorder}`,background:wonBg,color:wonColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
-                                  onMouseEnter={e=>{e.currentTarget.style.background="#A7F3D0";e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.color="#059669";}}
-                                  onMouseLeave={e=>{e.currentTarget.style.background=wonBg;e.currentTarget.style.borderColor=wonBorder;e.currentTarget.style.color=wonColor;}}>
-                                  ✓ Won{nvzWon>0?` (${nvzWon})`:""}
-                                </button>
-                                <button onClick={()=>{ setNvzWon(Math.max(0,nvzWon-1)); if(nvzWonTotal>0) setNvzWonTotal(nvzWonTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                              </div>
-                              {/* Lost row */}
-                              <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
-                                <button onClick={()=>setNvzWonTotal(nvzWonTotal+1)}
-                                  style={{padding:"6px 4px",borderRadius:7,border:`1.5px solid ${lostBorder}`,background:lostBg,color:lostColor,fontFamily:"'Outfit'",fontWeight:700,fontSize:10,cursor:"pointer",transition:"all 0.15s",textAlign:"center"}}
-                                  onMouseEnter={e=>{e.currentTarget.style.background="#FECDCE";e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;}}
-                                  onMouseLeave={e=>{e.currentTarget.style.background=lostBg;e.currentTarget.style.borderColor=lostBorder;e.currentTarget.style.color=lostColor;}}>
-                                  ✕ Lost{nvzLost>0?` (${nvzLost})`:""}
-                                </button>
-                                <button onClick={()=>{ if(nvzWonTotal>nvzWon) setNvzWonTotal(nvzWonTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                              </div>
-                            </div>
-                            <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.blue}}>{nvzWinR !== null ? nvzWinR+"%" : "—"}</div>
-                            {nvzWonTotal>0 && <div style={{fontSize:9,color:C.textLight,marginTop:2}}>{nvzWon} of {nvzWonTotal} rallies</div>}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Errors + Serve Neut (stacked) */}
-                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                        {/* Unforced Errors */}
-                        <div style={{background:C.roseL, border:`1.5px solid ${C.rose}30`, borderRadius:10, padding:"10px 12px",flex:1}}>
-                          <div style={{fontSize:10,fontWeight:700,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Errors</div>
-                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                            <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
-                            <span style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.rose,minWidth:28,textAlign:"center"}}>{errors}</span>
-                            <button onClick={()=>setErrors(errors+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.rose}`,background:C.rose,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-                          </div>
-                          <div style={{fontSize:10,color:C.textLight}}>Unforced errors</div>
-                        </div>
-                        {/* Serve Neut — auto from Shot Tracker */}
-                        <div style={{background:C.amberL, border:`1.5px solid ${C.amber}30`, borderRadius:10, padding:"10px 12px",flex:1}}>
-                          <div style={{fontSize:10,fontWeight:700,color:C.amber,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>Serve Neut.</div>
-                          <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.amber}}>{serveNeut !== null ? serveNeut+"%" : "—"}</div>
-                          <div style={{fontSize:9,color:C.textLight,marginTop:2,lineHeight:1.4}}>Auto from Shot Tracker{srTotal>0?` (${srNeuPos}/${srTotal})`:""}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Session summary + Save */}
-              {totalLogged > 0 && (
-                <>
-                  <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {trackShots && shotTotal > 0 && (
-                      <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ color: C.textMid, fontWeight: 600 }}>🎯</span>
-                        <span style={{ color: C.mint,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.pos,0)}+</span>
-                        <span style={{ color: C.textMid, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neu,0)}–</span>
-                        <span style={{ color: C.rose,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neg,0)}✕</span>
-                      </div>
-                    )}
-                    {trackRally && rallyTotal > 0 && (
-                      <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ color: C.textMid, fontWeight: 600 }}>🏁</span>
-                        <span style={{ color: C.mint, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.won,0)}W</span>
-                        <span style={{ color: C.rose, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.lost,0)}L</span>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={saveAll} disabled={saving || saved} style={{
-                    width: "100%", marginTop: 10, background: saved ? C.mint : saving ? C.border : C.pickle,
-                    border: "none", borderRadius: 12, padding: "14px", fontFamily: "'Outfit'",
-                    fontWeight: 700, fontSize: 15, color: C.navy,
-                    cursor: saving || saved ? "not-allowed" : "pointer", transition: "all 0.2s",
-                  }}>
-                    {saved ? "✓ All Data Saved!" : saving ? "Saving..." : `Save Session — ${totalLogged} logged`}
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Column 3: Rally Ender (only if active) */}
-            {trackRally && (
-              <div style={{ background: `${C.mint}06`, border: `1.5px solid ${C.mint}30`, borderRadius: 12, padding: "12px 14px", maxHeight: 580, overflowY: "auto" }}>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>🏁 Rally Ender</div>
-                <RallyGrid />
-                {rallyTotal > 0 && (
-                  <div style={{ marginTop: 8, padding: "6px 10px", background: C.pageBg, borderRadius: 8, fontSize: 11, display: "flex", gap: 10 }}>
-                    <span style={{ color: C.mint, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.won,0)} won</span>
-                    <span style={{ color: C.rose, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.lost,0)} lost</span>
-                    <span style={{ color: C.textLight, marginLeft: "auto" }}>{rallyTotal} total</span>
-                  </div>
-                )}
-              </div>
-            )}
-
+          <div>
+            <video ref={videoRef} src={videoUrl} controls
+              style={{width:"100%",borderRadius:12,background:"#000",maxHeight:400}}/>
+            {uploading&&<div style={{marginTop:8,fontSize:12,color:C.amber,textAlign:"center"}}>⏳ Uploading to cloud…</div>}
+            <button onClick={()=>{setVideoUrl(null);setVideoFile(null);setShotLog([]);}}
+              style={{marginTop:8,background:"none",border:`1px solid ${C.border}`,borderRadius:8,
+                padding:"6px 14px",fontSize:12,color:C.textMid,cursor:"pointer",fontFamily:"'Outfit'"}}>
+              ✕ Remove video
+            </button>
           </div>
         )}
       </Card>
+
+      </div>}
+
+      {/* ── Manual Mode: Full shot log + performance stats ── */}
+      {logMode==="manual" && <ManualLogSection
+        matchSaved={matchSaved} savedMatchId={savedMatchId}
+        onMatchSave={async()=>{
+          setMatchSaving(true); setMatchErr("");
+          try {
+            const uid = getCurrentUserId();
+            const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+            const rows = await sb.insert("matches",{
+              date:dateFormatted,opponent,partner,result,score,notes,
+              nvz_arrival:0,nvz_win:0,serve_neut:0,errors:0,partner_role:"Balanced",user_id:uid,
+            });
+            const id = Array.isArray(rows)?rows[0]?.id:rows?.id;
+            setSavedMatchId(id); setMatchSaved(true);
+          } catch(e){ setMatchErr("Failed: "+(e.message||"Unknown")); }
+          setMatchSaving(false);
+        }}
+        matchSaving={matchSaving}
+      />}
+
+      {/* ── Step 3: Log shots (video modes) ── */}
+      {(logMode==="url"||logMode==="upload") && videoUrl && (
+        <Card style={{padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SLabel style={{marginBottom:0}}>Step 3 — Log Shots</SLabel>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:C.textMid}}>Rally result:</span>
+              {[["W","✓ Won"],["L","✕ Lost"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>setOutcome(v)} style={{
+                  padding:"5px 12px",borderRadius:8,border:`1.5px solid ${outcome===v?(v==="W"?C.mint:C.rose):C.border}`,
+                  background:outcome===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):"transparent",
+                  color:outcome===v?(v==="W"?C.mint:C.rose):C.textMid,
+                  fontFamily:"'Outfit'",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{fontSize:12,color:C.textMid,marginBottom:14,padding:"8px 12px",
+            background:`${C.pickle}10`,borderRadius:8,border:`1px solid ${C.pickle}30`}}>
+            ▶ Play the video, then tap the shot type each time a rally ends. Set Won/Lost before tapping.
+          </div>
+
+          {/* Last shot flash */}
+          {lastShot && (
+            <div style={{marginBottom:12,padding:"8px 14px",background:lastShot.result==="W"?`${C.mint}20`:`${C.rose}20`,
+              borderRadius:10,border:`1px solid ${lastShot.result==="W"?C.mint:C.rose}`,
+              fontSize:13,fontWeight:600,color:lastShot.result==="W"?C.mint:C.rose,
+              animation:"fadeUp 0.2s ease",display:"flex",justifyContent:"space-between"}}>
+              <span>{lastShot.result==="W"?"✓":"✕"} {lastShot.name} logged</span>
+              <span style={{fontFamily:"'DM Mono'",fontSize:11,opacity:0.8}}>@ {formatTs(lastShot.ts)}</span>
+            </div>
+          )}
+
+          {/* Shot category buttons */}
+          {SHOT_BUTTONS.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:14}}>
+              <div style={{fontSize:9,fontWeight:700,color:cat.color,textTransform:"uppercase",
+                letterSpacing:"0.1em",marginBottom:6}}>{cat.cat}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {cat.shots.map(shot=>(
+                  <button key={shot} onClick={()=>logShot(shot)}
+                    style={{padding:"8px 14px",borderRadius:10,border:`1.5px solid ${cat.color}30`,
+                      background:`${cat.color}10`,color:cat.color,fontFamily:"'Outfit'",
+                      fontWeight:600,fontSize:12,cursor:"pointer",transition:"all 0.1s",
+                      whiteSpace:"nowrap"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background=cat.color+"25";e.currentTarget.style.transform="scale(1.04)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background=cat.color+"10";e.currentTarget.style.transform="scale(1)";}}>
+                    {shot}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ── Shot log timeline ── */}
+      {shotLog.length > 0 && (
+        <Card style={{padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <SLabel style={{marginBottom:0}}>Shot Log · {shotLog.length} shots</SLabel>
+            <div style={{display:"flex",gap:8}}>
+              <span style={{fontSize:12,color:C.mint,fontWeight:600}}>
+                {shotLog.filter(s=>s.result==="W").length}W
+              </span>
+              <span style={{fontSize:12,color:C.rose,fontWeight:600}}>
+                {shotLog.filter(s=>s.result==="L").length}L
+              </span>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div style={{maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:4}}>
+            {shotLog.map((s,i)=>(
+              <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",
+                borderRadius:8,background:s.result==="W"?`${C.mint}08`:`${C.rose}08`,
+                border:`1px solid ${s.result==="W"?C.mint:C.rose}20`}}>
+                <span style={{fontFamily:"'DM Mono'",fontSize:11,color:C.textLight,minWidth:36}}>{formatTs(s.ts)}</span>
+                <span style={{fontSize:12,fontWeight:600,color:C.text,flex:1}}>{s.name}</span>
+                <span style={{fontSize:11,fontWeight:700,color:s.result==="W"?C.mint:C.rose}}>{s.result==="W"?"✓ Won":"✕ Lost"}</span>
+                <button onClick={()=>removeShot(s.id)} style={{background:"none",border:"none",
+                  color:C.textLight,cursor:"pointer",fontSize:14,padding:"0 2px",lineHeight:1}}>×</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Save button */}
+          <button onClick={saveShots} disabled={saving||saved} style={{
+            width:"100%",marginTop:14,background:saved?C.mint:saving?C.border:C.pickle,
+            border:"none",borderRadius:12,padding:"13px",fontFamily:"'Outfit'",
+            fontWeight:700,fontSize:15,color:C.navy,cursor:saving?"not-allowed":"pointer",transition:"all 0.2s"}}>
+            {saved?"✓ Shots Saved!":saving?"Saving…":"Save All Shots to Match"}
+          </button>
+        </Card>
+      )}
+
     </div>
   );
 }
 
 const MatchCenter=({defaultTab="log"})=>{
   const isMobile = useIsMobile();
-  const [tab,setTab]=useState(defaultTab); // "log" | "partners" | "history"
+  const [tab,setTab]=useState(defaultTab==="log"?"log":defaultTab);
 
   const TABS=[
     {id:"log",      label:"📋 Log Match"},
-    {id:"video",    label:"🎬 Log from Video"},
     {id:"partners", label:"👥 Partners"},
     {id:"history",  label:"🏆 Match History"},
   ];
@@ -4586,11 +4140,8 @@ const MatchCenter=({defaultTab="log"})=>{
         ))}
       </div>
 
-      {/* ── Tab: Log Match ── */}
-      {tab==="log"&&<LogMatchContent/>}
-
-      {/* ── Tab: Video Logger ── */}
-      {tab==="video"&&<VideoLoggerContent/>}
+      {/* ── Tab: Log Match (unified) ── */}
+      {tab==="log"&&<VideoLoggerContent/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
@@ -4627,7 +4178,6 @@ const FAQS = [
 ];
 
 const HelpModal = ({onClose}) => {
-  const isMobile = useIsMobile();
   const [tab, setTab]         = useState("faq");
   const [openFaq, setOpenFaq] = useState(null);
   const [feedback, setFeedback]     = useState("");
