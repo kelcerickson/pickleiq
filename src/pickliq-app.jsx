@@ -693,6 +693,7 @@ const Dashboard=({setPage})=>{
   const isMobile = useIsMobile();
   const [dbMatches, setDbMatches] = useState([]);
   const [profileData, setProfileData] = useState(null);
+  const [dashShots, setDashShots] = useState([]);
 
   useEffect(()=>{
     sb.query("matches", { order: "created_at.desc" })
@@ -711,11 +712,15 @@ const Dashboard=({setPage})=>{
                 shot.attempts    = row.attempts    || 0;
                 shot.wins        = row.wins        || 0;
                 shot.misses      = row.misses      || 0;
+                shot.posCount    = row.pos_count   || 0;
+                shot.neuCount    = row.neu_count   || 0;
+                shot.negCount    = row.neg_count   || 0;
                 shot.winHistory  = row.win_history  || [0,0,0,0];
                 shot.missHistory = row.miss_history || [0,0,0,0];
               }
             });
           });
+          setDashShots(rows);
         }
       })
       .catch(()=>{});
@@ -781,9 +786,114 @@ const Dashboard=({setPage})=>{
 
       </div>
 
-      {/* KPI strip */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":`repeat(${kpis.length},1fr)`,gap:isMobile?10:14,marginBottom:16}}>
-        {kpis.map(k=><KPICard key={k.id} {...k}/>)}
+      {/* ── Row 1: DUPR · Win Rate · Player Identity ── */}
+      {(()=>{
+        const dupr = profileData?.dupr;
+
+        // Compute player identity from shot data
+        const shots = dashShots;
+        const get = (name) => shots.find(s => s.name === name) || {};
+        const sumF = (names, field) => names.reduce((a,n) => a + (get(n)[field] || 0), 0);
+        const kitchenAtt  = sumF(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "attempts");
+        const dropAtt     = sumF(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "attempts");
+        const driveAtt    = sumF(["Drive BH","Drive FH"], "attempts");
+        const attackAtt   = sumF(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "attempts");
+        const totalAtt    = kitchenAtt + dropAtt + driveAtt + attackAtt;
+        const kitchenPct  = totalAtt > 0 ? Math.round(kitchenAtt / totalAtt * 100) : 0;
+        const drivePct    = totalAtt > 0 ? Math.round(driveAtt   / totalAtt * 100) : 0;
+        const attackPct   = totalAtt > 0 ? Math.round(attackAtt  / totalAtt * 100) : 0;
+        const dropPct     = totalAtt > 0 ? Math.round(dropAtt    / totalAtt * 100) : 0;
+        const hasIdData   = totalAtt > 10;
+
+        let scores = { Resetter:0, Driver:0, Attacker:0, Balanced:0 };
+        if (hasIdData) {
+          scores.Resetter += kitchenPct>40?30:kitchenPct>25?15:0;
+          scores.Resetter += CORE_KPIS[3].numVal>70?25:CORE_KPIS[3].numVal>55?12:0;
+          scores.Resetter += CORE_KPIS[1].numVal<3?20:CORE_KPIS[1].numVal<5?10:0;
+          scores.Resetter += dropPct>15?10:0;
+          scores.Driver   += drivePct>20?35:drivePct>12?18:0;
+          scores.Driver   += driveAtt>0?10:0;
+          scores.Attacker += attackPct>15?35:attackPct>8?18:0;
+          scores.Attacker += attackAtt>0&&(sumF(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"],"wins")/Math.max(1,attackAtt))>0.6?20:0;
+          const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
+          scores.Balanced += maxPct<40?30:maxPct<55?15:0;
+          scores.Balanced += kitchenPct>15&&drivePct>8&&attackPct>5?20:0;
+        }
+        const identity = hasIdData ? Object.entries(scores).reduce((a,b)=>b[1]>a[1]?b:a)[0] : null;
+        const IDENTITY_META = {
+          Resetter:{ icon:"🔄", color:C.mint,   tagline:"Patient · NVZ-first · Outlast the opponent" },
+          Driver:  { icon:"💥", color:C.blue,   tagline:"Aggressive · Transition-focused · Apply pressure" },
+          Attacker:{ icon:"⚡", color:C.rose,   tagline:"Explosive · Speed-up specialist · Win at the net" },
+          Balanced:{ icon:"⚖️", color:C.purple, tagline:"Versatile · Adaptable · Hard to read" },
+        };
+        const meta = identity ? IDENTITY_META[identity] : null;
+
+        return (
+          <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 2fr", gap:isMobile?10:14, marginBottom:14}}>
+
+            {/* DUPR */}
+            <div style={{background:C.cardBg, border:`2px solid ${C.border}`, borderRadius:14,
+              padding:"16px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>DUPR Rating</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:36,color:C.blue,letterSpacing:"0.04em",lineHeight:1,marginBottom:6}}>
+                {dupr || "—"}
+              </div>
+              <div style={{fontSize:11,color:C.textLight}}>
+                {dupr ? "Dynamic Universal Pickleball Rating" : "Add in Profile →"}
+              </div>
+            </div>
+
+            {/* Win Rate */}
+            <KPICard {...kpis[0]}/>
+
+            {/* Player Identity */}
+            <div style={{background:C.cardBg, border:`2px solid ${meta?meta.color+"40":C.border}`,
+              borderRadius:14, padding:"16px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
+              background: meta ? `linear-gradient(135deg,${meta.color}08,${C.cardBg})` : C.cardBg}}>
+              <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Player Identity</div>
+              {!hasIdData ? (
+                <div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.textLight,letterSpacing:"0.04em",marginBottom:4}}>Not enough data</div>
+                  <div style={{fontSize:11,color:C.textLight}}>Log 10+ shots to unlock your identity</div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                    <div style={{fontSize:36}}>{meta.icon}</div>
+                    <div>
+                      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:meta.color,letterSpacing:"0.04em",lineHeight:1}}>{identity}</div>
+                      <div style={{fontSize:11,color:C.textMid,marginTop:3,fontStyle:"italic"}}>{meta.tagline}</div>
+                    </div>
+                  </div>
+                  {/* Shot mix mini bars */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+                    {[
+                      {label:"Kitchen", pct:kitchenPct, color:C.mint},
+                      {label:"Drops",   pct:dropPct,    color:C.blue},
+                      {label:"Drives",  pct:drivePct,   color:C.amber},
+                      {label:"Attacks", pct:attackPct,  color:C.rose},
+                    ].map(s=>(
+                      <div key={s.label}>
+                        <div style={{height:4,background:C.border,borderRadius:2,marginBottom:3}}>
+                          <div style={{height:"100%",width:`${s.pct}%`,background:s.color,borderRadius:2}}/>
+                        </div>
+                        <div style={{fontSize:9,color:C.textLight,textAlign:"center"}}>{s.label} {s.pct}%</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{marginTop:8,textAlign:"right"}}>
+                    <span onClick={()=>setPage("profile")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>Full analysis →</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Row 2: Remaining 4 KPI metrics ── */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:isMobile?10:14,marginBottom:16}}>
+        {kpis.slice(1).map(k=><KPICard key={k.id} {...k}/>)}
       </div>
 
       {/* 4-widget row: Shot Summary | Priority Drills | Last Match | Best Partner */}
