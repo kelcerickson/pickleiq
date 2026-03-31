@@ -748,8 +748,21 @@ const Dashboard=({setPage})=>{
   const firstName = playerName.split(" ")[0];
   const lastMatch = allMatches[0] || null;
   const allShots=SHOT_CATS.flatMap(c=>c.shots.map(s=>({...s,catColor:c.color,icon:c.icon})));
-  const topWeapon=[...allShots].sort((a,b)=>b.wins-a.wins)[0];
-  const topWeakness=[...allShots].sort((a,b)=>b.misses-a.misses)[0];
+  // Combined scoring: rally enders (wins/misses) + shot tracker (pos/neg) counts
+  const shotScore = (s) => {
+    const pos = (s.wins||0) + (s.posCount||0);
+    const neg = (s.misses||0) + (s.negCount||0);
+    const tot = pos + neg + (s.neuCount||0);
+    return { pos, neg, tot, posRate: tot>0 ? pos/tot : 0, negRate: tot>0 ? neg/tot : 0 };
+  };
+  // Min 3 total attempts to be considered
+  const scoredShots = allShots.map(s=>({...s, ...shotScore(s)})).filter(s=>s.tot>=3);
+  const topWeapon   = scoredShots.length > 0
+    ? [...scoredShots].sort((a,b)=>b.posRate-a.posRate || b.pos-a.pos)[0]
+    : allShots[0];
+  const topWeakness = scoredShots.length > 0
+    ? [...scoredShots].sort((a,b)=>b.negRate-a.negRate || b.neg-a.neg)[0]
+    : allShots[0];
   const mostImproved=[...allShots].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
   const kpis=CORE_KPIS;
   // Best partner = highest synergy
@@ -904,8 +917,8 @@ const Dashboard=({setPage})=>{
           <SectionLabelInline>Shot Summary</SectionLabelInline>
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10,marginTop:6}}>
             {[
-              {label:"🏆 Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.wins||0} pts won`,      color:C.mint,  bg:C.mintL},
-              {label:"⚠️ Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.misses||0} errors`,   color:C.rose,  bg:C.roseL},
+              {label:"🏆 Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.pos||topWeapon?.wins||0} positive`,   color:C.mint,  bg:C.mintL},
+              {label:"⚠️ Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.neg||topWeakness?.misses||0} negative`, color:C.rose,  bg:C.roseL},
               {label:"📈 Most Improved", shot:mostImproved, metric:(()=>{
                 const h=mostImproved?.winHistory||[0,0,0,0];
                 const nonZero=h.filter(v=>v>0);
@@ -1868,8 +1881,23 @@ const Shots = () => {
     </div>
   );
 
-  const topWeapon    = [...all].sort((a,b)=>b.wins-a.wins)[0];
-  const topWeakness  = [...all].sort((a,b)=>b.misses-a.misses)[0];
+  // Combined scoring: rally enders + shot tracker outcomes
+  const shotScoreAll = (s) => {
+    const pos = (s.wins||0) + (s.posCount||0);
+    const neg = (s.misses||0) + (s.negCount||0);
+    const tot = pos + neg + (s.neuCount||0);
+    return { ...s, _pos:pos, _neg:neg, _tot:tot,
+      _posRate: tot>0 ? pos/tot : 0,
+      _negRate: tot>0 ? neg/tot : 0 };
+  };
+  const allScored    = all.map(shotScoreAll);
+  const withData     = allScored.filter(s=>s._tot>=3);
+  const topWeapon    = withData.length>0
+    ? [...withData].sort((a,b)=>b._posRate-a._posRate || b._pos-a._pos)[0]
+    : all[0];
+  const topWeakness  = withData.length>0
+    ? [...withData].sort((a,b)=>b._negRate-a._negRate || b._neg-a._neg)[0]
+    : all[0];
   const mostImproved = [...all].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
 
   return (
@@ -1887,7 +1915,10 @@ const Shots = () => {
           <div style={{ fontSize:11, color:C.mint, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>🏆 Top Weapon</div>
           <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{topWeapon?.name}</div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.mint }}>{topWeapon?.wins} pts won</span>
+            <div>
+              <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.mint }}>{topWeapon?._pos||topWeapon?.wins||0} positive</span>
+              {(topWeapon?._tot||0)>0&&<div style={{fontSize:10,color:C.mint,marginTop:1}}>{Math.round((topWeapon._posRate||0)*100)}% positive rate</div>}
+            </div>
             <div style={{ flex:1 }}><Sparkline data={topWeapon?.winHistory||[]} color={C.mint} width={90} height={36} showDots={false}/></div>
           </div>
         </Card>
@@ -1895,7 +1926,10 @@ const Shots = () => {
           <div style={{ fontSize:11, color:C.rose, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>⚠️ Biggest Weakness</div>
           <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{topWeakness?.name}</div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.rose }}>{topWeakness?.misses} pts lost</span>
+            <div>
+              <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.rose }}>{topWeakness?._neg||topWeakness?.misses||0} negative</span>
+              {(topWeakness?._tot||0)>0&&<div style={{fontSize:10,color:C.rose,marginTop:1}}>{Math.round((topWeakness._negRate||0)*100)}% negative rate</div>}
+            </div>
             <div style={{ flex:1 }}><Sparkline data={topWeakness?.missHistory||[]} color={C.rose} width={90} height={36} showDots={false}/></div>
           </div>
         </Card>
