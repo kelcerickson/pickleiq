@@ -262,8 +262,8 @@ const CORE_KPIS = [
   { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8" },
   { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
   { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
-  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
-  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
+  { id:"nvzArrival",label:"Team NVZ Arrival",       value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
+  { id:"nvzWin",    label:"Team NVZ Win Rate",       value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
 ];
 
 // Legacy ALL_KPIS kept for modal/customization compatibility
@@ -850,8 +850,8 @@ const Dashboard=({setPage})=>{
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             {[
-              {label:"NVZ Arrival",v:lastMatch.nvz_arrival||lastMatch.stats?.nvzArrival||0,color:C.mint},
-              {label:"NVZ Win",    v:lastMatch.nvz_win||lastMatch.stats?.nvzWin||0,    color:C.blue},
+              {label:"Team NVZ Arrival",v:lastMatch.nvz_arrival||lastMatch.stats?.nvzArrival||0,color:C.mint},
+              {label:"Team NVZ Win Rate",v:lastMatch.nvz_win||lastMatch.stats?.nvzWin||0,    color:C.blue},
               {label:"My Serve Neut.",v:lastMatch.serve_neut||lastMatch.stats?.serveNeut||0,     color:C.amber},
               {label:"My Errors",  v:lastMatch.errors||lastMatch.stats?.errors||0,       color:C.rose},
             ].map(s=>(
@@ -989,8 +989,8 @@ const MatchHistoryContent=()=>{
     { id:"winRate",    label:"Win Rate",            value:selMatch?.result==="W"?"WIN":"LOSS", numVal:selMatch?.result==="W"?100:0,  target:65,  unit:"%", higherIsBetter:true,  color:selMatch?.result==="W"?C.mint:C.rose, colorL:selMatch?.result==="W"?C.mintL:C.roseL, trendLabel:"this match" },
     { id:"errors",     label:"My Errors",           value:s.errors,   numVal:s.errors,   target:8,   unit:"",  higherIsBetter:false, color:C.rose,   colorL:C.roseL },
     { id:"serveNeut",  label:"My Serve Neut.",value:`${s.serveNeut}%`, numVal:s.serveNeut, target:70, unit:"%", higherIsBetter:true, color:C.amber, colorL:C.amberL },
-    { id:"nvzArrival", label:"NVZ Arrival",         value:`${s.nvzArrival}%`,numVal:s.nvzArrival,target:80,  unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
-    { id:"nvzWin",     label:"NVZ Win Rate",        value:`${s.nvzWin}%`,    numVal:s.nvzWin,    target:65,  unit:"%", higherIsBetter:true,  color:C.blue,   colorL:C.blueL },
+    { id:"nvzArrival", label:"Team NVZ Arrival",     value:`${s.nvzArrival}%`,numVal:s.nvzArrival,target:80,  unit:"%", higherIsBetter:true,  color:C.mint,   colorL:C.mintL },
+    { id:"nvzWin",     label:"Team NVZ Win Rate",     value:`${s.nvzWin}%`,    numVal:s.nvzWin,    target:65,  unit:"%", higherIsBetter:true,  color:C.blue,   colorL:C.blueL },
   ];
 
   // ── Edit Modal ──────────────────────────────────────────────────────────────
@@ -1117,8 +1117,8 @@ const MatchHistoryContent=()=>{
               <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700,marginBottom:12}}>Performance Stats</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 {[
-                  {label:"NVZ Arrival",    val:nvzArrived, set:setNvzArrived, color:C.mint},
-                  {label:"NVZ Win Rate",   val:nvzWon,     set:setNvzWon,     color:C.blue},
+                  {label:"Team NVZ Arrival", val:nvzArrived, set:setNvzArrived, color:C.mint},
+                  {label:"Team NVZ Win Rate",val:nvzWon,     set:setNvzWon,     color:C.blue},
                   {label:"My Serve Neut.", val:serveNeut,  set:setServeNeut,  color:C.amber},
                   {label:"My Errors",      val:errors,     set:setErrors,     color:C.rose},
                 ].map(({label,val,set,color})=>(
@@ -2497,8 +2497,8 @@ const Profile=({setPage})=>{
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:10}}>
             {[
               {label:"Avg Errors",   value:CORE_KPIS[1].value!=="—"?CORE_KPIS[1].value+" / match":"—", color:C.rose},
-              {label:"NVZ Arrival",  value:CORE_KPIS[3].value, color:C.mint},
-              {label:"NVZ Win Rate", value:CORE_KPIS[4].value, color:C.blue},
+              {label:"Team NVZ Arrival",value:CORE_KPIS[3].value, color:C.mint},
+              {label:"Team NVZ Win Rate",value:CORE_KPIS[4].value, color:C.blue},
               {label:"My Serve Neut.",  value:CORE_KPIS[2].value, color:C.amber},
             ].map(s=>(
               <div key={s.label} style={{background:C.pageBg,borderRadius:10,padding:"10px 12px"}}>
@@ -2546,8 +2546,8 @@ const Profile=({setPage})=>{
             {id:"winRate",   label:"Win Rate",            current:CORE_KPIS[0].numVal||0, unit:"%",  min:50, max:100, higherIsBetter:true,  color:C.pickle, desc:"% of matches won"},
             {id:"errors",    label:"My Errors / Match",       current:CORE_KPIS[1].numVal||0, unit:"",  min:2,  max:20,  higherIsBetter:false, color:C.rose,   desc:"Your personal unforced errors per match (lower = better)"},
             {id:"serveNeut", label:"My Serve Neut.", current:CORE_KPIS[2].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.amber,  desc:"% of YOUR serves/returns preventing opponent attacks"},
-            {id:"nvzArrival",label:"NVZ Arrival",          current:CORE_KPIS[3].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.mint,   desc:"% of rallies both players reach the kitchen"},
-            {id:"nvzWin",    label:"NVZ Win Rate",         current:CORE_KPIS[4].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.blue,   desc:"% of kitchen rallies your team wins"},
+            {id:"nvzArrival",label:"Team NVZ Arrival",     current:CORE_KPIS[3].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.mint,   desc:"% of rallies BOTH players reach the kitchen (team metric)"},
+            {id:"nvzWin",    label:"Team NVZ Win Rate",     current:CORE_KPIS[4].numVal||0, unit:"%",  min:30, max:100, higherIsBetter:true,  color:C.blue,   desc:"% of kitchen rallies your team wins (team metric)"},
           ].map((m,i,arr)=>{
             const tgt = GOALS.targets[m.id];
             const gap = m.higherIsBetter ? tgt - m.current : m.current - tgt;
@@ -3076,10 +3076,10 @@ const LogMatchContent=()=>{
                 </div>
               </div>
               {[
-                {label:"NVZ Arrival", hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
+                {label:"Team NVZ Arrival",hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
                   yv:nvzArrived, yi:()=>setNvzArrived(nvzArrived+1), yd:()=>setNvzArrived(Math.max(0,nvzArrived-1)),
                   nv:nvzMissed,  ni:()=>setNvzMissed(nvzMissed+1),  nd:()=>setNvzMissed(Math.max(0,nvzMissed-1)), showHint:nvzTotal>0},
-                {label:"NVZ Win Rate", hint:nvzKitchen>0?nvzWin+"%":"Won the rally?", hintColor:C.blue,
+                {label:"Team NVZ Win Rate",hint:nvzKitchen>0?nvzWin+"%":"Won the rally?", hintColor:C.blue,
                   yv:nvzWon, yi:()=>setNvzWon(nvzWon+1), yd:()=>setNvzWon(Math.max(0,nvzWon-1)),
                   nv:nvzLost, ni:()=>setNvzLost(nvzLost+1), nd:()=>setNvzLost(Math.max(0,nvzLost-1)), showHint:nvzKitchen>0},
               ].map((row,i)=>{
@@ -3483,10 +3483,10 @@ function ManualLogSection({ matchSaved, savedMatchId, onMatchSave, matchSaving }
                 </div>
               </div>
               {[
-                {label:"NVZ Arrival", hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
+                {label:"Team NVZ Arrival",hint:nvzTotal>0?nvzArrival+"%":"Kitchen arrival?", hintColor:C.mint,
                   yv:nvzArrived,yi:()=>setNvzArrived(nvzArrived+1),yd:()=>setNvzArrived(Math.max(0,nvzArrived-1)),
                   nv:nvzMissed, ni:()=>setNvzMissed(nvzMissed+1),nd:()=>setNvzMissed(Math.max(0,nvzMissed-1)),showHint:nvzTotal>0},
-                {label:"NVZ Win Rate",hint:nvzKitchen>0?nvzWin+"%":"Won the rally?",hintColor:C.blue,
+                {label:"Team NVZ Win Rate",hint:nvzKitchen>0?nvzWin+"%":"Won the rally?",hintColor:C.blue,
                   yv:nvzWon,yi:()=>setNvzWon(nvzWon+1),yd:()=>setNvzWon(Math.max(0,nvzWon-1)),
                   nv:nvzLost,ni:()=>setNvzLost(nvzLost+1),nd:()=>setNvzLost(Math.max(0,nvzLost-1)),showHint:nvzKitchen>0},
               ].map(row=>{
@@ -3646,6 +3646,7 @@ function VideoLoggerContent() {
   const [score,     setScore]     = useState("");
   const [result,    setResult]    = useState("W");
   const [notes,     setNotes]     = useState("");
+  const [formation, setFormation] = useState("Traditional"); // Traditional | Stacking | Semi-stack
   const [savedMatchId, setSavedMatchId] = useState(null); // set after match is created
 
   // Video state
@@ -3680,6 +3681,7 @@ function VideoLoggerContent() {
       const rows = await sb.insert("matches", {
         date: dateFormatted, opponent, partner, result, score, notes,
         nvz_arrival:0, nvz_win:0, serve_neut:0, errors:0, partner_role:"Balanced",
+        formation: formation,
         user_id: uid,
       });
       const newMatchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
@@ -3899,12 +3901,26 @@ function VideoLoggerContent() {
           </div>
         </div>
 
-        {/* Row 2: Opponent · Partner */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"12px 18px 0"}}>
+        {/* Row 2: Opponent · Partner · Formation */}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 1fr",gap:12,padding:"12px 18px 0"}}>
           <PlayerSearch label="Opponent(s)" value={opponent} onChange={setOpponent}
             placeholder="Search or type name…" multi={true}/>
           <PlayerSearch label="Partner" value={partner} onChange={setPartner}
             placeholder="Search or type name…"/>
+          <div>
+            <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Formation</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5}}>
+              {["Traditional","Stacking","Semi-stack"].map(f=>(
+                <button key={f} onClick={()=>!matchSaved&&setFormation(f)}
+                  disabled={matchSaved}
+                  style={{padding:"8px 4px",borderRadius:8,fontWeight:600,fontSize:10,cursor:matchSaved?"default":"pointer",
+                    fontFamily:"'Outfit'",textAlign:"center",lineHeight:1.2,
+                    background:formation===f?C.navy:C.pageBg,
+                    border:`2px solid ${formation===f?C.navy:C.border}`,
+                    color:formation===f?"white":C.textMid}}>{f}</button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Row 3: Notes */}
@@ -3994,7 +4010,9 @@ function VideoLoggerContent() {
             const dateFormatted = new Date(date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
             const rows = await sb.insert("matches",{
               date:dateFormatted,opponent,partner,result,score,notes,
-              nvz_arrival:0,nvz_win:0,serve_neut:0,errors:0,partner_role:"Balanced",user_id:uid,
+              nvz_arrival:0,nvz_win:0,serve_neut:0,errors:0,partner_role:"Balanced",
+              formation: formation,
+              user_id:uid,
             });
             const id = Array.isArray(rows)?rows[0]?.id:rows?.id;
             setSavedMatchId(id); setMatchSaved(true);
