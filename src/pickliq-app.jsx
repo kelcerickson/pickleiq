@@ -748,22 +748,39 @@ const Dashboard=({setPage})=>{
   const firstName = playerName.split(" ")[0];
   const lastMatch = allMatches[0] || null;
   const allShots=SHOT_CATS.flatMap(c=>c.shots.map(s=>({...s,catColor:c.color,icon:c.icon})));
-  // Combined scoring: rally enders (wins/misses) + shot tracker (pos/neg) counts
+  // Combined scoring: Bayesian-weighted formula (quality × volume)
+  // prior=10 means ~10 attempts needed before rate is trusted at face value
+  const PRIOR = 10;
+  const globalPosRate = (() => {
+    const all = allShots;
+    const totPos = all.reduce((a,s)=>(s.wins||0)+(s.posCount||0)+a, 0);
+    const totAll = all.reduce((a,s)=>(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0)+a, 0);
+    return totAll > 0 ? totPos/totAll : 0.5;
+  })();
   const shotScore = (s) => {
     const pos = (s.wins||0) + (s.posCount||0);
     const neg = (s.misses||0) + (s.negCount||0);
     const tot = pos + neg + (s.neuCount||0);
-    return { pos, neg, tot, posRate: tot>0 ? pos/tot : 0, negRate: tot>0 ? neg/tot : 0 };
+    // Bayesian average: blends actual rate with global average, weighted by volume
+    const bayesPos = (pos + PRIOR * globalPosRate) / (tot + PRIOR);
+    const bayesNeg = (neg + PRIOR * (1 - globalPosRate)) / (tot + PRIOR);
+    return { pos, neg, tot, posRate: tot>0?pos/tot:0, negRate: tot>0?neg/tot:0, bayesPos, bayesNeg };
   };
-  // Min 3 total attempts to be considered
   const scoredShots = allShots.map(s=>({...s, ...shotScore(s)})).filter(s=>s.tot>=3);
   const topWeapon   = scoredShots.length > 0
-    ? [...scoredShots].sort((a,b)=>b.posRate-a.posRate || b.pos-a.pos)[0]
+    ? [...scoredShots].sort((a,b)=>b.bayesPos-a.bayesPos)[0]
     : allShots[0];
   const topWeakness = scoredShots.length > 0
-    ? [...scoredShots].sort((a,b)=>b.negRate-a.negRate || b.neg-a.neg)[0]
+    ? [...scoredShots].sort((a,b)=>b.bayesNeg-a.bayesNeg)[0]
     : allShots[0];
-  const mostImproved=[...allShots].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
+  // Most improved: weight trend by volume (more shots = more reliable improvement signal)
+  const mostImproved = [...allShots]
+    .filter(s => s.winHistory.filter(v=>v>0).length >= 2)
+    .sort((a,b) => {
+      const deltaA = (a.winHistory[3]-a.winHistory[0]) * Math.log1p(a.attempts||0);
+      const deltaB = (b.winHistory[3]-b.winHistory[0]) * Math.log1p(b.attempts||0);
+      return deltaB - deltaA;
+    })[0] || [...allShots].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
   const kpis=CORE_KPIS;
   // Best partner = highest synergy
   // Derive partners from match history
@@ -1881,24 +1898,38 @@ const Shots = () => {
     </div>
   );
 
-  // Combined scoring: rally enders + shot tracker outcomes
+  // Bayesian-weighted scoring (quality × volume) — same formula as Dashboard
+  const SHOTS_PRIOR = 10;
+  const globalPosRateShots = (() => {
+    const totPos = all.reduce((a,s)=>(s.wins||0)+(s.posCount||0)+a, 0);
+    const totAll = all.reduce((a,s)=>(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0)+a, 0);
+    return totAll > 0 ? totPos/totAll : 0.5;
+  })();
   const shotScoreAll = (s) => {
     const pos = (s.wins||0) + (s.posCount||0);
     const neg = (s.misses||0) + (s.negCount||0);
     const tot = pos + neg + (s.neuCount||0);
+    const bayesPos = (pos + SHOTS_PRIOR * globalPosRateShots) / (tot + SHOTS_PRIOR);
+    const bayesNeg = (neg + SHOTS_PRIOR * (1 - globalPosRateShots)) / (tot + SHOTS_PRIOR);
     return { ...s, _pos:pos, _neg:neg, _tot:tot,
-      _posRate: tot>0 ? pos/tot : 0,
-      _negRate: tot>0 ? neg/tot : 0 };
+      _posRate: tot>0?pos/tot:0, _negRate: tot>0?neg/tot:0, _bayesPos:bayesPos, _bayesNeg:bayesNeg };
   };
   const allScored    = all.map(shotScoreAll);
   const withData     = allScored.filter(s=>s._tot>=3);
   const topWeapon    = withData.length>0
-    ? [...withData].sort((a,b)=>b._posRate-a._posRate || b._pos-a._pos)[0]
+    ? [...withData].sort((a,b)=>b._bayesPos-a._bayesPos)[0]
     : all[0];
   const topWeakness  = withData.length>0
-    ? [...withData].sort((a,b)=>b._negRate-a._negRate || b._neg-a._neg)[0]
+    ? [...withData].sort((a,b)=>b._bayesNeg-a._bayesNeg)[0]
     : all[0];
-  const mostImproved = [...all].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
+  // Most improved: weight trend delta by log of volume
+  const mostImproved = [...all]
+    .filter(s => s.winHistory.filter(v=>v>0).length >= 2)
+    .sort((a,b) => {
+      const dA = (a.winHistory[3]-a.winHistory[0]) * Math.log1p(a.attempts||0);
+      const dB = (b.winHistory[3]-b.winHistory[0]) * Math.log1p(b.attempts||0);
+      return dB - dA;
+    })[0] || [...all].sort((a,b)=>(b.winHistory[3]-b.winHistory[0])-(a.winHistory[3]-a.winHistory[0]))[0];
 
   return (
     <div className="fade-up" style={{ maxWidth:1200, margin:"0 auto", padding:isMobile?"14px":"32px", boxSizing:"border-box", width:"100%" }}>
