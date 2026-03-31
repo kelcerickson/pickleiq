@@ -610,6 +610,7 @@ const NAV=[
   {id:"dashboard",label:"Dashboard",short:"🏠"},
   {id:"shots",label:"Shots",short:"Shots"},
   {id:"matches",label:"Matches",short:"Match"},
+  {id:"drills",label:"Drills",short:"Drills"},
   {id:"coach",label:"Coach",short:"Coach"},
   {id:"profile",label:"Profile",short:"Me"},
 ];
@@ -1006,7 +1007,7 @@ const Dashboard=({setPage})=>{
             </div>
           )}
           <div style={{textAlign:"right"}}>
-            <span onClick={()=>setPage("shots")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>Manage drills →</span>
+            <span onClick={()=>setPage("drills")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>Go to Drills →</span>
           </div>
         </Card>
 
@@ -4795,6 +4796,582 @@ const MatchCenter=({defaultTab="log"})=>{
   );
 };
 
+
+// ── DRILLS PAGE ────────────────────────────────────────────────────────────────
+// Drill library: maps each shot to specific, actionable drills
+const DRILL_LIBRARY = {
+  // ── Kitchen / Dinking ──────────────────────────────────────────────────────
+  "Dink BH": [
+    { name:"Cross-Court Dink Rally", duration:"10 min", difficulty:"Beginner", focus:"Consistency",
+      description:"With a partner, sustain a cross-court backhand dink rally from the kitchen line. Goal: 50 consecutive dinks without error.",
+      cues:["Soft grip — squeeze only on contact","Paddle face slightly open","Push don't flick — use your shoulder, not your wrist","Aim 6 inches over the net tape"] },
+    { name:"Dink Target Practice", duration:"8 min", difficulty:"Intermediate", focus:"Placement",
+      description:"Place 4 cones in opponent's kitchen. Hit backhand dinks to each cone in sequence. 10 reps per target.",
+      cues:["Vary depth — aim for feet","Stay low through contact","Weight forward, not back","Reset your position after each shot"] },
+  ],
+  "Dink FH": [
+    { name:"Forehand Dink Consistency", duration:"10 min", difficulty:"Beginner", focus:"Consistency",
+      description:"Sustain a forehand dink rally cross-court. Goal: 50 consecutive without error. Alternate between straight-on and angled placements.",
+      cues:["Continental or eastern grip","Compact backswing — paddle stays in front","Accelerate through contact","Maintain kitchen line position"] },
+    { name:"Dink Direction Control", duration:"8 min", difficulty:"Intermediate", focus:"Placement",
+      description:"Practice redirecting incoming dinks — receive cross-court, send down-the-line and vice versa. 3 sets of 15.",
+      cues:["Read incoming ball early","Open paddle face for cross-court","Close it slightly for down-the-line","Stay patient — don't rush the redirect"] },
+  ],
+  // ── Reset ──────────────────────────────────────────────────────────────────
+  "Reset BH": [
+    { name:"Pressure Reset Drill", duration:"12 min", difficulty:"Intermediate", focus:"Defense",
+      description:"Partner drives or speed-ups from mid-court. Your goal: reset every ball softly into the kitchen. Partner feeds 20 balls continuously.",
+      cues:["Absorb pace — meet the ball, don't swing at it","Soft hands — imagine holding a raw egg","Bend your knees, get low","Target: first 3 feet past the NVZ line"] },
+    { name:"Mid-Court Reset Rally", duration:"10 min", difficulty:"Advanced", focus:"Defense",
+      description:"Both players at mid-court. Drive 3 balls, then one player resets into a dink. Alternate who resets. 3 sets of 20.",
+      cues:["Shorten backswing under pressure","Block don't swing","Low to high paddle path","Recover to NVZ immediately after reset"] },
+  ],
+  "Reset FH": [
+    { name:"Forehand Reset Under Pressure", duration:"12 min", difficulty:"Intermediate", focus:"Defense",
+      description:"Partner attacks from transition zone. Reset every ball to the kitchen with your forehand. Focus on taking pace off, not adding pace.",
+      cues:["Open stance, weight on front foot","Short compact stroke","Continental grip for versatility","Eyes on the ball through contact"] },
+  ],
+  // ── Volley ────────────────────────────────────────────────────────────────
+  "Volley BH": [
+    { name:"Backhand Volley Blocking", duration:"8 min", difficulty:"Intermediate", focus:"Reaction",
+      description:"Partner feeds rapid-fire balls from baseline. Block each one back with a compact backhand volley. Focus on keeping the ball in play, not winning.",
+      cues:["Punch don't swing — no backswing","Firm wrist at contact","Meet ball in front of body","Keep paddle above wrist"] },
+    { name:"Volley-to-Dink Transition", duration:"10 min", difficulty:"Advanced", focus:"Control",
+      description:"Volley 3 balls aggressively, then deliberately soften the 4th into a dink. Trains the gear-change from attack to reset.",
+      cues:["Conscious grip pressure change","Slow your breathing between shots","Deliberate deceleration on the dink","Stay at the kitchen line throughout"] },
+  ],
+  "Volley FH": [
+    { name:"Forehand Volley Reaction", duration:"8 min", difficulty:"Intermediate", focus:"Reaction",
+      description:"Partner at baseline drives 20 balls in rapid succession. Punch each back with a compact forehand volley. Goal: keep all 20 in play.",
+      cues:["No backswing — paddle already up","Short punch motion","Contact in front, not beside body","Recover paddle to ready position immediately"] },
+  ],
+  // ── Drop / 4th shot ───────────────────────────────────────────────────────
+  "Drop BH": [
+    { name:"Backhand Drop from Baseline", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
+      description:"Feed balls to yourself or use a machine. Hit backhand drops from the baseline into the kitchen. Goal: 7/10 land in the first 3 feet past the NVZ line.",
+      cues:["Low to high swing path","Contact below net level — create arc","Aim for opponent's feet at the kitchen","Move forward after every drop"] },
+    { name:"Drop and Advance", duration:"12 min", difficulty:"Advanced", focus:"Transition",
+      description:"Partner at NVZ feeds you mid-court balls. Hit a drop, then sprint to the kitchen. Repeat 15 times. Partner alternates easy and hard feeds.",
+      cues:["Commit to advancing — no hesitation","Low contact point","Anticipate your partner's next shot","Split step as you arrive at the kitchen"] },
+  ],
+  "Drop FH": [
+    { name:"Forehand 3rd/5th Shot Drop", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
+      description:"Simulate serve-return situations. After simulating a serve, hit a forehand drop from mid-to-back court. Target: landing in the kitchen.",
+      cues:["Use your legs — bend on contact","Brush up the back of the ball","Soft landing = topspin","Watch the ball land, not your opponent"] },
+    { name:"Drop Consistency Ladder", duration:"10 min", difficulty:"Beginner", focus:"Consistency",
+      description:"Drop 10 forehands from baseline. For every 8/10 in the kitchen, take one step forward. Continue until you reach the transition zone.",
+      cues:["Consistent toss to yourself","Same swing path every time","Focus on trajectory, not placement first","Celebrate small wins — 8/10 is excellent"] },
+  ],
+  "4th Shot Backhand": [
+    { name:"4th Shot Drop Sequence", duration:"12 min", difficulty:"Intermediate", focus:"Transition",
+      description:"Serve, partner returns, you hit a 4th shot backhand drop. Repeat 20 times focusing on landing in the first 3 feet past the NVZ.",
+      cues:["Read the return before you swing","Low backswing — keep paddle below waist","Accelerate smoothly, don't jab","Move to the kitchen after contact"] },
+  ],
+  "4th Shot Forehand": [
+    { name:"4th Shot Drop Sequence", duration:"12 min", difficulty:"Intermediate", focus:"Transition",
+      description:"Serve, partner returns, you hit a 4th shot forehand drop. Alternate deep and short feeds to simulate real match conditions.",
+      cues:["Stay back if the return is deep","Commit to the drop — no half-measures","Low to high swing","Split step at the kitchen"] },
+  ],
+  // ── Drive ─────────────────────────────────────────────────────────────────
+  "Drive BH": [
+    { name:"Backhand Drive Direction", duration:"10 min", difficulty:"Intermediate", focus:"Placement",
+      description:"Drive to 3 targets: cross-court, down-the-line, and at the body. 10 reps each. Partner catches or returns.",
+      cues:["Full rotation — shoulder turn","Contact in front of the body","Follow through to the target","Aim 2 feet inside the sideline"] },
+    { name:"Drive Selectivity Training", duration:"12 min", difficulty:"Advanced", focus:"Decision-making",
+      description:"Partner feeds balls at different heights. Only drive balls above net height — let low balls bounce and reset instead. Decision-making drill.",
+      cues:["Evaluate before you swing","Shoulder height = drive opportunity","Below net = reset/drop","Verbalize your decision as you play"] },
+  ],
+  "Drive FH": [
+    { name:"Forehand Power Drive", duration:"10 min", difficulty:"Intermediate", focus:"Placement",
+      description:"From the baseline, drive forehand groundstrokes cross-court and down-the-line. Focus on keeping the ball 12-18 inches above the net.",
+      cues:["Rotate hips first, then shoulder, then arm","Contact slightly in front of lead foot","Snap wrist through contact","Aim deep — within 3 feet of the baseline"] },
+  ],
+  // ── Serve / Return ────────────────────────────────────────────────────────
+  "Serve": [
+    { name:"Deep Serve to Backhand", duration:"10 min", difficulty:"Beginner", focus:"Placement",
+      description:"Serve 30 balls targeting the opponent's backhand corner. Goal: 25/30 land in the back third of the service box.",
+      cues:["Consistent toss — same spot every time","Low point of contact for spin","Follow through toward target","Visualize the landing zone before you serve"] },
+    { name:"Serve Variation Routine", duration:"12 min", difficulty:"Intermediate", focus:"Variety",
+      description:"Alternate: deep backhand corner, short slice to forehand, drive down the T. 10 reps each. Creates unpredictability.",
+      cues:["Change your ball contact point for spin variation","Keep motion identical — vary the spin","Watch where it lands","Stay behind the baseline"] },
+  ],
+  "Return BH": [
+    { name:"Return Deep Drill", duration:"10 min", difficulty:"Beginner", focus:"Depth",
+      description:"Partner serves 20 balls. Return every one deep — aim for the back third of the court. Focus on depth over placement.",
+      cues:["Early preparation — split step as partner tosses","Take the ball in front of your body","Aim 6 feet from the baseline","Stay back after the return — let it land deep"] },
+    { name:"Return and Advance", duration:"12 min", difficulty:"Intermediate", focus:"Transition",
+      description:"Return the serve deep, then immediately advance to the NVZ. Your goal: arrive at the kitchen before your partner's 3rd shot lands.",
+      cues:["Don't admire your return — move!","Short compact swing on the return","Take the net — don't wait","Split step as you arrive at the kitchen"] },
+  ],
+  "Return FH": [
+    { name:"Forehand Return Depth", duration:"10 min", difficulty:"Beginner", focus:"Depth",
+      description:"Return 20 serves with forehand, targeting back third of the court. Vary placement — backhand corner, middle, forehand side.",
+      cues:["Step into the ball","Compact swing — not a full groundstroke","Aim deep, not hard","Advance to kitchen immediately after"] },
+  ],
+  // ── Attack ────────────────────────────────────────────────────────────────
+  "Speed Up BH": [
+    { name:"Backhand Speed-Up Trigger", duration:"10 min", difficulty:"Advanced", focus:"Attack",
+      description:"Both players dinking. When you get a ball above net height with a clear angle, speed up with your backhand. Partner counters or resets. 20 reps.",
+      cues:["Only attack when ball is above net tape","Short compact motion — not a full swing","Aim at the hip or shoulder of the opponent","Be ready to reset if countered"] },
+  ],
+  "Speed Up FH": [
+    { name:"Forehand Speed-Up Selection", duration:"10 min", difficulty:"Advanced", focus:"Attack",
+      description:"Sustained dink rally. Attack with forehand only when ball is above net and you have a clear cross-court angle. Aim at opponent's body.",
+      cues:["Patience is the skill — wait for the right ball","Contact in front","Disguise the speed-up — same backswing as a dink","Recover paddle position immediately after"] },
+  ],
+  "Slam BH": [
+    { name:"Backhand Overhead Smash", duration:"8 min", difficulty:"Intermediate", focus:"Power",
+      description:"Partner lobs. Smash with backhand overhead. Focus on positioning first — get behind the ball before swinging.",
+      cues:["Turn sideways — don't face the net","Point non-paddle hand at the ball","Contact above and in front of the shoulder","Follow through down and across"] },
+  ],
+  "Slam FH": [
+    { name:"Forehand Overhead Smash", duration:"8 min", difficulty:"Intermediate", focus:"Power",
+      description:"Partner feeds high lobs. Smash with forehand. Prioritize getting into position over swinging hard.",
+      cues:["Move your feet first — get under the ball","Trophy position — scratch your back","Full arm extension at contact","Hit down into the court — angle not pace"] },
+  ],
+  "Erne BH": [
+    { name:"Erne Timing Practice", duration:"15 min", difficulty:"Advanced", focus:"Positioning",
+      description:"Practice the footwork for the backhand Erne. Jump around the post timing — don't jump too early. Partner dinks repeatedly to the same spot.",
+      cues:["Wait for the ball to approach the sideline","Jump from outside the court — not inside the kitchen","Contact at or above net height","Land outside the kitchen on the other side"] },
+  ],
+  "Erne FH": [
+    { name:"Forehand Erne Approach", duration:"15 min", difficulty:"Advanced", focus:"Positioning",
+      description:"Identify the dink pattern that creates an Erne opportunity. Practice the approach footwork. Execute 10 clean Ernes.",
+      cues:["Disguise your approach — walk not run until the last moment","Jump early enough to meet the ball at net height","Aim cross-court for the widest angle","Return to position immediately — don't celebrate mid-point"] },
+  ],
+  "Counter BH": [
+    { name:"Backhand Counter Exchange", duration:"10 min", difficulty:"Advanced", focus:"Reaction",
+      description:"Both players at the kitchen engage in rapid fire counter exchanges. Goal: keep the exchange going — defense not offense.",
+      cues:["Stay compact — no backswing","Absorb and redirect","Keep paddle above wrist","Small adjustments — move your feet, not just your arm"] },
+  ],
+  "Counter FH": [
+    { name:"Forehand Counter Blocking", duration:"10 min", difficulty:"Advanced", focus:"Reaction",
+      description:"Partner attacks repeatedly. Block every shot back with a controlled forehand counter. Focus on keeping the ball in play.",
+      cues:["Shorten your swing to a block","Contact in front of body","Slightly closed paddle face","Look for the opportunity to reset when pace slows"] },
+  ],
+  "Lob BH": [
+    { name:"Backhand Topspin Lob", duration:"8 min", difficulty:"Advanced", focus:"Touch",
+      description:"From the kitchen, execute backhand topspin lobs over a net-rushing partner. Target: land in the back 3 feet of the court.",
+      cues:["Low to high — extreme brush up the back of the ball","Disguise as a dink until the last moment","Aim for the non-dominant shoulder side","Follow through high — like you're reaching for the sky"] },
+  ],
+  "Lob FH": [
+    { name:"Forehand Topspin Lob", duration:"8 min", difficulty:"Advanced", focus:"Touch",
+      description:"Execute forehand topspin lobs over a poaching partner. Must clear opponent and land in bounds. 10 successful reps.",
+      cues:["Start low — get under the ball","Accelerate upward through contact","Heavy topspin brings it down fast","Only lob when opponents crowd the NVZ"] },
+  ],
+  "Scramble BH": [
+    { name:"Defensive Scramble Recovery", duration:"10 min", difficulty:"Intermediate", focus:"Defense",
+      description:"Partner hits 5 out-of-reach balls in a row. Get your backhand on every one and keep it in play. Reset as quickly as possible.",
+      cues:["Prioritize getting a racket on it over placement","Aim high and deep — buy time","Get back to position immediately","Short swing, open face"] },
+  ],
+  "Scramble FH": [
+    { name:"Forehand Scramble Recovery", duration:"10 min", difficulty:"Intermediate", focus:"Defense",
+      description:"Partner drives you wide. Scramble and return with forehand. Focus on recovery positioning after each shot.",
+      cues:["Stay balanced while running","Open stance for quick recovery","Aim for depth — not a winner","Return to center immediately"] },
+  ],
+  "ATP BH": [
+    { name:"Around-the-Post Backhand", duration:"15 min", difficulty:"Advanced", focus:"Specialty",
+      description:"Partner dinks wide to your backhand side. When the ball passes the post, execute a backhand ATP. The ball must go around (not over) the net post.",
+      cues:["Ball must be past the post before you swing","Contact at knee height or below","Aim sharply cross-court — the angle is your friend","Only attempt when the ball is clearly beyond the post"] },
+  ],
+  "ATP FH": [
+    { name:"Around-the-Post Forehand", duration:"15 min", difficulty:"Advanced", focus:"Specialty",
+      description:"Partner dinks wide. Execute a forehand ATP when the ball drifts past the post. Focus on the contact point — below net height, outside the post.",
+      cues:["Commit fully — half-measures clip the net","Low contact, swing outward not upward","Ball travels around the post, not over it","Celebrate sparingly — get back to position"] },
+  ],
+};
+
+// Metric-based drills for core KPIs
+const METRIC_DRILLS = {
+  nvzArrival: {
+    title:"NVZ Arrival Rate",
+    icon:"🏃",
+    color:C.mint,
+    drills:[
+      { name:"3rd Shot Drop & Advance", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
+        description:"The single most important drill for improving NVZ arrival. Serve, your partner returns, you hit a drop and sprint to the kitchen. Repeat 25 times.",
+        cues:["Don't watch where your drop lands — move!","Low to high contact on the drop","Commit to advancing — hesitation is fatal","Split step as you arrive at the kitchen line"] },
+      { name:"Partner Race to the Kitchen", duration:"10 min", difficulty:"Beginner", focus:"Transition",
+        description:"Both players at the baseline. Cooperatively rally 2 groundstrokes then both sprint to the kitchen and sustain a dink rally. Who arrives first?",
+        cues:["First to the kitchen controls the point","Short compact groundstrokes to create time","Move together as a team","Communicate 'kitchen!' as you arrive"] },
+    ]
+  },
+  nvzWin: {
+    title:"NVZ Win Rate",
+    icon:"🎯",
+    color:C.blue,
+    drills:[
+      { name:"Sustained Dink Rally with Intent", duration:"12 min", difficulty:"Intermediate", focus:"Patience",
+        description:"Both players at kitchen. Dink until you get a ball above net height with a clear angle, then speed up. Emphasis on patience — don't force it.",
+        cues:["Count your dinks — can you get to 20 before attacking?","Only attack balls above the net tape","Aim at the hip — not the corners","Reset immediately if your attack is countered"] },
+      { name:"NVZ Pressure Point", duration:"10 min", difficulty:"Advanced", focus:"Competition",
+        description:"Play points that start from both teams at the kitchen. First team to 11 wins. Forces you to practice kitchen decision-making under pressure.",
+        cues:["Compete — this isn't cooperative","Identify patterns: what's winning you points?","Communicate with your partner","Stay patient — NVZ points are won by mistakes, not winners"] },
+    ]
+  },
+  errors: {
+    title:"Unforced Errors",
+    icon:"⚠️",
+    color:C.rose,
+    drills:[
+      { name:"Error Tracking Rally", duration:"15 min", difficulty:"Beginner", focus:"Consistency",
+        description:"Play a cooperative rally and count unforced errors out loud. Goal: go 5 minutes without an unforced error. Start over every time you make one.",
+        cues:["Slow down — most errors come from rushing","Choose the high-percentage shot every time","If in doubt, reset. Never force it.","Celebrate long stretches without errors"] },
+      { name:"Decision-Making Gates", duration:"12 min", difficulty:"Intermediate", focus:"Decision-making",
+        description:"Place cones at the kitchen line. Any ball below the cones = must reset or drop. Any ball above = can attack. Trains shot selection.",
+        cues:["Verbalize your decision before you swing","Below cone = soft hands, above cone = controlled attack","Never guess — make a clear decision","Count your unforced errors per rally"] },
+    ]
+  },
+  serveNeut: {
+    title:"Serve Neutralization",
+    icon:"🔄",
+    color:C.amber,
+    drills:[
+      { name:"Return Deep Consistency", duration:"10 min", difficulty:"Beginner", focus:"Depth",
+        description:"Partner serves 25 balls. Return every one deep — aim for the back third of the court. Track how many land where you intended.",
+        cues:["Depth first — direction second","Early preparation — move your feet before the serve","Aim 6-8 feet from the baseline","Don't try to win with the return — just neutralize"] },
+      { name:"Return and Deny", duration:"12 min", difficulty:"Intermediate", focus:"Neutralization",
+        description:"After each return, the server must try to attack. Your goal: make the return so deep/low that the server cannot attack. Count how often you succeed.",
+        cues:["Low over the net — not too high","Deep to the backhand corner","Move forward immediately after the return","Read the server's position before you swing"] },
+    ]
+  },
+};
+
+const Drills = ({ setPage }) => {
+  const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState("focus"); // "focus" | "library" | "schedule"
+  const [expandedDrill, setExpandedDrill] = useState(null);
+  const [completedDrills, setCompletedDrills] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("pi_completed_drills") || "{}"); } catch(e) { return {}; }
+  });
+  const [dbShots, setDbShots] = useState([]);
+  const [pinVer, setPinVer] = useState(0);
+
+  useEffect(() => {
+    sb.query("shots", { order: "name.asc" })
+      .then(rows => { if (rows) setDbShots(rows); })
+      .catch(() => {});
+  }, []);
+
+  const markDone = (key) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const updated = { ...completedDrills, [key]: today };
+    setCompletedDrills(updated);
+    try { localStorage.setItem("pi_completed_drills", JSON.stringify(updated)); } catch(e) {}
+  };
+
+  const unmarkDone = (key) => {
+    const updated = { ...completedDrills };
+    delete updated[key];
+    setCompletedDrills(updated);
+    try { localStorage.setItem("pi_completed_drills", JSON.stringify(updated)); } catch(e) {}
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const isDoneToday = (key) => completedDrills[key] === today;
+
+  // Derive weak shots using Bayesian scoring (same as Shots page)
+  const PRIOR = 10;
+  const allShotData = dbShots;
+  const globalPos = (() => {
+    const p = allShotData.reduce((a,s)=>(s.wins||0)+(s.pos_count||0)+a,0);
+    const t = allShotData.reduce((a,s)=>(s.wins||0)+(s.misses||0)+(s.pos_count||0)+(s.neg_count||0)+(s.neu_count||0)+a,0);
+    return t>0?p/t:0.5;
+  })();
+
+  const scoredShots = allShotData.map(s => {
+    const pos = (s.wins||0)+(s.pos_count||0);
+    const neg = (s.misses||0)+(s.neg_count||0);
+    const tot = pos+neg+(s.neu_count||0);
+    const bayesNeg = (neg + PRIOR*(1-globalPos))/(tot+PRIOR);
+    return { ...s, _pos:pos, _neg:neg, _tot:tot, bayesNeg };
+  }).filter(s => s._tot >= 3).sort((a,b) => b.bayesNeg - a.bayesNeg);
+
+  // Priority shots from GOALS
+  const pinnedShots = GOALS.priorityShots;
+
+  // Metric weaknesses from CORE_KPIS
+  const weakMetrics = [
+    { id:"nvzArrival", val:CORE_KPIS[3].numVal, target:GOALS.targets.nvzArrival, gap:GOALS.targets.nvzArrival-(CORE_KPIS[3].numVal||0) },
+    { id:"nvzWin",     val:CORE_KPIS[4].numVal, target:GOALS.targets.nvzWin,     gap:GOALS.targets.nvzWin-(CORE_KPIS[4].numVal||0) },
+    { id:"errors",     val:CORE_KPIS[1].numVal, target:GOALS.targets.errors,     gap:(CORE_KPIS[1].numVal||0)-GOALS.targets.errors },
+    { id:"serveNeut",  val:CORE_KPIS[2].numVal, target:GOALS.targets.serveNeut,  gap:GOALS.targets.serveNeut-(CORE_KPIS[2].numVal||0) },
+  ].filter(m => m.gap > 0 && m.val > 0).sort((a,b) => b.gap - a.gap);
+
+  // ── Drill Card ───────────────────────────────────────────────────────────
+  const DrillCard = ({ drill, shotName, metricId, source }) => {
+    const key = `${shotName||metricId}_${drill.name}`;
+    const done = isDoneToday(key);
+    const expanded = expandedDrill === key;
+    const diffColor = drill.difficulty === "Beginner" ? C.mint
+      : drill.difficulty === "Intermediate" ? C.amber : C.rose;
+
+    return (
+      <div style={{
+        border: `1.5px solid ${done ? C.mint+"60" : C.border}`,
+        borderRadius: 12, overflow: "hidden",
+        background: done ? `${C.mint}06` : C.cardBg,
+        transition: "all 0.2s",
+      }}>
+        {/* Header row */}
+        <div onClick={() => setExpandedDrill(expanded ? null : key)}
+          style={{ padding:"14px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, flexWrap:"wrap" }}>
+              <span style={{ fontSize:14, fontWeight:700, color: done ? C.mint : C.text }}>{drill.name}</span>
+              {done && <span style={{ fontSize:10, fontWeight:700, color:C.mint, background:`${C.mint}15`, padding:"2px 7px", borderRadius:20 }}>✓ Done today</span>}
+            </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <span style={{ fontSize:11, color:C.textLight }}>⏱ {drill.duration}</span>
+              <span style={{ fontSize:11, fontWeight:700, color:diffColor }}>● {drill.difficulty}</span>
+              <span style={{ fontSize:11, color:C.textLight }}>Focus: {drill.focus}</span>
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            <button onClick={e => { e.stopPropagation(); done ? unmarkDone(key) : markDone(key); }}
+              style={{
+                padding:"6px 12px", borderRadius:8, border:`1.5px solid ${done?C.mint:C.border}`,
+                background: done ? `${C.mint}15` : C.pageBg,
+                color: done ? C.mint : C.textMid,
+                fontFamily:"'Outfit'", fontWeight:700, fontSize:11, cursor:"pointer", transition:"all 0.15s", whiteSpace:"nowrap",
+              }}>
+              {done ? "✓ Done" : "Mark Done"}
+            </button>
+            <span style={{ fontSize:14, color:C.textLight, transition:"transform 0.2s", display:"inline-block",
+              transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+          </div>
+        </div>
+
+        {/* Expanded detail */}
+        {expanded && (
+          <div style={{ padding:"0 16px 16px", borderTop:`1px solid ${C.border}` }}>
+            <p style={{ fontSize:13, color:C.textMid, lineHeight:1.7, margin:"12px 0" }}>{drill.description}</p>
+            <div style={{ background:C.pageBg, borderRadius:10, padding:"12px 14px" }}>
+              <div style={{ fontSize:11, fontWeight:700, color:C.navy, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Coaching Cues</div>
+              {drill.cues.map((cue, i) => (
+                <div key={i} style={{ display:"flex", gap:8, alignItems:"flex-start", marginBottom:i<drill.cues.length-1?6:0 }}>
+                  <span style={{ color:C.pickle, fontWeight:700, fontSize:12, flexShrink:0, marginTop:1 }}>→</span>
+                  <span style={{ fontSize:12, color:C.textMid, lineHeight:1.5 }}>{cue}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Shot Section ──────────────────────────────────────────────────────────
+  const ShotDrillSection = ({ shotName, source, badge }) => {
+    const drills = DRILL_LIBRARY[shotName];
+    if (!drills || drills.length === 0) return (
+      <div style={{ padding:"14px 16px", background:C.pageBg, borderRadius:12, border:`1px solid ${C.border}` }}>
+        <div style={{ fontSize:13, color:C.textMid }}>No specific drills for {shotName} yet — check back soon.</div>
+      </div>
+    );
+    return (
+      <div style={{ marginBottom:16 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+          <span style={{ fontSize:14, fontWeight:700, color:C.text }}>{shotName}</span>
+          {badge && <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
+            background:`${badge.color}15`, color:badge.color }}>{badge.label}</span>}
+          {source === "pinned" && (
+            <button onClick={() => {
+              GOALS.priorityShots = GOALS.priorityShots.filter(p => p.name !== shotName);
+              setPinVer(v=>v+1);
+            }} style={{ marginLeft:"auto", fontSize:10, color:C.textLight, background:"none", border:`1px solid ${C.border}`,
+              borderRadius:6, padding:"2px 8px", cursor:"pointer", fontFamily:"'Outfit'" }}>✕ Unpin</button>
+          )}
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {drills.map((drill, i) => <DrillCard key={i} drill={drill} shotName={shotName} source={source}/>)}
+        </div>
+      </div>
+    );
+  };
+
+  const hasPinned = pinnedShots.length > 0;
+  const hasWeakShots = scoredShots.length > 0;
+  const hasMetricGaps = weakMetrics.length > 0;
+  const hasFocusData = hasPinned || hasWeakShots || hasMetricGaps;
+
+  return (
+    <div className="fade-up" style={{ maxWidth:1000, margin:"0 auto", padding:isMobile?"14px":"32px", boxSizing:"border-box", width:"100%" }}>
+
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:24 }}>
+        <div>
+          <h1 style={{ fontFamily:"'Bebas Neue'", fontSize:34, letterSpacing:"0.05em", color:C.navy }}>Drills</h1>
+          <p style={{ color:C.textMid, fontSize:14, marginTop:3 }}>
+            Targeted practice built from your shot data · mark drills done to track your sessions
+          </p>
+        </div>
+        <button onClick={() => setPage("shots")} style={{
+          background:C.navy, border:"none", borderRadius:12, padding:"10px 18px",
+          fontFamily:"'Outfit'", fontWeight:700, fontSize:13, color:C.pickle, cursor:"pointer",
+        }}>📌 Pin shots from Shots page</button>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display:"flex", gap:4, marginBottom:28, background:C.cardBg, border:`1px solid ${C.border}`,
+        borderRadius:14, padding:5 }}>
+        {[
+          { id:"focus",    label:"🎯 My Focus Areas" },
+          { id:"library",  label:"📚 Full Drill Library" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+            background: activeTab===t.id ? C.navy : "transparent",
+            border:"none", borderRadius:10, padding:"10px 22px", cursor:"pointer",
+            fontFamily:"'Outfit'", fontWeight:700, fontSize:13,
+            color: activeTab===t.id ? "white" : C.textMid, transition:"all 0.15s", whiteSpace:"nowrap",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── Tab: My Focus Areas ── */}
+      {activeTab === "focus" && (
+        <div>
+          {!hasFocusData ? (
+            <div style={{ textAlign:"center", padding:"60px 20px", background:C.cardBg, borderRadius:20,
+              border:`2px dashed ${C.border}` }}>
+              <div style={{ fontSize:48, marginBottom:16 }}>🎯</div>
+              <div style={{ fontFamily:"'Bebas Neue'", fontSize:28, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>
+                No Focus Areas Yet
+              </div>
+              <div style={{ fontSize:14, color:C.textMid, maxWidth:400, margin:"0 auto", lineHeight:1.6, marginBottom:24 }}>
+                Log matches and shots to get personalized drill recommendations, or pin specific shots from the Shots page.
+              </div>
+              <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
+                <button onClick={() => setPage("shots")} style={{
+                  background:C.navy, border:"none", borderRadius:12, padding:"12px 24px",
+                  fontFamily:"'Outfit'", fontWeight:700, fontSize:14, color:C.pickle, cursor:"pointer" }}>
+                  Go to Shot Analytics →
+                </button>
+                <button onClick={() => setPage("matches")} style={{
+                  background:C.pageBg, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 24px",
+                  fontFamily:"'Outfit'", fontWeight:600, fontSize:14, color:C.textMid, cursor:"pointer" }}>
+                  Log a Match →
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* ── Pinned Priority Shots ── */}
+              {hasPinned && (
+                <div style={{ marginBottom:28 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                    <div style={{ width:3, height:20, background:C.pickle, borderRadius:2 }}/>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>📌 Pinned Focus Shots</span>
+                    <span style={{ fontSize:12, color:C.textLight }}>({pinnedShots.length} pinned)</span>
+                  </div>
+                  {pinnedShots.map(p => (
+                    <ShotDrillSection key={p.name+pinVer} shotName={p.name} source="pinned"
+                      badge={{ label:"📌 Pinned", color:C.pickle }}/>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Data-Driven Weak Shots ── */}
+              {hasWeakShots && (
+                <div style={{ marginBottom:28 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                    <div style={{ width:3, height:20, background:C.rose, borderRadius:2 }}/>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>⚠️ Shots to Improve</span>
+                    <span style={{ fontSize:12, color:C.textLight }}>Based on your logged data</span>
+                  </div>
+                  {scoredShots.slice(0, 3).map(s => (
+                    <ShotDrillSection key={s.name} shotName={s.name} source="data"
+                      badge={{ label:`${Math.round(s.bayesNeg*100)}% negative rate`, color:C.rose }}/>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Metric Gap Drills ── */}
+              {hasMetricGaps && (
+                <div style={{ marginBottom:28 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                    <div style={{ width:3, height:20, background:C.blue, borderRadius:2 }}/>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>📊 Metric Improvement Drills</span>
+                    <span style={{ fontSize:12, color:C.textLight }}>Based on your gaps to target</span>
+                  </div>
+                  {weakMetrics.map(m => {
+                    const meta = METRIC_DRILLS[m.id];
+                    if (!meta) return null;
+                    return (
+                      <div key={m.id} style={{ marginBottom:20 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                          <span style={{ fontSize:20 }}>{meta.icon}</span>
+                          <span style={{ fontSize:14, fontWeight:700, color:C.text }}>{meta.title}</span>
+                          <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20,
+                            background:`${meta.color}15`, color:meta.color }}>
+                            {m.gap > 0 ? `+${m.gap.toFixed(0)}% to target` : "At target"}
+                          </span>
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                          {meta.drills.map((drill, i) => <DrillCard key={i} drill={drill} metricId={m.id}/>)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Full Drill Library ── */}
+      {activeTab === "library" && (
+        <div>
+          {/* Group by shot category */}
+          {SHOT_BUTTONS.map(cat => {
+            const shotsWithDrills = cat.shots.filter(s => DRILL_LIBRARY[s]?.length > 0);
+            if (shotsWithDrills.length === 0) return null;
+            return (
+              <div key={cat.cat} style={{ marginBottom:28 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+                  <div style={{ width:3, height:20, background:cat.color, borderRadius:2 }}/>
+                  <span style={{ fontSize:16, fontWeight:700, color:cat.color, textTransform:"uppercase",
+                    letterSpacing:"0.05em" }}>{cat.cat}</span>
+                </div>
+                {shotsWithDrills.map(shotName => (
+                  <div key={shotName} style={{ marginBottom:16 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:C.textMid, marginBottom:8,
+                      paddingBottom:6, borderBottom:`1px solid ${C.border}` }}>{shotName}</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                      {DRILL_LIBRARY[shotName].map((drill,i) => (
+                        <DrillCard key={i} drill={drill} shotName={shotName} source="library"/>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {/* Metric drills */}
+          <div style={{ marginBottom:28 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+              <div style={{ width:3, height:20, background:C.purple, borderRadius:2 }}/>
+              <span style={{ fontSize:16, fontWeight:700, color:C.purple, textTransform:"uppercase",
+                letterSpacing:"0.05em" }}>Core Metrics</span>
+            </div>
+            {Object.entries(METRIC_DRILLS).map(([id, meta]) => (
+              <div key={id} style={{ marginBottom:16 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:C.textMid, marginBottom:8,
+                  paddingBottom:6, borderBottom:`1px solid ${C.border}` }}>{meta.icon} {meta.title}</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {meta.drills.map((drill,i) => <DrillCard key={i} drill={drill} metricId={id} source="library"/>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 // ── HELP MODAL ────────────────────────────────────────────────────────────────
 const FAQS = [
   { q:"How do I log a match?",
@@ -5247,6 +5824,7 @@ export default function App(){
           {page==="shots"    &&<Shots/>}
           {page==="matches"  &&<MatchCenter defaultTab="log"/>}
           {page==="matches:partners"&&<MatchCenter defaultTab="partners"/>}
+          {page==="drills"   &&<Drills setPage={setPage}/>}
           {page==="coach"    &&<Coach/>}
           {page==="profile"  &&<Profile setPage={setPage}/>}
         </main>
