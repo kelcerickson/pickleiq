@@ -3957,10 +3957,11 @@ function VideoLoggerContent() {
   const [matchSaving,  setMatchSaving]  = useState(false);
   const [matchErr,     setMatchErr]     = useState("");
 
-  // ── Video ─────────────────────────────────────────────────────────────────────
+  // ── Video / mode ─────────────────────────────────────────────────────────────
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl,  setVideoUrl]  = useState(null);
-  const [isIframe,  setIsIframe]  = useState(false); // true when URL is a web page (iframe), false for direct video file
+  const [isIframe,  setIsIframe]  = useState(false);
+  const [noVideo,   setNoVideo]   = useState(false); // manual entry mode — no video
 
   const isEmbeddableUrl = (url) => {
     // Detect web page URLs that should be iframed rather than played as video
@@ -4064,10 +4065,12 @@ function VideoLoggerContent() {
 
   // ── Save all ──────────────────────────────────────────────────────────────────
   const saveAll = async () => {
-    if (!videoFile && !videoUrl) { alert("Please upload a video first."); return; }
     const hasShots = trackShots && Object.keys(shotData).some(k => { const d = shotData[k]; return d.pos+d.neu+d.neg > 0; });
     const hasRally = trackRally && Object.keys(rallyData).some(k => { const d = rallyData[k]; return d.won+d.lost > 0; });
-    if (!hasShots && !hasRally) { alert("Nothing logged yet."); return; }
+    if (!videoFile && !videoUrl && !noVideo && !hasShots && !hasRally) {
+      alert("Nothing logged yet — add some shot data or match info first.");
+      return;
+    }
     setSaving(true);
     try {
       // Refresh token if expired before any DB writes
@@ -4472,12 +4475,92 @@ function VideoLoggerContent() {
         )}
       </Card>
 
-      {/* ── Step 3: Upload / Video + Side Panels ── */}
+      {/* ── Step 3: Video / Manual ── */}
       <Card style={{ padding: "14px 16px" }}>
-        <SLabel>Step 3 — Upload Video</SLabel>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 12 }}>
+          <SLabel style={{ marginBottom:0 }}>Step 3 — {noVideo ? "Log Shots Manually" : "Add Video (Optional)"}</SLabel>
+          {!videoUrl && (
+            <button onClick={() => { setNoVideo(v=>!v); }}
+              style={{ padding:"7px 14px", borderRadius:9, border:`1.5px solid ${noVideo?C.pickle:C.border}`,
+                background: noVideo?`${C.pickle}15`:"transparent",
+                fontFamily:"'Outfit'", fontWeight:700, fontSize:12,
+                color: noVideo?C.pickleD:C.textMid, cursor:"pointer", transition:"all 0.15s" }}>
+              {noVideo ? "✓ Manual mode" : "Log without video"}
+            </button>
+          )}
+        </div>
 
-        {!videoUrl ? (
-          /* ── No video yet: upload UI ── */
+        {noVideo && !videoUrl ? (
+          /* ── Manual mode: Shot Tracker + Rally Ender side by side, no video ── */
+          <div>
+            <div style={{ fontSize:12, color:C.textMid, marginBottom:14, padding:"10px 14px",
+              background:`${C.amber}10`, border:`1px solid ${C.amber}30`, borderRadius:9 }}>
+              💡 Manual mode — use the Shot Tracker and Rally Ender below to log your shots. Hit <strong>Save Session</strong> when done.
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns: trackShots&&trackRally?"1fr 1fr":trackShots||trackRally?"1fr":"1fr", gap:14 }}>
+              {trackShots && (
+                <div style={{ background:`${C.blue}06`, border:`1.5px solid ${C.blue}30`, borderRadius:12, padding:"12px 14px" }}>
+                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>🎯 Shot Tracker</div>
+                  <ShotTrackerGrid/>
+                  {shotTotal > 0 && (
+                    <div style={{ marginTop:8, padding:"6px 10px", background:C.pageBg, borderRadius:8, fontSize:11, display:"flex", gap:10 }}>
+                      <span style={{ color:C.mint, fontWeight:700 }}>{Object.values(shotData).reduce((a,d)=>a+d.pos,0)} pos</span>
+                      <span style={{ color:C.textMid, fontWeight:700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neu,0)} neu</span>
+                      <span style={{ color:C.rose, fontWeight:700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neg,0)} neg</span>
+                      <span style={{ color:C.textLight, marginLeft:"auto" }}>{shotTotal} total</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {trackRally && (
+                <div style={{ background:`${C.mint}06`, border:`1.5px solid ${C.mint}30`, borderRadius:12, padding:"12px 14px" }}>
+                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>🏁 Rally Ender</div>
+                  <RallyGrid/>
+                </div>
+              )}
+              {!trackShots && !trackRally && (
+                <div style={{ padding:"24px", textAlign:"center", color:C.textMid, fontSize:13, background:C.pageBg, borderRadius:12 }}>
+                  Turn on Shot Tracker or Rally Ender above to log shots manually.
+                </div>
+              )}
+            </div>
+            {/* In-match metrics for manual mode */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginTop:14 }}>
+              <div style={{ background:`${C.mint}08`, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"12px 14px" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:C.mint, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:8 }}>NVZ Arrival</div>
+                <div style={{ display:"flex", gap:6, marginBottom:4 }}>
+                  <button onClick={()=>setNvzArrived(p=>p+1)} style={{ flex:1, padding:"7px 0", borderRadius:8, border:`1.5px solid ${C.mint}`, background:`${C.mint}15`, color:C.mint, fontWeight:700, fontSize:11, fontFamily:"'Outfit'", cursor:"pointer" }}>✓ Arrived ({nvzArrived})</button>
+                  <button onClick={()=>setNvzArrived(p=>Math.max(0,p-1))} disabled={nvzArrived===0} style={{ width:28, borderRadius:8, border:`1px solid ${C.border}`, background:C.pageBg, color:C.textMid, fontWeight:700, fontSize:12, cursor:"pointer" }}>−</button>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={()=>setNvzTotal(p=>p+1)} style={{ flex:1, padding:"7px 0", borderRadius:8, border:`1.5px solid ${C.rose}`, background:`${C.rose}15`, color:C.rose, fontWeight:700, fontSize:11, fontFamily:"'Outfit'", cursor:"pointer" }}>✕ Not Arrived ({nvzTotal-nvzArrived<0?0:nvzTotal-nvzArrived})</button>
+                  <button onClick={()=>setNvzTotal(p=>Math.max(nvzArrived,p-1))} disabled={nvzTotal<=nvzArrived} style={{ width:28, borderRadius:8, border:`1px solid ${C.border}`, background:C.pageBg, color:C.textMid, fontWeight:700, fontSize:12, cursor:"pointer" }}>−</button>
+                </div>
+              </div>
+              <div style={{ background:`${C.blue}08`, border:`1.5px solid ${C.blue}30`, borderRadius:10, padding:"12px 14px" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:C.blue, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:8 }}>NVZ Win Rate</div>
+                <div style={{ display:"flex", gap:6, marginBottom:4 }}>
+                  <button onClick={()=>{setNvzWon(p=>p+1);setNvzWonTotal(p=>p+1);}} style={{ flex:1, padding:"7px 0", borderRadius:8, border:`1.5px solid ${C.mint}`, background:`${C.mint}15`, color:C.mint, fontWeight:700, fontSize:11, fontFamily:"'Outfit'", cursor:"pointer" }}>✓ Won ({nvzWon})</button>
+                  <button onClick={()=>{setNvzWon(p=>Math.max(0,p-1));setNvzWonTotal(p=>Math.max(0,p-1));}} disabled={nvzWon===0} style={{ width:28, borderRadius:8, border:`1px solid ${C.border}`, background:C.pageBg, color:C.textMid, fontWeight:700, fontSize:12, cursor:"pointer" }}>−</button>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  <button onClick={()=>setNvzWonTotal(p=>p+1)} style={{ flex:1, padding:"7px 0", borderRadius:8, border:`1.5px solid ${C.rose}`, background:`${C.rose}15`, color:C.rose, fontWeight:700, fontSize:11, fontFamily:"'Outfit'", cursor:"pointer" }}>✕ Lost ({nvzWonTotal-nvzWon<0?0:nvzWonTotal-nvzWon})</button>
+                  <button onClick={()=>setNvzWonTotal(p=>Math.max(nvzWon,p-1))} disabled={nvzWonTotal<=nvzWon} style={{ width:28, borderRadius:8, border:`1px solid ${C.border}`, background:C.pageBg, color:C.textMid, fontWeight:700, fontSize:12, cursor:"pointer" }}>−</button>
+                </div>
+              </div>
+              <div style={{ background:`${C.rose}08`, border:`1.5px solid ${C.rose}30`, borderRadius:10, padding:"12px 14px" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:C.rose, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:8 }}>Errors</div>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <button onClick={()=>setErrors(p=>Math.max(0,p-1))} style={{ width:32, height:32, borderRadius:8, border:`1px solid ${C.border}`, background:C.pageBg, color:C.textMid, fontWeight:700, fontSize:16, cursor:"pointer" }}>−</button>
+                  <span style={{ fontFamily:"'DM Mono'", fontSize:24, fontWeight:700, color:C.rose, minWidth:30, textAlign:"center" }}>{errors}</span>
+                  <button onClick={()=>setErrors(p=>p+1)} style={{ width:32, height:32, borderRadius:8, border:`1.5px solid ${C.rose}`, background:`${C.rose}15`, color:C.rose, fontWeight:700, fontSize:16, cursor:"pointer" }}>+</button>
+                </div>
+                <div style={{ fontSize:11, color:C.textLight, marginTop:6 }}>Unforced errors</div>
+              </div>
+            </div>
+          </div>
+        ) : !videoUrl ? (
+          /* ── No video yet: URL + file upload ── */
           <div>
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 11, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 5 }}>Paste a video URL (optional)</div>
@@ -4486,7 +4569,7 @@ function VideoLoggerContent() {
                   style={{ flex: 1, background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "8px 11px", color: C.text, fontSize: 13, fontFamily: "'Outfit'" }} />
                 <button onClick={() => {
                   const url = document.getElementById("videoUrlInput3").value.trim();
-                  if (url) { setIsIframe(isEmbeddableUrl(url)); setVideoUrl(url); }
+                  if (url) { setIsIframe(isEmbeddableUrl(url)); setVideoUrl(url); setNoVideo(false); }
                 }} style={{ padding: "8px 16px", background: C.navy, border: "none", borderRadius: 9, color: C.pickle, fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Load</button>
               </div>
             </div>
@@ -4498,7 +4581,6 @@ function VideoLoggerContent() {
                 <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, color: C.navy, letterSpacing: "0.04em", marginBottom: 5 }}>Drop video here or click to browse</div>
                 <div style={{ fontSize: 12, color: C.textLight }}>MP4, MOV, AVI · Max 2GB</div>
-
                 {uploadErr && <div style={{ marginTop: 10, fontSize: 12, color: C.rose }}>{uploadErr}</div>}
               </div>
               <input type="file" accept="video/*" onChange={e => processFile(e.target.files[0])} style={{ display: "none" }} />
@@ -4549,7 +4631,7 @@ function VideoLoggerContent() {
                   style={{ width: "100%", borderRadius: 10, background: "#000", maxHeight: 460 }} />
               )}
 
-              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setIsIframe(false); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
+              <button onClick={() => { setVideoUrl(null); setVideoFile(null); setIsIframe(false); setNoVideo(false); setShotData({}); setRallyData({}); setNvzArrived(0); setNvzTotal(0); setNvzWon(0); setNvzWonTotal(0); setErrors(0); setSavedMatchId(null); setMatchSaved(false); }}
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
@@ -4749,11 +4831,12 @@ function VideoLoggerContent() {
 
 const MatchCenter=({defaultTab="log"})=>{
   const isMobile = useIsMobile();
-  const [tab,setTab]=useState(defaultTab); // "log" | "partners" | "history"
+  // Map old "log" default to new "log" (VideoLoggerContent), "video" also maps to "log"
+  const resolveTab = (t) => (t==="video"||t==="log") ? "log" : t;
+  const [tab,setTab]=useState(resolveTab(defaultTab));
 
   const TABS=[
-    {id:"log",      label:"📋 Log Match"},
-    {id:"video",    label:"🎬 Log from Video"},
+    {id:"log",      label:"🎬 Log Match"},
     {id:"partners", label:"👥 Partners"},
     {id:"history",  label:"🏆 Match History"},
   ];
@@ -4782,11 +4865,8 @@ const MatchCenter=({defaultTab="log"})=>{
         ))}
       </div>
 
-      {/* ── Tab: Log Match ── */}
-      {tab==="log"&&<LogMatchContent/>}
-
-      {/* ── Tab: Video Logger ── */}
-      {tab==="video"&&<VideoLoggerContent/>}
+      {/* ── Tab: Log Match (unified) ── */}
+      {tab==="log"&&<VideoLoggerContent/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
