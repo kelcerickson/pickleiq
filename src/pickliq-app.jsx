@@ -5488,9 +5488,11 @@ const Admin = () => {
     setLoading(true);
     try {
       // Use Supabase service-level queries via REST
-      // Admin queries — no user_id filter, gets all users' data
+      // Admin queries — pulls from auth-joined view so all users appear even with no activity
       const [usersRes, matchesRes, shotsRes, feedbackRes] = await Promise.all([
-        sb.query("profile", { select: "user_id,player_name,created_at,email" }).catch(() => []),
+        sb.query("admin_users", { select: "user_id,player_name,email,created_at,last_sign_in_at" }).catch(() =>
+          sb.query("profile",   { select: "user_id,player_name,created_at,email" }).catch(() => [])
+        ),
         sb.query("matches", { select: "user_id,created_at,result,opponent,partner", order: "created_at.desc" }).catch(() => []),
         sb.query("shots",   { select: "user_id,name,attempts,wins,misses" }).catch(() => []),
         sb.query("feedback",{ select: "*", order: "created_at.desc" }).catch(() => []),
@@ -5511,27 +5513,36 @@ const Admin = () => {
     ...users.map(u => u.user_id),
     ...matches.map(m => m.user_id),
     ...shots.map(s => s.user_id),
+  ].filter(Boolean))]; // used for KPI counts
+
+  // Build from ALL known users — view includes auth.users so zero-activity users appear
+  const allKnownIds = [...new Set([
+    ...users.map(u => u.user_id),
+    ...matches.map(m => m.user_id),
+    ...shots.map(s => s.user_id),
   ].filter(Boolean))];
 
-  const perUser = uniqueUserIds.map(uid => {
-    const profile   = users.find(u => u.user_id === uid);
+  const perUser = allKnownIds.map(uid => {
+    const profile     = users.find(u => u.user_id === uid);
     const userMatches = matches.filter(m => m.user_id === uid);
     const userShots   = shots.filter(s => s.user_id === uid);
     const totalShots  = userShots.reduce((a,s) => a+(s.attempts||0), 0);
     const wins        = userMatches.filter(m => m.result === "W").length;
     return {
       uid,
-      name:    profile?.player_name || "Unknown",
-      email:   profile?.email || "—",
-      matches: userMatches.length,
+      name:      profile?.player_name || "—",
+      email:     profile?.email || "—",
+      matches:   userMatches.length,
       wins,
-      losses:  userMatches.length - wins,
-      shots:   totalShots,
+      losses:    userMatches.length - wins,
+      shots:     totalShots,
+      signedUp:  profile?.created_at,
+      lastLogin: profile?.last_sign_in_at,
       lastActive: userMatches.length > 0
         ? userMatches.sort((a,b) => new Date(b.created_at)-new Date(a.created_at))[0]?.created_at
-        : profile?.created_at,
+        : profile?.last_sign_in_at || profile?.created_at,
     };
-  }).sort((a,b) => b.matches - a.matches);
+  }).sort((a,b) => new Date(b.signedUp||0) - new Date(a.signedUp||0));
 
   const totalMatches = matches.length;
   const totalShots   = shots.reduce((a,s) => a+(s.attempts||0), 0);
@@ -5640,18 +5651,21 @@ const Admin = () => {
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:C.text,display:"flex",alignItems:"center",gap:6}}>
                   {u.uid === ADMIN_USER_ID && <span style={{fontSize:10,background:C.pickle,color:C.navy,padding:"1px 6px",borderRadius:10,fontWeight:700}}>YOU</span>}
-                  {u.name}
+                  {u.name !== "—" ? u.name : <span style={{color:C.textLight,fontWeight:400,fontStyle:"italic"}}>No profile yet</span>}
                 </div>
                 <div style={{fontSize:11,color:C.textLight,marginTop:1}}>{u.email}</div>
+                <div style={{fontSize:10,color:C.textLight,marginTop:1}}>Joined {fmtDate(u.signedUp)} · Last login {fmtDate(u.lastLogin)}</div>
               </div>
-              <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:u.matches>0?C.blue:C.textLight}}>{u.matches}</div>
+              <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:u.matches>0?C.blue:C.textLight}}>{u.matches||"—"}</div>
               <div style={{fontSize:13,color:C.text}}>
-                <span style={{color:C.mint,fontWeight:700}}>{u.wins}W</span>
-                <span style={{color:C.textLight}}> / </span>
-                <span style={{color:C.rose,fontWeight:700}}>{u.losses}L</span>
+                {u.matches > 0 ? <>
+                  <span style={{color:C.mint,fontWeight:700}}>{u.wins}W</span>
+                  <span style={{color:C.textLight}}> / </span>
+                  <span style={{color:C.rose,fontWeight:700}}>{u.losses}L</span>
+                </> : <span style={{color:C.textLight,fontSize:12}}>No matches</span>}
               </div>
               <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:u.shots>0?C.mint:C.textLight}}>{u.shots||"—"}</div>
-              <div style={{fontSize:12,color:C.textMid}}>{fmtDate(u.lastActive)}</div>
+              <div style={{fontSize:12,color:C.textMid}}>{fmtDate(u.lastActive)||"—"}</div>
               <div style={{fontSize:10,color:C.textLight,fontFamily:"'DM Mono'",overflow:"hidden",textOverflow:"ellipsis"}}>{u.uid.slice(0,8)}…</div>
             </div>
           ))}
