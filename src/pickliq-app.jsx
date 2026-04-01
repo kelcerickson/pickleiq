@@ -614,6 +614,8 @@ const NAV=[
   {id:"coach",label:"Coach",short:"Coach"},
   {id:"profile",label:"Profile",short:"Me"},
 ];
+// Admin-only nav item — appended dynamically in TopNav
+const ADMIN_NAV = {id:"admin",label:"⚙️ Admin",short:"Admin"};
 
 const TopNav=({page,setPage,onSignOut,authUser})=>{
   const isMobile = useIsMobile();
@@ -642,7 +644,7 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
           flex:1,gap:isMobile?0:2,
           marginLeft:isMobile?2:12,
           justifyContent:isMobile?"space-between":"flex-start"}}>
-          {NAV.map(n=>{
+          {[...NAV, ...(authUser?.id===ADMIN_USER_ID?[ADMIN_NAV]:[])].map(n=>{
             const a=page===n.id || (n.id==="matches" && page==="matches:partners");
             return(
               <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id==="matches"?"matches":n.id)} style={{
@@ -5372,6 +5374,269 @@ const Drills = ({ setPage }) => {
 };
 
 
+
+// ── ADMIN PAGE (only visible to admin user) ────────────────────────────────────
+const ADMIN_USER_ID = "3f0c0be5-76c9-4b45-8f7f-ed2f654cf82c";
+
+const Admin = () => {
+  const isMobile = useIsMobile();
+  const [users,     setUsers]     = useState([]);
+  const [matches,   setMatches]   = useState([]);
+  const [shots,     setShots]     = useState([]);
+  const [feedback,  setFeedback]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [tab,       setTab]       = useState("overview");
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      // Use Supabase service-level queries via REST
+      const [usersRes, matchesRes, shotsRes, feedbackRes] = await Promise.all([
+        sb.query("profiles_admin", { select: "user_id,player_name,created_at,email" }).catch(() =>
+          // Fallback: query profile table
+          sb.query("profile", { select: "user_id,player_name,created_at,email" })
+        ),
+        sb.query("matches_admin", { select: "user_id,created_at,result,opponent,partner" }).catch(() =>
+          sb.query("matches", { select: "user_id,created_at,result,opponent,partner", order: "created_at.desc" })
+        ),
+        sb.query("shots", { select: "user_id,name,attempts,wins,misses" }).catch(() => []),
+        sb.query("feedback", { select: "*", order: "created_at.desc" }).catch(() => []),
+      ]);
+      setUsers(Array.isArray(usersRes) ? usersRes : []);
+      setMatches(Array.isArray(matchesRes) ? matchesRes : []);
+      setShots(Array.isArray(shotsRes) ? shotsRes : []);
+      setFeedback(Array.isArray(feedbackRes) ? feedbackRes : []);
+      setLastRefresh(new Date().toLocaleTimeString());
+    } catch(e) { console.error("Admin load error:", e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // ── Derived stats ────────────────────────────────────────────────────────────
+  const uniqueUserIds = [...new Set([
+    ...users.map(u => u.user_id),
+    ...matches.map(m => m.user_id),
+    ...shots.map(s => s.user_id),
+  ].filter(Boolean))];
+
+  const perUser = uniqueUserIds.map(uid => {
+    const profile   = users.find(u => u.user_id === uid);
+    const userMatches = matches.filter(m => m.user_id === uid);
+    const userShots   = shots.filter(s => s.user_id === uid);
+    const totalShots  = userShots.reduce((a,s) => a+(s.attempts||0), 0);
+    const wins        = userMatches.filter(m => m.result === "W").length;
+    return {
+      uid,
+      name:    profile?.player_name || "Unknown",
+      email:   profile?.email || "—",
+      matches: userMatches.length,
+      wins,
+      losses:  userMatches.length - wins,
+      shots:   totalShots,
+      lastActive: userMatches.length > 0
+        ? userMatches.sort((a,b) => new Date(b.created_at)-new Date(a.created_at))[0]?.created_at
+        : profile?.created_at,
+    };
+  }).sort((a,b) => b.matches - a.matches);
+
+  const totalMatches = matches.length;
+  const totalShots   = shots.reduce((a,s) => a+(s.attempts||0), 0);
+  const totalFeedback = feedback.length;
+  const newFeedback  = feedback.filter(f => {
+    const d = new Date(f.created_at);
+    return (Date.now() - d) < 7*24*60*60*1000;
+  }).length;
+
+  const fmtDate = (iso) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+  };
+  const fmtTime = (iso) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString("en-US", { month:"short", day:"numeric" }) + " " +
+           new Date(iso).toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
+  };
+
+  const typeColor  = { bug:C.rose, feature:C.blue, general:C.mint };
+  const typeLabel  = { bug:"🐛 Bug", feature:"💡 Feature", general:"👋 General" };
+
+  if (loading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,flexDirection:"column",gap:12}}>
+      <div style={{fontSize:24,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+      <div style={{fontSize:14,color:C.textMid}}>Loading admin data…</div>
+    </div>
+  );
+
+  return (
+    <div className="fade-up" style={{maxWidth:1200,margin:"0 auto",padding:isMobile?"14px":"32px",boxSizing:"border-box",width:"100%"}}>
+
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24}}>
+        <div>
+          <div style={{fontSize:11,color:C.rose,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>
+            🔒 Admin Only
+          </div>
+          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>PickleIntel Admin</h1>
+          <p style={{color:C.textMid,fontSize:14,marginTop:3}}>
+            {uniqueUserIds.length} users · {totalMatches} matches · {totalShots} shots logged
+            {lastRefresh && <span style={{color:C.textLight}}> · refreshed {lastRefresh}</span>}
+          </p>
+        </div>
+        <button onClick={load} style={{
+          background:C.navy,border:"none",borderRadius:12,padding:"10px 20px",
+          fontFamily:"'Outfit'",fontWeight:700,fontSize:13,color:C.pickle,cursor:"pointer",
+        }}>↻ Refresh</button>
+      </div>
+
+      {/* KPI Strip */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:14,marginBottom:24}}>
+        {[
+          {label:"Total Users",    value:uniqueUserIds.length,  color:C.blue,   colorL:C.blueL},
+          {label:"Total Matches",  value:totalMatches,           color:C.mint,   colorL:C.mintL},
+          {label:"Shots Logged",   value:totalShots,             color:C.pickle, colorL:"#F5FAE8"},
+          {label:"Feedback Items", value:totalFeedback,          color:C.purple, colorL:C.purpleL},
+          {label:"New Feedback (7d)", value:newFeedback,         color:newFeedback>0?C.rose:C.textMid, colorL:newFeedback>0?C.roseL:C.pageBg},
+        ].map(k => (
+          <div key={k.label} style={{
+            background:k.colorL, border:`2px solid ${k.color}30`,
+            borderRadius:14, padding:"16px 18px",
+          }}>
+            <div style={{fontSize:11,color:k.color,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,fontWeight:700}}>{k.label}</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:36,color:k.color,letterSpacing:"0.04em",lineHeight:1}}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tab bar */}
+      <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5}}>
+        {[
+          {id:"overview",  label:"👥 Users"},
+          {id:"feedback",  label:"💬 Feedback"},
+          {id:"activity",  label:"📊 Activity"},
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            background: tab===t.id ? C.navy : "transparent",
+            border:"none",borderRadius:10,padding:"10px 22px",cursor:"pointer",
+            fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
+            color: tab===t.id ? "white" : C.textMid,
+            transition:"all 0.15s",whiteSpace:"nowrap",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── Tab: Users ── */}
+      {tab === "overview" && (
+        <Card style={{padding:0,overflow:"hidden"}}>
+          {/* Header */}
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr",gap:12,padding:"10px 20px",
+            background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
+            {["Player","Matches","W/L","Shots","Last Active","User ID"].map(h => (
+              <div key={h} style={{fontSize:10,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>
+            ))}
+          </div>
+          {perUser.length === 0 ? (
+            <div style={{padding:"40px",textAlign:"center",color:C.textLight,fontSize:13}}>No users yet</div>
+          ) : perUser.map((u,i) => (
+            <div key={u.uid} style={{
+              display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr",
+              gap:12,padding:"14px 20px",
+              borderBottom: i<perUser.length-1 ? `1px solid ${C.border}` : "none",
+              background: u.uid === ADMIN_USER_ID ? `${C.pickle}08` : i%2===0 ? C.cardBg : "#FAFBFC",
+            }}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:C.text,display:"flex",alignItems:"center",gap:6}}>
+                  {u.uid === ADMIN_USER_ID && <span style={{fontSize:10,background:C.pickle,color:C.navy,padding:"1px 6px",borderRadius:10,fontWeight:700}}>YOU</span>}
+                  {u.name}
+                </div>
+                <div style={{fontSize:11,color:C.textLight,marginTop:1}}>{u.email}</div>
+              </div>
+              <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:u.matches>0?C.blue:C.textLight}}>{u.matches}</div>
+              <div style={{fontSize:13,color:C.text}}>
+                <span style={{color:C.mint,fontWeight:700}}>{u.wins}W</span>
+                <span style={{color:C.textLight}}> / </span>
+                <span style={{color:C.rose,fontWeight:700}}>{u.losses}L</span>
+              </div>
+              <div style={{fontFamily:"'DM Mono'",fontSize:14,fontWeight:700,color:u.shots>0?C.mint:C.textLight}}>{u.shots||"—"}</div>
+              <div style={{fontSize:12,color:C.textMid}}>{fmtDate(u.lastActive)}</div>
+              <div style={{fontSize:10,color:C.textLight,fontFamily:"'DM Mono'",overflow:"hidden",textOverflow:"ellipsis"}}>{u.uid.slice(0,8)}…</div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ── Tab: Feedback ── */}
+      {tab === "feedback" && (
+        <div>
+          {feedback.length === 0 ? (
+            <div style={{textAlign:"center",padding:"60px 20px",background:C.cardBg,borderRadius:20,border:`2px dashed ${C.border}`}}>
+              <div style={{fontSize:40,marginBottom:12}}>💬</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Feedback Yet</div>
+              <div style={{fontSize:13,color:C.textMid}}>Feedback submitted by users will appear here.</div>
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {feedback.map((f,i) => {
+                const col = typeColor[f.type] || C.textMid;
+                const lbl = typeLabel[f.type] || f.type;
+                const userProfile = users.find(u => u.user_id === f.user_id);
+                return (
+                  <Card key={f.id||i} style={{padding:"16px 20px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,
+                          background:`${col}15`,color:col}}>{lbl}</span>
+                        <span style={{fontSize:12,color:C.textMid,fontWeight:600}}>
+                          {userProfile?.player_name || userProfile?.email || f.user_id?.slice(0,8)+"…" || "Anonymous"}
+                        </span>
+                      </div>
+                      <span style={{fontSize:11,color:C.textLight}}>{fmtTime(f.created_at)}</span>
+                    </div>
+                    <div style={{fontSize:14,color:C.text,lineHeight:1.7,background:C.pageBg,
+                      borderRadius:10,padding:"12px 14px"}}>{f.message}</div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Activity ── */}
+      {tab === "activity" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {/* Recent matches */}
+          <Card>
+            <SLabel>Recent Matches (Last 20)</SLabel>
+            <div style={{display:"flex",flexDirection:"column",gap:0}}>
+              {matches.slice(0,20).map((m,i) => {
+                const userProfile = users.find(u => u.user_id === m.user_id);
+                return (
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 2fr 1fr",gap:12,
+                    padding:"10px 0",borderBottom:i<19?`1px solid ${C.border}`:"none",alignItems:"center"}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.text}}>
+                      {userProfile?.player_name || m.user_id?.slice(0,8)+"…"}
+                    </div>
+                    <div>
+                      <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,
+                        background:m.result==="W"?`${C.mint}20`:`${C.rose}20`,
+                        color:m.result==="W"?C.mint:C.rose}}>{m.result==="W"?"WIN":"LOSS"}</span>
+                    </div>
+                    <div style={{fontSize:12,color:C.textMid}}>vs {m.opponent||"Unknown"}</div>
+                    <div style={{fontSize:11,color:C.textLight}}>{fmtDate(m.created_at)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 // ── HELP MODAL ────────────────────────────────────────────────────────────────
 const FAQS = [
   { q:"How do I log a match?",
@@ -5528,7 +5793,17 @@ const HelpModal = ({onClose}) => {
                       padding:"12px 14px",color:C.text,fontSize:13,
                       fontFamily:"'Outfit'",resize:"vertical",boxSizing:"border-box"}}/>
                 </div>
-                <button onClick={()=>{if(feedback.trim()) setFeedSent(true);}}
+                <button onClick={async()=>{
+                    if(!feedback.trim()) return;
+                    try {
+                      await sb.insert("feedback", {
+                        user_id: getCurrentUserId(),
+                        type: feedType,
+                        message: feedback.trim(),
+                      });
+                    } catch(e) { console.warn("Feedback save failed:", e); }
+                    setFeedSent(true);
+                  }}
                   disabled={!feedback.trim()}
                   style={{width:"100%",background:feedback.trim()?C.navy:C.border,
                     border:"none",borderRadius:12,padding:"13px",
@@ -5825,6 +6100,7 @@ export default function App(){
           {page==="matches"  &&<MatchCenter defaultTab="log"/>}
           {page==="matches:partners"&&<MatchCenter defaultTab="partners"/>}
           {page==="drills"   &&<Drills setPage={setPage}/>}
+          {page==="admin"    &&getCurrentUserId()===ADMIN_USER_ID&&<Admin/>}
           {page==="coach"    &&<Coach/>}
           {page==="profile"  &&<Profile setPage={setPage}/>}
         </main>
