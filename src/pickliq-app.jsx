@@ -1147,6 +1147,50 @@ const MatchHistoryContent=()=>{
     setDeleting(false);
   };
 
+  const [claimable, setClaimable] = useState([]); // matches logged by others where this user appears
+  const [claiming,  setClaiming]  = useState(null); // match_id being claimed
+
+  const claimMatch = async (matchId, role) => {
+    setClaiming(matchId);
+    try {
+      await sb.upsert("match_links", {
+        match_id: matchId, user_id: getCurrentUserId(), role, status:"confirmed"
+      }, "match_id,user_id");
+      // Reload both lists
+      loadClaimable();
+      loadMatches();
+    } catch(e) { alert("Claim failed: " + (e.message||"Unknown error")); }
+    setClaiming(null);
+  };
+
+  const loadClaimable = async () => {
+    try {
+      const uid = getCurrentUserId();
+      // Get this user's profile name to match against partner/opponent fields
+      const prof = await sb.query("profile", { filter:`user_id=eq.${uid}`, single:true, select:"player_name" }).catch(()=>null);
+      const myName = prof?.player_name;
+      if (!myName) return;
+
+      // Find matches where player_name appears in partner or opponent (case-insensitive)
+      const nameEnc = encodeURIComponent(myName);
+      const [asPartner, asOpponent] = await Promise.all([
+        sb.query("matches", { filter:`partner=ilike.*${nameEnc}*&user_id=neq.${uid}` }).catch(()=>[]),
+        sb.query("matches", { filter:`opponent=ilike.*${nameEnc}*&user_id=neq.${uid}` }).catch(()=>[]),
+      ]);
+
+      // Filter out matches already linked
+      const linked = await sb.query("match_links", { filter:`user_id=eq.${uid}`, select:"match_id" }).catch(()=>[]);
+      const linkedIds = new Set((Array.isArray(linked)?linked:[]).map(l=>l.match_id));
+
+      const allClaimable = [
+        ...(Array.isArray(asPartner)?asPartner:[]).map(m=>({...m, myRole:"partner"})),
+        ...(Array.isArray(asOpponent)?asOpponent:[]).map(m=>({...m, myRole:"opponent"})),
+      ].filter(m => !linkedIds.has(m.id));
+
+      setClaimable(allClaimable);
+    } catch(e) { console.warn("loadClaimable error:", e); }
+  };
+
   const loadMatches = () => {
     setLoading(true);
     const uid3 = getCurrentUserId();
@@ -1181,7 +1225,7 @@ const MatchHistoryContent=()=>{
       .finally(()=>setLoading(false));
   };
 
-  useEffect(()=>{ loadMatches(); },[]);
+  useEffect(()=>{ loadMatches(); loadClaimable(); },[]);
 
   const allMatches = dbMatches.length > 0 ? dbMatches : [];
   const [sel,setSel]=useState(null);
@@ -1404,9 +1448,70 @@ const MatchHistoryContent=()=>{
         </div>
       )}
 
+      {/* ── Claimable Matches Banner ── */}
+      {claimable.length > 0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{width:3,height:20,background:C.blue,borderRadius:2}}/>
+            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>🔗 Matches You Might Be In</span>
+            <span style={{fontSize:12,color:C.textLight}}>Logged by other players — claim them to update your stats</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {claimable.map(m=>(
+              <div key={m.id} style={{
+                background:C.cardBg, border:`2px dashed ${C.blue}50`,
+                borderRadius:14, padding:"14px 18px",
+                display:"flex", justifyContent:"space-between", alignItems:"center", gap:12,
+                flexWrap:"wrap",
+              }}>
+                <div style={{display:"flex",alignItems:"center",gap:14,flex:1}}>
+                  <div style={{width:36,height:36,borderRadius:"50%",background:`${C.blue}15`,
+                    display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>
+                    🎾
+                  </div>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:2}}>
+                      vs {m.opponent||"Unknown"} · w/ {m.partner||"Unknown"}
+                    </div>
+                    <div style={{fontSize:11,color:C.textLight}}>
+                      {m.date} · {m.result==="W"?"Win":"Loss"}{m.score?` · ${m.score}`:""} ·{" "}
+                      <span style={{color:C.blue,fontWeight:600}}>
+                        You appear as {m.myRole==="partner"?"a partner":"an opponent"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <button onClick={()=>claimMatch(m.id, m.myRole)}
+                    disabled={claiming===m.id}
+                    style={{
+                      padding:"8px 18px", borderRadius:10, border:"none",
+                      background: claiming===m.id ? C.border : C.blue,
+                      fontFamily:"'Outfit'", fontWeight:700, fontSize:13,
+                      color:"white", cursor: claiming===m.id ? "not-allowed" : "pointer",
+                      transition:"all 0.15s",
+                    }}>
+                    {claiming===m.id ? "Claiming…" : "✓ Claim Match"}
+                  </button>
+                  <button onClick={()=>setClaimable(prev=>prev.filter(x=>x.id!==m.id))}
+                    style={{
+                      padding:"8px 12px", borderRadius:10, border:`1px solid ${C.border}`,
+                      background:C.pageBg, fontFamily:"'Outfit'", fontWeight:600,
+                      fontSize:12, color:C.textMid, cursor:"pointer",
+                    }}>Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
-          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><SLabel>Recent Matches</SLabel></div>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <SLabel style={{marginBottom:0}}>Recent Matches</SLabel>
+            {allMatches.length > 0 && <span style={{fontSize:11,color:C.textLight}}>{allMatches.length} logged</span>}
+          </div>
           {allMatches.map(m=>(
             <div key={m.id} className="row" onClick={()=>setSel(m)} style={{
               padding:"13px 18px",borderBottom:`1px solid ${C.border}`,
@@ -3347,12 +3452,30 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
   // Reset chips when parent clears value (e.g. after save)
   useEffect(()=>{ if(value==="") setChips([]); }, [value]);
 
-  // Load all players once on mount
+  // Load players + registered users on mount
   useEffect(()=>{
     (async()=>{
       try {
-        const rows = await sb.query("players", { select:"name,dupr", order:"name.asc" });
-        setAllPlayers(Array.isArray(rows) ? rows.map(r=>({player_name:r.name, dupr:r.dupr})) : []);
+        const [playerRows, profileRows] = await Promise.all([
+          sb.query("players", { select:"name,dupr", order:"name.asc" }).catch(()=>[]),
+          sb.query("profile", { select:"player_name,user_id,email", order:"player_name.asc" }).catch(()=>[]),
+        ]);
+        const playerList = Array.isArray(playerRows)
+          ? playerRows.map(r=>({ player_name:r.name, dupr:r.dupr, isRegistered:false }))
+          : [];
+        // Merge registered users — mark them with a badge and user_id
+        const registeredNames = new Set(playerList.map(p=>p.player_name.toLowerCase()));
+        const registeredList = Array.isArray(profileRows)
+          ? profileRows
+            .filter(r => r.player_name && r.user_id !== getCurrentUserId())
+            .map(r=>({ player_name:r.player_name, user_id:r.user_id, isRegistered:true }))
+          : [];
+        // Merge: registered users first, then others (skip duplicates)
+        const merged = [
+          ...registeredList,
+          ...playerList.filter(p=>!registeredList.find(r=>r.player_name.toLowerCase()===p.player_name.toLowerCase()))
+        ];
+        setAllPlayers(merged);
       } catch(e){}
     })();
   }, []);
@@ -3482,12 +3605,16 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
               onMouseEnter={e=>e.currentTarget.style.background=C.pageBg}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:`${C.pickle}22`,
+                <div style={{width:28,height:28,borderRadius:"50%",
+                  background:r.isRegistered?`${C.blue}22`:`${C.pickle}22`,
                   display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:12,fontWeight:700,color:C.navy,flexShrink:0}}>
                   {r.player_name[0].toUpperCase()}
                 </div>
-                <div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.player_name}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.player_name}</div>
+                  {r.isRegistered&&<div style={{fontSize:10,color:C.blue,fontWeight:700}}>✓ PickleIntel user</div>}
+                </div>
               </div>
               {r.dupr&&<div style={{fontFamily:"'DM Mono'",fontSize:11,color:C.pickle,fontWeight:700}}>{r.dupr}</div>}
             </div>
@@ -4116,6 +4243,25 @@ function VideoLoggerContent() {
         matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
         setSavedMatchId(matchId);
         setMatchSaved(true);
+
+        // Auto-create match_links for any registered PickleIntel users selected
+        if (matchId) {
+          // Look up partner/opponent user_ids from profile table
+          const allNames = [
+            ...(partner ? partner.split(",").map(s=>s.trim()).filter(Boolean) : []),
+            ...(opponent ? opponent.split(",").map(s=>s.trim()).filter(Boolean) : []),
+          ];
+          for (const name of allNames) {
+            try {
+              const profiles = await sb.query("profile", { filter:`player_name=ilike.${encodeURIComponent(name)}`, select:"user_id" });
+              if (Array.isArray(profiles) && profiles.length > 0) {
+                const linkedUid = profiles[0].user_id;
+                const role = partner && partner.toLowerCase().includes(name.toLowerCase()) ? "partner" : "opponent";
+                await sb.upsert("match_links", { match_id: matchId, user_id: linkedUid, role, status:"confirmed" }, "match_id,user_id");
+              }
+            } catch(e) { console.warn("match_links upsert failed for", name, e); }
+          }
+        }
       }
 
       // Video is local-only — not uploaded to storage (saves on storage costs)
