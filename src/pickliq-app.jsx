@@ -4148,6 +4148,15 @@ function VideoLoggerContent() {
   // ── Rally Ender data: { shotName: { won, lost } } ────────────────────────────
   const [rallyData, setRallyData] = useState({});
 
+  // ── Voice Logger state ───────────────────────────────────────────────────────
+  const [trackVoice,     setTrackVoice]     = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceTranscript,setVoiceTranscript]= useState(""); // raw current phrase
+  const [voiceLog,       setVoiceLog]       = useState([]); // [{text, parsed, ts, status}]
+  const [voiceError,     setVoiceError]     = useState("");
+  const voiceRef = useRef(null); // SpeechRecognition instance
+  const toggleVoice = () => { const v = !trackVoice; setTrackVoice(v); savePref("pi_track_voice", v); if (!v) stopVoice(); };
+
   // ── Save state ────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
@@ -4215,6 +4224,202 @@ function VideoLoggerContent() {
       if (curr[key] <= 0) return prev;
       return { ...prev, [shotName]: { ...curr, [key]: curr[key] - 1 } };
     });
+  };
+
+  // ── Voice Logger engine ──────────────────────────────────────────────────────
+
+  // Shot name aliases — maps spoken words → canonical shot names
+  const VOICE_SHOTS = {
+    "serve":         "Serve",
+    "return backhand":"Return BH", "return bh":"Return BH", "return back hand":"Return BH",
+    "return forehand":"Return FH", "return fh":"Return FH", "return fore hand":"Return FH",
+    "return":        "Return FH",
+    "fourth shot backhand":"4th Shot Backhand","fourth backhand":"4th Shot Backhand","4th backhand":"4th Shot Backhand",
+    "fourth shot forehand":"4th Shot Forehand","fourth forehand":"4th Shot Forehand","4th forehand":"4th Shot Forehand",
+    "fourth shot":"4th Shot Forehand",
+    "drive backhand":"Drive BH","drive bh":"Drive BH","drive back hand":"Drive BH",
+    "drive forehand":"Drive FH","drive fh":"Drive FH","drive fore hand":"Drive FH",
+    "drive":         "Drive FH",
+    "drop backhand": "Drop BH","drop bh":"Drop BH","drop back hand":"Drop BH",
+    "drop forehand": "Drop FH","drop fh":"Drop FH","drop fore hand":"Drop FH",
+    "drop":          "Drop BH",
+    "dink backhand": "Dink BH","dink bh":"Dink BH","dink back hand":"Dink BH",
+    "dink forehand": "Dink FH","dink fh":"Dink FH","dink fore hand":"Dink FH",
+    "dink":          "Dink BH",
+    "reset backhand":"Reset BH","reset bh":"Reset BH",
+    "reset forehand":"Reset FH","reset fh":"Reset FH",
+    "reset":         "Reset BH",
+    "volley backhand":"Volley BH","volley bh":"Volley BH",
+    "volley forehand":"Volley FH","volley fh":"Volley FH",
+    "volley":        "Volley BH",
+    "speed up backhand":"Speed Up BH","speed up bh":"Speed Up BH","speedup bh":"Speed Up BH",
+    "speed up forehand":"Speed Up FH","speed up fh":"Speed Up FH","speedup fh":"Speed Up FH",
+    "speed up":      "Speed Up FH","speedup":"Speed Up FH",
+    "slam backhand": "Slam BH","slam bh":"Slam BH",
+    "slam forehand": "Slam FH","slam fh":"Slam FH",
+    "slam":          "Slam FH",
+    "erne backhand": "Erne BH","erne bh":"Erne BH",
+    "erne forehand": "Erne FH","erne fh":"Erne FH",
+    "erne":          "Erne FH",
+    "counter backhand":"Counter BH","counter bh":"Counter BH",
+    "counter forehand":"Counter FH","counter fh":"Counter FH",
+    "counter":       "Counter BH",
+    "lob backhand":  "Lob BH","lob bh":"Lob BH",
+    "lob forehand":  "Lob FH","lob fh":"Lob FH",
+    "lob":           "Lob FH",
+    "scramble backhand":"Scramble BH","scramble bh":"Scramble BH",
+    "scramble forehand":"Scramble FH","scramble fh":"Scramble FH",
+    "scramble":      "Scramble BH",
+    "atp backhand":  "ATP BH","atp bh":"ATP BH",
+    "atp forehand":  "ATP FH","atp fh":"ATP FH",
+    "atp":           "ATP FH",
+  };
+
+  const VOICE_OUTCOMES = {
+    positive: ["positive","pos","good","nice","great","excellent","perfect","yes"],
+    negative: ["negative","neg","bad","miss","missed","error","poor","no"],
+    neutral:  ["neutral","neu","okay","ok","medium","so so","average","fine"],
+    won:      ["won","win","winner","point","ace"],
+    lost:     ["lost","lose","out","fault","net","wide"],
+  };
+
+  const VOICE_METRICS = {
+    arrived:     ["arrived","arrival","kitchen","nvz","reached","made it"],
+    notArrived:  ["not arrived","didn't arrive","missed kitchen","no arrival","didn't make it","back"],
+    nvzWon:      ["won rally","rally won","won the point","kitchen win"],
+    nvzLost:     ["lost rally","rally lost","lost the point","kitchen loss"],
+    error:       ["error","unforced","unforced error","mistake"],
+    undo:        ["undo","cancel","delete","remove","scratch that","wrong"],
+  };
+
+  const parseVoiceCommand = (text) => {
+    const t = text.toLowerCase().trim();
+
+    // Check metrics first
+    if (VOICE_METRICS.undo.some(w => t.includes(w)))       return { type:"undo" };
+    if (VOICE_METRICS.arrived.some(w => t.includes(w)))    return { type:"metric", metric:"arrived" };
+    if (VOICE_METRICS.notArrived.some(w => t.includes(w))) return { type:"metric", metric:"notArrived" };
+    if (VOICE_METRICS.nvzWon.some(w => t.includes(w)))     return { type:"metric", metric:"nvzWon" };
+    if (VOICE_METRICS.nvzLost.some(w => t.includes(w)))    return { type:"metric", metric:"nvzLost" };
+    if (VOICE_METRICS.error.some(w => t.includes(w)))      return { type:"metric", metric:"error" };
+
+    // Find shot name — try longest match first
+    let shotName = null;
+    const sortedShots = Object.keys(VOICE_SHOTS).sort((a,b) => b.length - a.length);
+    for (const key of sortedShots) {
+      if (t.includes(key)) { shotName = VOICE_SHOTS[key]; break; }
+    }
+    if (!shotName) return { type:"unknown", raw:text };
+
+    // Find outcome
+    let outcome = null;
+    for (const [key, words] of Object.entries(VOICE_OUTCOMES)) {
+      if (words.some(w => t.includes(w))) { outcome = key; break; }
+    }
+    if (!outcome) return { type:"unknown", raw:text };
+
+    const isRally = outcome === "won" || outcome === "lost";
+    return {
+      type: isRally ? "rally" : "shot",
+      shot: shotName,
+      outcome,
+    };
+  };
+
+  const applyVoiceCommand = (parsed) => {
+    if (!parsed || parsed.type === "unknown") return false;
+
+    if (parsed.type === "undo") {
+      // Undo last entry in voiceLog
+      setVoiceLog(prev => {
+        const last = [...prev].reverse().find(e => e.status === "logged");
+        if (!last) return prev;
+        if (last.parsed?.type === "shot") unlogShot(last.parsed.shot, last.parsed.outcome);
+        if (last.parsed?.type === "rally") unlogRally(last.parsed.shot, last.parsed.outcome === "won" ? "W" : "L");
+        if (last.parsed?.type === "metric") {
+          if (last.parsed.metric === "arrived")    { setNvzArrived(p=>Math.max(0,p-1)); setNvzTotal(p=>Math.max(0,p-1)); }
+          if (last.parsed.metric === "notArrived") { setNvzTotal(p=>Math.max(0,p-1)); }
+          if (last.parsed.metric === "nvzWon")     { setNvzWon(p=>Math.max(0,p-1)); setNvzWonTotal(p=>Math.max(0,p-1)); }
+          if (last.parsed.metric === "nvzLost")    { setNvzWonTotal(p=>Math.max(0,p-1)); }
+          if (last.parsed.metric === "error")      { setErrors(p=>Math.max(0,p-1)); }
+        }
+        return prev.map(e => e === last ? {...e, status:"undone"} : e);
+      });
+      return true;
+    }
+
+    if (parsed.type === "shot") {
+      const outcomeMap = { positive:"pos", negative:"neg", neutral:"neu" };
+      logShot(parsed.shot, outcomeMap[parsed.outcome]);
+      return true;
+    }
+
+    if (parsed.type === "rally") {
+      logRally(parsed.shot, parsed.outcome === "won" ? "W" : "L");
+      return true;
+    }
+
+    if (parsed.type === "metric") {
+      if (parsed.metric === "arrived")    { setNvzArrived(p=>p+1); setNvzTotal(p=>p+1); }
+      if (parsed.metric === "notArrived") { setNvzTotal(p=>p+1); }
+      if (parsed.metric === "nvzWon")     { setNvzWon(p=>p+1); setNvzWonTotal(p=>p+1); }
+      if (parsed.metric === "nvzLost")    { setNvzWonTotal(p=>p+1); }
+      if (parsed.metric === "error")      { setErrors(p=>p+1); }
+      return true;
+    }
+
+    return false;
+  };
+
+  const startVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setVoiceError("Speech recognition not supported in this browser. Use Chrome or Safari."); return; }
+
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    voiceRef.current = rec;
+
+    rec.onstart = () => { setVoiceListening(true); setVoiceError(""); };
+    rec.onend   = () => { setVoiceListening(false); };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed") setVoiceError("Microphone access denied. Please allow mic access in your browser.");
+      else if (e.error !== "no-speech") setVoiceError(`Voice error: ${e.error}`);
+    };
+
+    rec.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result.isFinal) {
+          const text = result[0].transcript.trim();
+          if (!text) return;
+          const parsed = parseVoiceCommand(text);
+          const success = applyVoiceCommand(parsed);
+          const entry = {
+            id: Date.now(),
+            text,
+            parsed,
+            ts: new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",second:"2-digit"}),
+            status: success ? "logged" : "unrecognized",
+          };
+          setVoiceLog(prev => [entry, ...prev].slice(0, 50)); // keep last 50
+          setVoiceTranscript("");
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      setVoiceTranscript(interim);
+    };
+
+    try { rec.start(); } catch(e) { setVoiceError("Could not start microphone: " + e.message); }
+  };
+
+  const stopVoice = () => {
+    if (voiceRef.current) { try { voiceRef.current.stop(); } catch(e) {} voiceRef.current = null; }
+    setVoiceListening(false);
+    setVoiceTranscript("");
   };
 
   // ── Save all ──────────────────────────────────────────────────────────────────
@@ -4542,7 +4747,7 @@ function VideoLoggerContent() {
   const shotTotal  = Object.values(shotData).reduce((a, d) => a + d.pos + d.neu + d.neg, 0);
   const rallyTotal = Object.values(rallyData).reduce((a, d) => a + d.won + d.lost, 0);
   const totalLogged = shotTotal + rallyTotal;
-  const anyTracking = trackShots || trackRally;
+  const anyTracking = trackShots || trackRally || trackVoice;
   const bothActive  = trackShots && trackRally;
 
   // ── Layout: adaptive columns based on active toggles ─────────────────────────
@@ -4608,6 +4813,7 @@ function VideoLoggerContent() {
           {/* Shot Tracker FIRST (left) */}
           <Toggle label="🎯 Shot Tracker" active={trackShots} onToggle={toggleShots} color={C.blue} />
           <Toggle label="🏁 Rally Ender"  active={trackRally} onToggle={toggleRally} color={C.mint} />
+          <Toggle label="🎙 Voice Logger" active={trackVoice} onToggle={toggleVoice} color={C.purple} />
           <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Saved automatically</div>
         </div>
 
@@ -4641,7 +4847,16 @@ function VideoLoggerContent() {
           </div>
         )}
 
-        {!anyTracking && (
+        {trackVoice && (
+          <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.purple}10`, border: `1px solid ${C.purple}30`, borderRadius: 9, fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
+            <span style={{ fontWeight: 700, color: C.purple }}>🎙 Voice commands:</span>{" "}
+            Say <strong>"positive/negative/neutral [shot]"</strong> for Shot Tracker · <strong>"won/lost [shot]"</strong> for Rally Ender ·{" "}
+            <strong>"arrived"</strong> / <strong>"not arrived"</strong> · <strong>"error"</strong> · <strong>"undo"</strong> to remove last entry.
+            Example: <em>"positive dink backhand"</em>, <em>"won drop forehand"</em>, <em>"arrived"</em>
+          </div>
+        )}
+
+        {!anyTracking && !trackVoice && (
           <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
             ⚠️ Turn on at least one tracking mode above.
           </div>
@@ -4731,7 +4946,52 @@ function VideoLoggerContent() {
                 <div style={{ fontSize:11, color:C.textLight, marginTop:6 }}>Unforced errors</div>
               </div>
             </div>
-          </div>
+          {/* Voice panel in manual mode */}
+          {trackVoice && (
+            <div style={{ marginTop:14, border:`1.5px solid ${voiceListening?C.purple:C.border}`,
+              borderRadius:12, background:voiceListening?`${C.purple}06`:C.pageBg, transition:"all 0.3s" }}>
+              <div style={{ padding:"12px 14px", display:"flex", alignItems:"center", gap:12, borderBottom:`1px solid ${C.border}` }}>
+                <button onClick={() => voiceListening ? stopVoice() : startVoice()}
+                  style={{ width:44,height:44,borderRadius:"50%",border:"none",cursor:"pointer",
+                    background:voiceListening?C.purple:C.navy,display:"flex",alignItems:"center",
+                    justifyContent:"center",fontSize:20,flexShrink:0,transition:"all 0.2s",
+                    boxShadow:voiceListening?`0 0 0 4px ${C.purple}30`:"none" }}>
+                  {voiceListening ? "⏹" : "🎙"}
+                </button>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13,fontWeight:700,color:voiceListening?C.purple:C.textMid }}>
+                    {voiceListening ? "🔴 Listening…" : "Voice Logger"}
+                  </div>
+                  {voiceTranscript && <div style={{ fontSize:12,color:C.textLight,fontStyle:"italic",marginTop:2 }}>"{voiceTranscript}"</div>}
+                  {!voiceListening && !voiceTranscript && <div style={{ fontSize:11,color:C.textLight }}>Tap mic to start · speak shot commands</div>}
+                </div>
+                {voiceLog.length > 0 && (
+                  <button onClick={()=>setVoiceLog([])} style={{ fontSize:11,color:C.textLight,background:"none",
+                    border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:"'Outfit'" }}>Clear</button>
+                )}
+              </div>
+              {voiceError && <div style={{ padding:"8px 14px",background:`${C.rose}12`,fontSize:12,color:C.rose }}>{voiceError}</div>}
+              <div style={{ maxHeight:160,overflowY:"auto" }}>
+                {voiceLog.length===0
+                  ? <div style={{ padding:"12px 14px",fontSize:12,color:C.textLight,textAlign:"center" }}>No commands yet</div>
+                  : voiceLog.slice(0,20).map(entry=>(
+                    <div key={entry.id} style={{ padding:"7px 14px",borderBottom:`1px solid ${C.border}`,
+                      display:"flex",alignItems:"center",gap:10,opacity:entry.status==="undone"?0.4:1 }}>
+                      <div style={{ width:7,height:7,borderRadius:"50%",flexShrink:0,
+                        background:entry.status==="logged"?C.mint:entry.status==="undone"?C.textLight:C.amber }}/>
+                      <div style={{ flex:1,fontSize:11,fontStyle:"italic",color:C.text,
+                        textDecoration:entry.status==="undone"?"line-through":"none" }}>"{entry.text}"</div>
+                      <div style={{ fontSize:10,color:entry.status==="logged"?C.mint:entry.status==="undone"?C.textLight:C.amber }}>
+                        {entry.status==="logged"?"✓ logged":entry.status==="undone"?"undone":"⚠ unrecognized"}
+                      </div>
+                      <div style={{ fontSize:9,color:C.textLight,flexShrink:0 }}>{entry.ts}</div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+        </div>
         ) : !videoUrl ? (
           /* ── No video yet: URL + file upload ── */
           <div>
@@ -4808,6 +5068,96 @@ function VideoLoggerContent() {
                 style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, color: C.textMid, cursor: "pointer", fontFamily: "'Outfit'" }}>
                 ✕ Remove video
               </button>
+
+              {/* ── Voice Logger Panel ── */}
+              {trackVoice && (
+                <div style={{ marginTop: 14, border: `1.5px solid ${voiceListening ? C.purple : C.border}`, borderRadius: 12,
+                  background: voiceListening ? `${C.purple}06` : C.pageBg, transition:"all 0.3s", overflow:"hidden" }}>
+
+                  {/* Mic control bar */}
+                  <div style={{ padding:"12px 14px", display:"flex", alignItems:"center", gap:12, borderBottom:`1px solid ${C.border}` }}>
+                    <button
+                      onClick={() => voiceListening ? stopVoice() : startVoice()}
+                      style={{
+                        width:44, height:44, borderRadius:"50%", border:"none", cursor:"pointer",
+                        background: voiceListening ? C.purple : C.navy,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:20, flexShrink:0, transition:"all 0.2s",
+                        boxShadow: voiceListening ? `0 0 0 4px ${C.purple}30` : "none",
+                      }}>
+                      {voiceListening ? "⏹" : "🎙"}
+                    </button>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color: voiceListening ? C.purple : C.textMid }}>
+                        {voiceListening ? "🔴 Listening…" : "Voice Logger"}
+                      </div>
+                      {voiceTranscript && (
+                        <div style={{ fontSize:12, color:C.textLight, fontStyle:"italic", marginTop:2 }}>
+                          "{voiceTranscript}"
+                        </div>
+                      )}
+                      {!voiceListening && !voiceTranscript && (
+                        <div style={{ fontSize:11, color:C.textLight }}>
+                          Tap mic to start · speak shot commands
+                        </div>
+                      )}
+                    </div>
+                    {voiceLog.length > 0 && (
+                      <button onClick={() => setVoiceLog([])}
+                        style={{ fontSize:11, color:C.textLight, background:"none", border:`1px solid ${C.border}`,
+                          borderRadius:6, padding:"3px 8px", cursor:"pointer", fontFamily:"'Outfit'" }}>
+                        Clear log
+                      </button>
+                    )}
+                  </div>
+
+                  {voiceError && (
+                    <div style={{ padding:"8px 14px", background:`${C.rose}12`, fontSize:12, color:C.rose }}>{voiceError}</div>
+                  )}
+
+                  {/* Transcription log — most recent on top */}
+                  <div style={{ maxHeight:200, overflowY:"auto" }}>
+                    {voiceLog.length === 0 ? (
+                      <div style={{ padding:"16px 14px", fontSize:12, color:C.textLight, textAlign:"center" }}>
+                        No commands logged yet — start speaking after tapping the mic
+                      </div>
+                    ) : voiceLog.map(entry => (
+                      <div key={entry.id} style={{
+                        padding:"8px 14px", borderBottom:`1px solid ${C.border}`,
+                        display:"flex", alignItems:"center", gap:10,
+                        background: entry.status==="undone" ? `${C.textLight}08`
+                          : entry.status==="unrecognized" ? `${C.amber}08` : "transparent",
+                        opacity: entry.status==="undone" ? 0.5 : 1,
+                      }}>
+                        {/* Status dot */}
+                        <div style={{ width:8, height:8, borderRadius:"50%", flexShrink:0,
+                          background: entry.status==="logged" ? C.mint
+                            : entry.status==="undone" ? C.textLight : C.amber }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:12, color:C.text, fontStyle:"italic",
+                            textDecoration: entry.status==="undone" ? "line-through" : "none" }}>
+                            "{entry.text}"
+                          </div>
+                          <div style={{ fontSize:11, marginTop:2,
+                            color: entry.status==="logged" ? C.mint
+                              : entry.status==="undone" ? C.textLight : C.amber }}>
+                            {entry.status==="logged" && entry.parsed?.type === "shot" &&
+                              `✓ ${entry.parsed.outcome} · ${entry.parsed.shot}`}
+                            {entry.status==="logged" && entry.parsed?.type === "rally" &&
+                              `✓ ${entry.parsed.outcome} · ${entry.parsed.shot}`}
+                            {entry.status==="logged" && entry.parsed?.type === "metric" &&
+                              `✓ ${entry.parsed.metric}`}
+                            {entry.status==="logged" && entry.parsed?.type === "undo" && "✓ Undone"}
+                            {entry.status==="unrecognized" && "⚠ Not recognized — try again"}
+                            {entry.status==="undone" && "Undone"}
+                          </div>
+                        </div>
+                        <div style={{ fontSize:10, color:C.textLight, flexShrink:0 }}>{entry.ts}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ── In-match metrics ── */}
               {(() => {
