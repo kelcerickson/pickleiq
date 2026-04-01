@@ -699,14 +699,22 @@ const Dashboard=({setPage})=>{
   const [dashShots, setDashShots] = useState([]);
 
   useEffect(()=>{
-    sb.query("matches", { order: "created_at.desc" })
+    const uid = getCurrentUserId();
+    if (!uid) return; // not logged in yet
+    sb.query("matches", { filter: `user_id=eq.${uid}`, order: "created_at.desc" })
       .then(rows => setDbMatches(rows||[]))
       .catch(()=>{});
-    sb.query("profile", { filter: `user_id=eq.${getCurrentUserId()}`, single: true })
+    sb.query("profile", { filter: `user_id=eq.${uid}`, single: true })
       .then(data => { if(data) setProfileData(data); })
       .catch(()=>{}); // New users won't have a profile yet — that's ok
-    sb.query("shots", { order: "name.asc" })
+    sb.query("shots", { filter: `user_id=eq.${uid}`, order: "name.asc" })
       .then(rows => {
+        // Reset SHOT_CATS to zero before populating (prevents stale data from previous user)
+        SHOT_CATS.forEach(cat => cat.shots.forEach(shot => {
+          shot.attempts=0; shot.wins=0; shot.misses=0;
+          shot.posCount=0; shot.neuCount=0; shot.negCount=0;
+          shot.winHistory=[0,0,0,0]; shot.missHistory=[0,0,0,0];
+        }));
         if (rows && rows.length > 0) {
           rows.forEach(row => {
             SHOT_CATS.forEach(cat => {
@@ -729,7 +737,7 @@ const Dashboard=({setPage})=>{
       .catch(()=>{});
   },[]);
 
-  const allMatches = dbMatches.length > 0 ? dbMatches : MATCHES;
+  const allMatches = dbMatches; // always user-specific — no global fallback
   const totalMatches = allMatches.length;
   const wins = allMatches.filter(m=>m.result==="W").length;
   const winRate = totalMatches > 0 ? Math.round(wins/totalMatches*100) : 0;
@@ -1141,7 +1149,8 @@ const MatchHistoryContent=()=>{
 
   const loadMatches = () => {
     setLoading(true);
-    sb.query("matches", { order: "created_at.desc" })
+    const uid3 = getCurrentUserId();
+    sb.query("matches", { filter: `user_id=eq.${uid3}`, order: "created_at.desc" })
       .then(rows => {
         const normalized = (rows||[]).map(m=>({
           id: m.id,
@@ -1509,7 +1518,7 @@ const PartnersContent=()=>{
   const shots=ALL_SHOTS_LIST.filter(s=>selShots.includes(s.id));
 
   useEffect(()=>{
-    sb.query("matches",{order:"created_at.desc"})
+    sb.query("matches",{filter:`user_id=eq.${getCurrentUserId()}`,order:"created_at.desc"})
       .then(rows=>{
         setDbMatches((rows||[]).map(m=>({
           partner:      m.partner||"",
@@ -1816,7 +1825,14 @@ const Shots = () => {
   const [dbShots, setDbShots] = useState([]);
 
   useEffect(()=>{
-    sb.query("shots", { order: "name.asc" })
+    const uid = getCurrentUserId();
+    // Reset SHOT_CATS to zero first — prevents seeing other users' data
+    SHOT_CATS.forEach(cat => cat.shots.forEach(shot => {
+      shot.attempts=0; shot.wins=0; shot.misses=0;
+      shot.posCount=0; shot.neuCount=0; shot.negCount=0;
+      shot.winHistory=[0,0,0,0]; shot.missHistory=[0,0,0,0];
+    }));
+    sb.query("shots", { filter: `user_id=eq.${uid}`, order: "name.asc" })
       .then(rows => {
         if (rows && rows.length > 0) {
           // Merge DB data into SHOT_CATS structure
@@ -5130,7 +5146,7 @@ const Drills = ({ setPage }) => {
   const [pinVer, setPinVer] = useState(0);
 
   useEffect(() => {
-    sb.query("shots", { order: "name.asc" })
+    sb.query("shots", { filter: `user_id=eq.${getCurrentUserId()}`, order: "name.asc" })
       .then(rows => { if (rows) setDbShots(rows); })
       .catch(() => {});
   }, []);
@@ -5472,16 +5488,12 @@ const Admin = () => {
     setLoading(true);
     try {
       // Use Supabase service-level queries via REST
+      // Admin queries — no user_id filter, gets all users' data
       const [usersRes, matchesRes, shotsRes, feedbackRes] = await Promise.all([
-        sb.query("profiles_admin", { select: "user_id,player_name,created_at,email" }).catch(() =>
-          // Fallback: query profile table
-          sb.query("profile", { select: "user_id,player_name,created_at,email" })
-        ),
-        sb.query("matches_admin", { select: "user_id,created_at,result,opponent,partner" }).catch(() =>
-          sb.query("matches", { select: "user_id,created_at,result,opponent,partner", order: "created_at.desc" })
-        ),
-        sb.query("shots", { select: "user_id,name,attempts,wins,misses" }).catch(() => []),
-        sb.query("feedback", { select: "*", order: "created_at.desc" }).catch(() => []),
+        sb.query("profile", { select: "user_id,player_name,created_at,email" }).catch(() => []),
+        sb.query("matches", { select: "user_id,created_at,result,opponent,partner", order: "created_at.desc" }).catch(() => []),
+        sb.query("shots",   { select: "user_id,name,attempts,wins,misses" }).catch(() => []),
+        sb.query("feedback",{ select: "*", order: "created_at.desc" }).catch(() => []),
       ]);
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setMatches(Array.isArray(matchesRes) ? matchesRes : []);
