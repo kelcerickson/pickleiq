@@ -3467,8 +3467,15 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
         const registeredNames = new Set(playerList.map(p=>p.player_name.toLowerCase()));
         const registeredList = Array.isArray(profileRows)
           ? profileRows
-            .filter(r => r.player_name && r.user_id !== getCurrentUserId())
-            .map(r=>({ player_name:r.player_name, user_id:r.user_id, isRegistered:true }))
+            .filter(r => r.user_id !== getCurrentUserId())
+            .map(r=>({
+              player_name: r.player_name || r.email?.split("@")[0] || "Unknown",
+              display_name: r.player_name || null,
+              email: r.email,
+              user_id: r.user_id,
+              isRegistered: true,
+              nameNotSet: !r.player_name,
+            }))
           : [];
         // Merge: registered users first, then others (skip duplicates)
         const merged = [
@@ -3613,7 +3620,11 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
                 </div>
                 <div>
                   <div style={{fontSize:13,fontWeight:600,color:C.text}}>{r.player_name}</div>
-                  {r.isRegistered&&<div style={{fontSize:10,color:C.blue,fontWeight:700}}>✓ PickleIntel user</div>}
+                  {r.isRegistered && (
+                    <div style={{fontSize:10,color:C.blue,fontWeight:700}}>
+                      ✓ PickleIntel user{r.nameNotSet ? ` · ${r.email}` : ""}
+                    </div>
+                  )}
                 </div>
               </div>
               {r.dupr&&<div style={{fontFamily:"'DM Mono'",fontSize:11,color:C.pickle,fontWeight:700}}>{r.dupr}</div>}
