@@ -4096,7 +4096,7 @@ const SHOT_BUTTONS = [
   { cat:"Defense",      color:C.purple, shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
 ];
 
-function VideoLoggerContent() {
+function VideoLoggerContent({ setPage, setTab }) {
   const isMobile = useIsMobile();
 
   // ── Match info ────────────────────────────────────────────────────────────────
@@ -4110,6 +4110,52 @@ function VideoLoggerContent() {
   const [matchSaved,   setMatchSaved]   = useState(false);
   const [matchSaving,  setMatchSaving]  = useState(false);
   const [matchErr,     setMatchErr]     = useState("");
+
+  // ── Autosave / session restore ────────────────────────────────────────────────
+  const AUTOSAVE_KEY = `pi_session_${getCurrentUserId()}`;
+  const [hasRestoredSession, setHasRestoredSession] = useState(false);
+  const [showResumeBanner, setShowResumeBanner] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState(null);
+
+  // Load any saved session on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      // Only offer restore if it was saved less than 7 days ago
+      const age = Date.now() - (saved.savedAt || 0);
+      if (age < 7 * 24 * 60 * 60 * 1000 && (saved.shotTotal > 0 || saved.rallyTotal > 0)) {
+        setPendingRestore(saved);
+        setShowResumeBanner(true);
+      }
+    } catch(e) {}
+    setHasRestoredSession(true);
+  }, []);
+
+  const restoreSession = (saved) => {
+    if (saved.date)     setDate(saved.date);
+    if (saved.opponent) setOpponent(saved.opponent);
+    if (saved.partner)  setPartner(saved.partner);
+    if (saved.score)    setScore(saved.score);
+    if (saved.result)   setResult(saved.result);
+    if (saved.notes)    setNotes(saved.notes);
+    if (saved.shotData) setShotData(saved.shotData);
+    if (saved.rallyData)setRallyData(saved.rallyData);
+    if (saved.nvzArrived !== undefined) setNvzArrived(saved.nvzArrived);
+    if (saved.nvzTotal  !== undefined) setNvzTotal(saved.nvzTotal);
+    if (saved.nvzWon    !== undefined) setNvzWon(saved.nvzWon);
+    if (saved.nvzWonTotal !== undefined) setNvzWonTotal(saved.nvzWonTotal);
+    if (saved.errors    !== undefined) setErrors(saved.errors);
+    setShowResumeBanner(false);
+    setPendingRestore(null);
+  };
+
+  const clearSession = () => {
+    try { localStorage.removeItem(AUTOSAVE_KEY); } catch(e) {}
+    setShowResumeBanner(false);
+    setPendingRestore(null);
+  };
 
   // ── Video / mode ─────────────────────────────────────────────────────────────
   const [videoFile, setVideoFile] = useState(null);
@@ -4547,8 +4593,14 @@ function VideoLoggerContent() {
           errors:      errors,
         }, "id");
       }
+      // Clear autosave — session complete
+      clearSession();
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      // Redirect to Match History after brief confirmation delay
+      setTimeout(() => {
+        if (setPage) setPage("matches");
+        if (setTab)  setTab("history");
+      }, 1200);
     } catch(e) { alert("Save failed: " + e.message); }
     setSaving(false);
   };
@@ -4743,6 +4795,24 @@ function VideoLoggerContent() {
     </div>
   );
 
+  // ── Autosave to localStorage on every state change ───────────────────────────
+  useEffect(() => {
+    if (!hasRestoredSession) return; // don't overwrite on initial mount
+    const shotTotal  = Object.values(shotData).reduce((a,d)=>a+d.pos+d.neu+d.neg, 0);
+    const rallyTotal = Object.values(rallyData).reduce((a,d)=>a+d.won+d.lost, 0);
+    if (shotTotal === 0 && rallyTotal === 0 && !opponent && !partner) return; // nothing worth saving
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        date, opponent, partner, score, result, notes,
+        shotData, rallyData,
+        nvzArrived, nvzTotal, nvzWon, nvzWonTotal, errors,
+        shotTotal, rallyTotal,
+      }));
+    } catch(e) {}
+  }, [shotData, rallyData, nvzArrived, nvzTotal, nvzWon, nvzWonTotal, errors,
+      date, opponent, partner, score, result, notes, hasRestoredSession]);
+
   // ── Computed totals ───────────────────────────────────────────────────────────
   const shotTotal  = Object.values(shotData).reduce((a, d) => a + d.pos + d.neu + d.neg, 0);
   const rallyTotal = Object.values(rallyData).reduce((a, d) => a + d.won + d.lost, 0);
@@ -4761,6 +4831,47 @@ function VideoLoggerContent() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
+
+      {/* ── Resume Session Banner ── */}
+      {showResumeBanner && pendingRestore && (
+        <div style={{
+          background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,
+          borderRadius:14, padding:"16px 20px",
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          gap:14, flexWrap:"wrap",
+          boxShadow:`0 4px 20px rgba(0,0,0,0.15)`,
+        }}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{fontSize:28,flexShrink:0}}>💾</div>
+            <div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:"white",letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
+                Resume Unfinished Session
+              </div>
+              <div style={{fontSize:12,color:"#94A3B8",lineHeight:1.5}}>
+                {pendingRestore.shotTotal > 0 && `${pendingRestore.shotTotal} shots logged · `}
+                {pendingRestore.rallyTotal > 0 && `${pendingRestore.rallyTotal} rallies · `}
+                {pendingRestore.opponent && `vs ${pendingRestore.opponent} · `}
+                Saved {new Date(pendingRestore.savedAt).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+                {" at "}
+                {new Date(pendingRestore.savedAt).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,flexShrink:0}}>
+            <button onClick={() => restoreSession(pendingRestore)} style={{
+              padding:"10px 22px", borderRadius:10, border:"none",
+              background:C.pickle, fontFamily:"'Outfit'", fontWeight:700,
+              fontSize:13, color:C.navy, cursor:"pointer",
+            }}>↩ Resume Session</button>
+            <button onClick={clearSession} style={{
+              padding:"10px 16px", borderRadius:10,
+              border:"1px solid rgba(255,255,255,0.15)",
+              background:"transparent", fontFamily:"'Outfit'", fontWeight:600,
+              fontSize:13, color:"#94A3B8", cursor:"pointer",
+            }}>Start Fresh</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Step 1: Match Info ── */}
       <Card style={{ padding: 0, overflow: "visible" }}>
@@ -5451,7 +5562,7 @@ function VideoLoggerContent() {
   );
 }
 
-const MatchCenter=({defaultTab="log"})=>{
+const MatchCenter=({defaultTab="log", setPage})=>{
   const isMobile = useIsMobile();
   // Map old "log" default to new "log" (VideoLoggerContent), "video" also maps to "log"
   const resolveTab = (t) => (t==="video"||t==="log") ? "log" : t;
@@ -5488,7 +5599,7 @@ const MatchCenter=({defaultTab="log"})=>{
       </div>
 
       {/* ── Tab: Log Match (unified) ── */}
-      {tab==="log"&&<VideoLoggerContent/>}
+      {tab==="log"&&<VideoLoggerContent setPage={setPage} setTab={setTab}/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
@@ -6809,8 +6920,8 @@ export default function App(){
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
-          {page==="matches"  &&<MatchCenter defaultTab="log"/>}
-          {page==="matches:partners"&&<MatchCenter defaultTab="partners"/>}
+          {page==="matches"  &&<MatchCenter defaultTab="log" setPage={setPage}/>}
+          {page==="matches:partners"&&<MatchCenter defaultTab="partners" setPage={setPage}/>}
           {page==="drills"   &&<Drills setPage={setPage}/>}
           {page==="admin"    &&getCurrentUserId()===ADMIN_USER_ID&&<Admin/>}
           {page==="coach"    &&<Coach/>}
