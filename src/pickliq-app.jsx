@@ -4396,15 +4396,15 @@ function VideoLoggerContent() {
           const text = result[0].transcript.trim();
           if (!text) return;
           const parsed = parseVoiceCommand(text);
-          const success = applyVoiceCommand(parsed);
+          // Only capture + parse — do NOT auto-apply. User reviews and logs at the end.
           const entry = {
-            id: Date.now(),
+            id: Date.now() + Math.random(),
             text,
             parsed,
             ts: new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",second:"2-digit"}),
-            status: success ? "logged" : "unrecognized",
+            status: parsed.type === "unknown" ? "unrecognized" : "pending", // pending = parsed but not yet logged
           };
-          setVoiceLog(prev => [entry, ...prev].slice(0, 50)); // keep last 50
+          setVoiceLog(prev => [entry, ...prev].slice(0, 100));
           setVoiceTranscript("");
         } else {
           interim += result[0].transcript;
@@ -4971,22 +4971,57 @@ function VideoLoggerContent() {
                 )}
               </div>
               {voiceError && <div style={{ padding:"8px 14px",background:`${C.rose}12`,fontSize:12,color:C.rose }}>{voiceError}</div>}
-              <div style={{ maxHeight:160,overflowY:"auto" }}>
+              {voiceLog.some(e=>e.status==="pending") && (
+                <div style={{ padding:"8px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",
+                  alignItems:"center",justifyContent:"space-between",background:`${C.mint}08` }}>
+                  <span style={{ fontSize:12,color:C.textMid }}>
+                    <strong style={{color:C.mint}}>{voiceLog.filter(e=>e.status==="pending").length}</strong> ready to log
+                  </span>
+                  <button onClick={()=>{
+                    [...voiceLog].reverse().filter(e=>e.status==="pending").forEach(e=>applyVoiceCommand(e.parsed));
+                    setVoiceLog(prev=>prev.map(e=>e.status==="pending"?{...e,status:"logged"}:e));
+                  }} style={{ padding:"5px 14px",borderRadius:8,border:"none",background:C.mint,
+                    fontFamily:"'Outfit'",fontWeight:700,fontSize:11,color:"white",cursor:"pointer" }}>
+                    ✓ Log All
+                  </button>
+                </div>
+              )}
+              <div style={{ maxHeight:200,overflowY:"auto" }}>
                 {voiceLog.length===0
-                  ? <div style={{ padding:"12px 14px",fontSize:12,color:C.textLight,textAlign:"center" }}>No commands yet</div>
-                  : voiceLog.slice(0,20).map(entry=>(
-                    <div key={entry.id} style={{ padding:"7px 14px",borderBottom:`1px solid ${C.border}`,
-                      display:"flex",alignItems:"center",gap:10,opacity:entry.status==="undone"?0.4:1 }}>
-                      <div style={{ width:7,height:7,borderRadius:"50%",flexShrink:0,
-                        background:entry.status==="logged"?C.mint:entry.status==="undone"?C.textLight:C.amber }}/>
-                      <div style={{ flex:1,fontSize:11,fontStyle:"italic",color:C.text,
-                        textDecoration:entry.status==="undone"?"line-through":"none" }}>"{entry.text}"</div>
-                      <div style={{ fontSize:10,color:entry.status==="logged"?C.mint:entry.status==="undone"?C.textLight:C.amber }}>
-                        {entry.status==="logged"?"✓ logged":entry.status==="undone"?"undone":"⚠ unrecognized"}
+                  ? <div style={{ padding:"12px 14px",fontSize:12,color:C.textLight,textAlign:"center" }}>Tap mic · speak · review here</div>
+                  : voiceLog.map(entry=>{
+                    const p=entry.parsed;
+                    let lbl="";
+                    if(p?.type==="shot")   lbl=`${p.outcome} · ${p.shot}`;
+                    if(p?.type==="rally")  lbl=`${p.outcome} · ${p.shot}`;
+                    if(p?.type==="metric") lbl=p.metric;
+                    return(
+                      <div key={entry.id} style={{ padding:"7px 14px",borderBottom:`1px solid ${C.border}`,
+                        display:"flex",alignItems:"flex-start",gap:8,
+                        background:entry.status==="pending"?`${C.blue}05`:entry.status==="logged"?`${C.mint}05`:`${C.amber}05`,
+                        opacity:entry.status==="dismissed"?0.4:1 }}>
+                        <div style={{ width:7,height:7,borderRadius:"50%",flexShrink:0,marginTop:3,
+                          background:entry.status==="pending"?C.blue:entry.status==="logged"?C.mint:entry.status==="dismissed"?C.textLight:C.amber }}/>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontSize:11,fontStyle:"italic",color:C.text }}>"{entry.text}"</div>
+                          {lbl&&<div style={{ fontSize:10,color:entry.status==="pending"?C.blue:entry.status==="logged"?C.mint:C.amber,fontWeight:600,marginTop:1 }}>
+                            {entry.status==="logged"?"✓ ":entry.status==="pending"?"→ ":""}{lbl}
+                          </div>}
+                        </div>
+                        {entry.status==="pending"&&(
+                          <div style={{display:"flex",gap:4,flexShrink:0}}>
+                            <button onClick={()=>{ applyVoiceCommand(p); setVoiceLog(prev=>prev.map(e=>e.id===entry.id?{...e,status:"logged"}:e)); }}
+                              style={{padding:"2px 8px",borderRadius:5,border:`1px solid ${C.mint}`,background:`${C.mint}15`,
+                                fontFamily:"'Outfit'",fontWeight:700,fontSize:10,color:C.mint,cursor:"pointer"}}>Log</button>
+                            <button onClick={()=>setVoiceLog(prev=>prev.map(e=>e.id===entry.id?{...e,status:"dismissed"}:e))}
+                              style={{padding:"2px 6px",borderRadius:5,border:`1px solid ${C.border}`,background:"transparent",
+                                fontFamily:"'Outfit'",fontSize:10,color:C.textLight,cursor:"pointer"}}>✕</button>
+                          </div>
+                        )}
+                        <div style={{fontSize:9,color:C.textLight,flexShrink:0,marginTop:1}}>{entry.ts}</div>
                       </div>
-                      <div style={{ fontSize:9,color:C.textLight,flexShrink:0 }}>{entry.ts}</div>
-                    </div>
-                  ))
+                    );
+                  })
                 }
               </div>
             </div>
@@ -5115,46 +5150,110 @@ function VideoLoggerContent() {
                     <div style={{ padding:"8px 14px", background:`${C.rose}12`, fontSize:12, color:C.rose }}>{voiceError}</div>
                   )}
 
-                  {/* Transcription log — most recent on top */}
-                  <div style={{ maxHeight:200, overflowY:"auto" }}>
+                  {/* Log All button */}
+                  {voiceLog.some(e=>e.status==="pending") && (
+                    <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.border}`,
+                      display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+                      background:`${C.mint}08` }}>
+                      <div style={{ fontSize:12, color:C.textMid }}>
+                        <strong style={{ color:C.mint }}>{voiceLog.filter(e=>e.status==="pending").length}</strong> commands ready to log
+                      </div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={() => {
+                          // Log all pending entries in reverse order (oldest first)
+                          const pending = [...voiceLog].reverse().filter(e=>e.status==="pending");
+                          pending.forEach(entry => applyVoiceCommand(entry.parsed));
+                          setVoiceLog(prev => prev.map(e =>
+                            e.status==="pending" ? {...e, status:"logged"} : e
+                          ));
+                        }} style={{
+                          padding:"7px 18px", borderRadius:9, border:"none",
+                          background:C.mint, fontFamily:"'Outfit'", fontWeight:700,
+                          fontSize:12, color:"white", cursor:"pointer" }}>
+                          ✓ Log All
+                        </button>
+                        <button onClick={() => setVoiceLog(prev=>prev.map(e=>e.status==="pending"?{...e,status:"dismissed"}:e))}
+                          style={{ padding:"7px 12px", borderRadius:9, border:`1px solid ${C.border}`,
+                            background:C.pageBg, fontFamily:"'Outfit'", fontWeight:600,
+                            fontSize:12, color:C.textMid, cursor:"pointer" }}>
+                          Dismiss All
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transcription review list — most recent on top */}
+                  <div style={{ maxHeight:260, overflowY:"auto" }}>
                     {voiceLog.length === 0 ? (
-                      <div style={{ padding:"16px 14px", fontSize:12, color:C.textLight, textAlign:"center" }}>
-                        No commands logged yet — start speaking after tapping the mic
+                      <div style={{ padding:"20px 14px", fontSize:12, color:C.textLight, textAlign:"center" }}>
+                        Tap the mic and speak — your commands will appear here for review
                       </div>
-                    ) : voiceLog.map(entry => (
-                      <div key={entry.id} style={{
-                        padding:"8px 14px", borderBottom:`1px solid ${C.border}`,
-                        display:"flex", alignItems:"center", gap:10,
-                        background: entry.status==="undone" ? `${C.textLight}08`
-                          : entry.status==="unrecognized" ? `${C.amber}08` : "transparent",
-                        opacity: entry.status==="undone" ? 0.5 : 1,
-                      }}>
-                        {/* Status dot */}
-                        <div style={{ width:8, height:8, borderRadius:"50%", flexShrink:0,
-                          background: entry.status==="logged" ? C.mint
-                            : entry.status==="undone" ? C.textLight : C.amber }} />
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:12, color:C.text, fontStyle:"italic",
-                            textDecoration: entry.status==="undone" ? "line-through" : "none" }}>
-                            "{entry.text}"
+                    ) : voiceLog.map(entry => {
+                      const isPending      = entry.status === "pending";
+                      const isLogged       = entry.status === "logged";
+                      const isDismissed    = entry.status === "dismissed";
+                      const isUnrecognized = entry.status === "unrecognized";
+                      const p = entry.parsed;
+
+                      let parsedLabel = "";
+                      if (p?.type === "shot")   parsedLabel = `${p.outcome} · ${p.shot}`;
+                      if (p?.type === "rally")  parsedLabel = `${p.outcome} · ${p.shot}`;
+                      if (p?.type === "metric") parsedLabel = p.metric;
+                      if (p?.type === "undo")   parsedLabel = "undo last";
+
+                      return (
+                        <div key={entry.id} style={{
+                          padding:"9px 14px", borderBottom:`1px solid ${C.border}`,
+                          display:"flex", alignItems:"flex-start", gap:10,
+                          background: isPending ? `${C.blue}05`
+                            : isLogged ? `${C.mint}05`
+                            : isDismissed ? `${C.textLight}05`
+                            : `${C.amber}08`,
+                          opacity: isDismissed ? 0.45 : 1,
+                          transition:"opacity 0.2s",
+                        }}>
+                          {/* Status indicator */}
+                          <div style={{ width:8, height:8, borderRadius:"50%", flexShrink:0, marginTop:4,
+                            background: isPending ? C.blue : isLogged ? C.mint : isDismissed ? C.textLight : C.amber }} />
+
+                          {/* Text + parsed label */}
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:12, color: isDismissed?C.textLight:C.text, fontStyle:"italic",
+                              textDecoration: isDismissed?"line-through":"none" }}>
+                              "{entry.text}"
+                            </div>
+                            {parsedLabel && (
+                              <div style={{ fontSize:11, marginTop:2,
+                                color: isPending?C.blue : isLogged?C.mint : isDismissed?C.textLight : C.amber,
+                                fontWeight:600 }}>
+                                {isLogged?"✓ ":isPending?"→ ":""}{parsedLabel}
+                              </div>
+                            )}
+                            {isUnrecognized && (
+                              <div style={{ fontSize:11, color:C.amber, marginTop:2 }}>⚠ Not recognized</div>
+                            )}
                           </div>
-                          <div style={{ fontSize:11, marginTop:2,
-                            color: entry.status==="logged" ? C.mint
-                              : entry.status==="undone" ? C.textLight : C.amber }}>
-                            {entry.status==="logged" && entry.parsed?.type === "shot" &&
-                              `✓ ${entry.parsed.outcome} · ${entry.parsed.shot}`}
-                            {entry.status==="logged" && entry.parsed?.type === "rally" &&
-                              `✓ ${entry.parsed.outcome} · ${entry.parsed.shot}`}
-                            {entry.status==="logged" && entry.parsed?.type === "metric" &&
-                              `✓ ${entry.parsed.metric}`}
-                            {entry.status==="logged" && entry.parsed?.type === "undo" && "✓ Undone"}
-                            {entry.status==="unrecognized" && "⚠ Not recognized — try again"}
-                            {entry.status==="undone" && "Undone"}
-                          </div>
+
+                          {/* Per-entry actions — only on pending */}
+                          {isPending && (
+                            <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+                              <button onClick={() => {
+                                applyVoiceCommand(entry.parsed);
+                                setVoiceLog(prev=>prev.map(e=>e.id===entry.id?{...e,status:"logged"}:e));
+                              }} style={{ padding:"3px 10px", borderRadius:6, border:`1px solid ${C.mint}`,
+                                background:`${C.mint}15`, fontFamily:"'Outfit'", fontWeight:700,
+                                fontSize:11, color:C.mint, cursor:"pointer" }}>Log</button>
+                              <button onClick={() => setVoiceLog(prev=>prev.map(e=>e.id===entry.id?{...e,status:"dismissed"}:e))}
+                                style={{ padding:"3px 8px", borderRadius:6, border:`1px solid ${C.border}`,
+                                  background:"transparent", fontFamily:"'Outfit'", fontWeight:600,
+                                  fontSize:11, color:C.textLight, cursor:"pointer" }}>✕</button>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize:9, color:C.textLight, flexShrink:0, marginTop:2 }}>{entry.ts}</div>
                         </div>
-                        <div style={{ fontSize:10, color:C.textLight, flexShrink:0 }}>{entry.ts}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
