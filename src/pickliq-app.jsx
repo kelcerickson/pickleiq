@@ -4472,8 +4472,9 @@ function VideoLoggerContent({ setPage, setTab }) {
   const saveAll = async () => {
     const hasShots = trackShots && Object.keys(shotData).some(k => { const d = shotData[k]; return d.pos+d.neu+d.neg > 0; });
     const hasRally = trackRally && Object.keys(rallyData).some(k => { const d = rallyData[k]; return d.won+d.lost > 0; });
-    if (!videoFile && !videoUrl && !noVideo && !hasShots && !hasRally) {
-      alert("Nothing logged yet — add some shot data or match info first.");
+    const hasMatchInfo = opponent || partner || score; // at minimum they've filled in some match info
+    if (!videoFile && !videoUrl && !noVideo && !hasShots && !hasRally && !hasMatchInfo) {
+      alert("Nothing logged yet — fill in the match info or log some shots first.");
       return;
     }
     setSaving(true);
@@ -5137,6 +5138,20 @@ function VideoLoggerContent({ setPage, setTab }) {
               </div>
             </div>
           )}
+
+          {/* ── Save Session button — manual mode ── */}
+          <button onClick={saveAll} disabled={saving || saved}
+            style={{
+              width:"100%", marginTop:16,
+              background: saved ? C.mint : saving ? C.border : C.pickle,
+              border:"none", borderRadius:12, padding:"16px",
+              fontFamily:"'Outfit'", fontWeight:700, fontSize:16,
+              color: C.navy, cursor: saving || saved ? "not-allowed" : "pointer",
+              transition:"all 0.2s",
+              boxShadow: saved || saving ? "none" : "0 4px 14px rgba(180,220,0,0.25)",
+            }}>
+            {saved ? "✓ Match Logged!" : saving ? "Saving..." : `💾 Save Session${totalLogged > 0 ? ` — ${totalLogged} logged` : ""}`}
+          </button>
         </div>
         ) : !videoUrl ? (
           /* ── No video yet: URL + file upload ── */
