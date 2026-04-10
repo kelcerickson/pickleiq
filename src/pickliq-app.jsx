@@ -127,6 +127,7 @@ const sb = {
     return res.json();
   },
   async update(table, data, filter) {
+    await ensureFreshToken();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
       method: "PATCH",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json", Prefer: "return=representation" },
@@ -1191,38 +1192,53 @@ const MatchHistoryContent=()=>{
     } catch(e) { console.warn("loadClaimable error:", e); }
   };
 
-  const loadMatches = () => {
+  const normalizeMatch = (m, isClaimed=false) => ({
+    id: m.id,
+    date: m.date,
+    opponent: m.opponent || "—",
+    partner: m.partner || "—",
+    result: m.result === "W" ? "W" : "L",
+    score: m.score || "—",
+    notes: m.notes || "",
+    nvz_arrival: m.nvz_arrival || 0,
+    nvz_win:     m.nvz_win     || 0,
+    serve_neut:  m.serve_neut  || 0,
+    errors:      m.errors      || 0,
+    partner_role: m.partner_role || "Balanced",
+    isClaimed,
+    stats: {
+      nvzArrival: m.nvz_arrival || 0,
+      nvzWin:     m.nvz_win     || 0,
+      serveNeut:  m.serve_neut  || 0,
+      errors:     m.errors      || 0,
+      serve:      m.serve_neut  || 0,
+      ret:        m.ret         || 0,
+    },
+    shotSplit: [],
+  });
+
+  const loadMatches = async () => {
     setLoading(true);
     const uid3 = getCurrentUserId();
-    sb.query("matches", { filter: `user_id=eq.${uid3}`, order: "created_at.desc" })
-      .then(rows => {
-        const normalized = (rows||[]).map(m=>({
-          id: m.id,
-          date: m.date,
-          opponent: m.opponent || "—",
-          partner: m.partner || "—",
-          result: m.result === "W" ? "W" : "L",
-          score: m.score || "—",
-          notes: m.notes || "",
-          nvz_arrival: m.nvz_arrival || 0,
-          nvz_win:     m.nvz_win     || 0,
-          serve_neut:  m.serve_neut  || 0,
-          errors:      m.errors      || 0,
-          partner_role: m.partner_role || "Balanced",
-          stats: {
-            nvzArrival: m.nvz_arrival || 0,
-            nvzWin:     m.nvz_win     || 0,
-            serveNeut:  m.serve_neut  || 0,
-            errors:     m.errors      || 0,
-            serve:      m.serve_neut  || 0,
-            ret:        m.ret         || 0,
-          },
-          shotSplit: [],
-        }));
-        setDbMatches(normalized);
-      })
-      .catch(()=>{})
-      .finally(()=>setLoading(false));
+    try {
+      const ownRows = await sb.query("matches", { filter: `user_id=eq.${uid3}`, order: "created_at.desc" }).catch(()=>[]);
+      const ownNorm = (ownRows||[]).map(m => normalizeMatch(m, false));
+
+      const links = await sb.query("match_links", { filter: `user_id=eq.${uid3}&status=eq.confirmed`, select: "match_id" }).catch(()=>[]);
+      const linkedIds = (Array.isArray(links)?links:[]).map(l=>l.match_id).filter(Boolean);
+
+      let claimedNorm = [];
+      if (linkedIds.length > 0) {
+        const idList = linkedIds.join(",");
+        const claimedRows = await sb.query("matches", { filter: `id=in.(${idList})` }).catch(()=>[]);
+        const ownIds = new Set(ownNorm.map(m=>m.id));
+        claimedNorm = (claimedRows||[]).filter(m=>!ownIds.has(m.id)).map(m=>normalizeMatch(m,true));
+      }
+
+      const all = [...ownNorm, ...claimedNorm].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));
+      setDbMatches(all);
+    } catch(e) { console.warn("loadMatches error:", e); }
+    setLoading(false);
   };
 
   useEffect(()=>{ loadMatches(); loadClaimable(); },[]);
@@ -1521,6 +1537,8 @@ const MatchHistoryContent=()=>{
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                 <span style={{fontSize:11,color:C.textLight}}>{m.date}</span>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  {m.isClaimed && <span style={{fontSize:9,fontWeight:700,color:C.blue,background:`${C.blue}15`,
+                    padding:"1px 6px",borderRadius:8,letterSpacing:"0.04em"}}>🔗 claimed</span>}
                   <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
                   <button onClick={e=>{e.stopPropagation();setDeleteId(m.id);}} style={{
                     width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,
@@ -4147,6 +4165,7 @@ function VideoLoggerContent({ setPage, setTab }) {
     if (saved.nvzWon    !== undefined) setNvzWon(saved.nvzWon);
     if (saved.nvzWonTotal !== undefined) setNvzWonTotal(saved.nvzWonTotal);
     if (saved.errors    !== undefined) setErrors(saved.errors);
+    if (saved.manualServeNeut !== undefined) setManualServeNeut(saved.manualServeNeut);
     setShowResumeBanner(false);
     setPendingRestore(null);
   };
@@ -4182,11 +4201,12 @@ function VideoLoggerContent({ setPage, setTab }) {
   const toggleRally = () => { const v = !trackRally; setTrackRally(v); savePref("pi_track_rally", v); };
 
   // ── In-match metrics ─────────────────────────────────────────────────────────
-  const [nvzArrived,  setNvzArrived]  = useState(0); // rallies both reached NVZ
-  const [nvzTotal,    setNvzTotal]    = useState(0); // total rallies for NVZ %
-  const [nvzWon,      setNvzWon]      = useState(0); // NVZ rallies won
-  const [nvzWonTotal, setNvzWonTotal] = useState(0); // NVZ rallies for win rate %
-  const [errors,      setErrors]      = useState(0); // unforced errors
+  const [nvzArrived,    setNvzArrived]    = useState(0); // rallies both reached NVZ
+  const [nvzTotal,      setNvzTotal]      = useState(0); // total rallies for NVZ %
+  const [nvzWon,        setNvzWon]        = useState(0); // NVZ rallies won
+  const [nvzWonTotal,   setNvzWonTotal]   = useState(0); // NVZ rallies for win rate %
+  const [errors,        setErrors]        = useState(0); // unforced errors
+  const [manualServeNeut, setManualServeNeut] = useState(0); // manual serve neut % when shot tracker not used
 
   // ── Shot Tracker data: { shotName: { pos, neu, neg } } ───────────────────────
   const [shotData, setShotData] = useState({});
@@ -4582,7 +4602,8 @@ function VideoLoggerContent({ setPage, setTab }) {
       const serveReturnShots = ["Serve","Return BH","Return FH"];
       const srNeuPos = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; }, 0);
       const srTotal  = serveReturnShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; }, 0);
-      const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : 0;
+      // Use auto-calculated serve neut if shot data available, otherwise fall back to manual entry
+      const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : (manualServeNeut || 0);
       const nvzArr  = nvzTotal    > 0 ? Math.round((nvzArrived  / nvzTotal)    * 100) : 0;
       const nvzWinR = nvzWonTotal > 0 ? Math.round((nvzWon      / nvzWonTotal) * 100) : 0;
       if (matchId) {
@@ -4807,7 +4828,7 @@ function VideoLoggerContent({ setPage, setTab }) {
         savedAt: Date.now(),
         date, opponent, partner, score, result, notes,
         shotData, rallyData,
-        nvzArrived, nvzTotal, nvzWon, nvzWonTotal, errors,
+        nvzArrived, nvzTotal, nvzWon, nvzWonTotal, errors, manualServeNeut,
         shotTotal, rallyTotal,
       }));
     } catch(e) {}
@@ -5058,6 +5079,53 @@ function VideoLoggerContent({ setPage, setTab }) {
                 <div style={{ fontSize:11, color:C.textLight, marginTop:6 }}>Unforced errors</div>
               </div>
             </div>
+
+            {/* ── Serve Neut — auto-calculated OR manual ── */}
+            {(()=>{
+              const srShots   = ["Serve","Return BH","Return FH"];
+              const srNeuPos  = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu; },0);
+              const srTotal   = srShots.reduce((a,n)=>{ const d=shotData[n]||{pos:0,neu:0,neg:0}; return a+d.pos+d.neu+d.neg; },0);
+              const autoNeut  = srTotal > 0 ? Math.round((srNeuPos/srTotal)*100) : null;
+              const isAuto    = autoNeut !== null;
+              return (
+                <div style={{ marginTop:10, background:C.amberL, border:`1.5px solid ${C.amber}30`, borderRadius:10, padding:"12px 14px" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:C.amber, textTransform:"uppercase", letterSpacing:"0.06em" }}>Serve Neut.</div>
+                    {isAuto
+                      ? <span style={{ fontSize:10, color:C.amber, fontWeight:600, background:`${C.amber}15`, padding:"2px 7px", borderRadius:10 }}>Auto from Shot Tracker</span>
+                      : <span style={{ fontSize:10, color:C.textLight }}>Manual entry</span>
+                    }
+                  </div>
+                  {isAuto ? (
+                    <div>
+                      <div style={{ fontFamily:"'DM Mono'", fontSize:28, fontWeight:700, color:C.amber, lineHeight:1 }}>{autoNeut}%</div>
+                      <div style={{ fontSize:10, color:C.textLight, marginTop:4 }}>
+                        {srNeuPos} neutral/positive serves & returns out of {srTotal} total
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize:11, color:C.textMid, marginBottom:8, lineHeight:1.5 }}>
+                        % of serves/returns that prevented opponent attacks (0–100).{" "}
+                        <em>Log Serve, Return BH, Return FH via Shot Tracker for auto-calculation.</em>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <button onClick={()=>setManualServeNeut(p=>Math.max(0,p-5))}
+                          style={{ width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,background:C.pageBg,
+                            color:C.textMid,fontWeight:700,fontSize:14,cursor:"pointer" }}>−</button>
+                        <span style={{ fontFamily:"'DM Mono'",fontSize:24,fontWeight:700,color:C.amber,minWidth:44,textAlign:"center" }}>
+                          {manualServeNeut}%
+                        </span>
+                        <button onClick={()=>setManualServeNeut(p=>Math.min(100,p+5))}
+                          style={{ width:32,height:32,borderRadius:8,border:`1.5px solid ${C.amber}`,background:`${C.amber}15`,
+                            color:C.amber,fontWeight:700,fontSize:14,cursor:"pointer" }}>+</button>
+                        <span style={{ fontSize:11,color:C.textLight }}>adjusts by 5%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           {/* Voice panel in manual mode */}
           {trackVoice && (
             <div style={{ marginTop:14, border:`1.5px solid ${voiceListening?C.purple:C.border}`,
@@ -5577,6 +5645,249 @@ function VideoLoggerContent({ setPage, setTab }) {
   );
 }
 
+
+// ── PLAYERS DIRECTORY ─────────────────────────────────────────────────────────
+const PlayersContent = () => {
+  const isMobile = useIsMobile();
+  const [players,    setPlayers]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [editPlayer, setEditPlayer] = useState(null); // {id, name, dupr, notes}
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError,  setEditError]  = useState("");
+  const [deleteId,   setDeleteId]   = useState(null);
+  const [deleting,   setDeleting]   = useState(false);
+  const [search,     setSearch]     = useState("");
+  const [addName,    setAddName]    = useState("");
+  const [adding,     setAdding]     = useState(false);
+
+  const loadPlayers = async () => {
+    setLoading(true);
+    try {
+      const rows = await sb.query("players", { order: "name.asc" });
+      setPlayers(Array.isArray(rows) ? rows : []);
+    } catch(e) {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadPlayers(); }, []);
+
+  const saveEdit = async () => {
+    if (!editPlayer?.name?.trim()) { setEditError("Name is required."); return; }
+    setEditSaving(true); setEditError("");
+    try {
+      await sb.update("players", {
+        name:  editPlayer.name.trim(),
+        dupr:  editPlayer.dupr || null,
+        notes: editPlayer.notes || null,
+      }, `id=eq.${editPlayer.id}`);
+      setEditPlayer(null);
+      loadPlayers();
+    } catch(e) { setEditError("Save failed: " + (e.message||"Unknown error")); }
+    setEditSaving(false);
+  };
+
+  const deletePlayer = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      await sb.delete("players", `id=eq.${deleteId}`);
+      setDeleteId(null);
+      loadPlayers();
+    } catch(e) { alert("Delete failed: " + e.message); }
+    setDeleting(false);
+  };
+
+  const addPlayer = async () => {
+    const name = addName.trim();
+    if (!name) return;
+    setAdding(true);
+    try {
+      const existing = await sb.query("players", { filter: `name=ilike.${encodeURIComponent(name)}` }).catch(()=>[]);
+      if (Array.isArray(existing) && existing.length > 0) {
+        alert(`"${name}" already exists in the player directory.`);
+      } else {
+        await sb.insert("players", { name, created_by: getCurrentUserId() });
+        setAddName("");
+        loadPlayers();
+      }
+    } catch(e) { alert("Add failed: " + e.message); }
+    setAdding(false);
+  };
+
+  const filtered = players.filter(p =>
+    !search || p.name?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      {/* ── Edit Modal ── */}
+      {editPlayer && (
+        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
+          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.cardBg,borderRadius:18,padding:"24px 28px",width:"100%",maxWidth:460,
+            boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",marginBottom:20}}>
+              Edit Player
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Name *</div>
+                <input type="text" value={editPlayer.name||""} onChange={e=>setEditPlayer(p=>({...p,name:e.target.value}))}
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"10px 12px",color:C.text,fontSize:14,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>DUPR Rating (optional)</div>
+                <input type="text" value={editPlayer.dupr||""} onChange={e=>setEditPlayer(p=>({...p,dupr:e.target.value}))}
+                  placeholder="e.g. 4.25"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"10px 12px",color:C.text,fontSize:14,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Notes (optional)</div>
+                <input type="text" value={editPlayer.notes||""} onChange={e=>setEditPlayer(p=>({...p,notes:e.target.value}))}
+                  placeholder="e.g. Plays at Mesa club, lefty"
+                  style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:"10px 12px",color:C.text,fontSize:14,fontFamily:"'Outfit'",boxSizing:"border-box"}}/>
+              </div>
+              {editError && <div style={{fontSize:12,color:C.rose,background:`${C.rose}12`,padding:"8px 12px",borderRadius:8}}>{editError}</div>}
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:20}}>
+              <button onClick={()=>{setEditPlayer(null);setEditError("");}} style={{
+                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${C.border}`,
+                background:C.pageBg,fontFamily:"'Outfit'",fontWeight:600,fontSize:14,
+                color:C.textMid,cursor:"pointer"}}>Cancel</button>
+              <button onClick={saveEdit} disabled={editSaving} style={{
+                flex:1,padding:"12px",borderRadius:12,border:"none",
+                background:editSaving?C.border:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                fontSize:14,color:C.navy,cursor:editSaving?"not-allowed":"pointer"}}>
+                {editSaving?"Saving…":"Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete confirmation ── */}
+      {deleteId && (
+        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.7)",backdropFilter:"blur(6px)",
+          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:380,
+            textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>Remove Player?</div>
+            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,marginBottom:24}}>
+              This removes them from the shared player directory. Matches where they appear are not affected.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setDeleteId(null)} style={{flex:1,padding:"12px",borderRadius:12,
+                border:`1px solid ${C.border}`,background:C.pageBg,fontFamily:"'Outfit'",fontWeight:600,
+                fontSize:14,color:C.textMid,cursor:"pointer"}}>Cancel</button>
+              <button onClick={deletePlayer} disabled={deleting} style={{flex:1,padding:"12px",
+                borderRadius:12,border:"none",background:deleting?C.border:C.rose,fontFamily:"'Outfit'",
+                fontWeight:700,fontSize:14,color:"white",cursor:deleting?"not-allowed":"pointer"}}>
+                {deleting?"Removing…":"Yes, Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Header + search + add ── */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}>
+          <h2 style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em",marginBottom:2}}>
+            Player Directory
+          </h2>
+          <p style={{fontSize:13,color:C.textMid}}>{players.length} players · shared across all users</p>
+        </div>
+        {/* Add new player */}
+        <div style={{display:"flex",gap:8,flexShrink:0}}>
+          <input type="text" value={addName} onChange={e=>setAddName(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addPlayer()}
+            placeholder="New player name…"
+            style={{background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+              padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"'Outfit'",width:180}}/>
+          <button onClick={addPlayer} disabled={adding||!addName.trim()} style={{
+            padding:"9px 18px",borderRadius:10,border:"none",
+            background:addName.trim()?C.navy:C.border,
+            fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
+            color:addName.trim()?C.pickle:C.textLight,
+            cursor:addName.trim()?"pointer":"not-allowed"}}>
+            {adding?"Adding…":"+ Add"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Search ── */}
+      <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="Search players…"
+        style={{width:"100%",background:C.pageBg,border:`1px solid ${C.border}`,borderRadius:10,
+          padding:"10px 14px",color:C.text,fontSize:13,fontFamily:"'Outfit'",
+          marginBottom:16,boxSizing:"border-box"}}/>
+
+      {/* ── Player list ── */}
+      {loading ? (
+        <div style={{padding:"40px",textAlign:"center",color:C.textLight,fontSize:13}}>Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div style={{padding:"40px",textAlign:"center",background:C.cardBg,borderRadius:16,
+          border:`2px dashed ${C.border}`}}>
+          <div style={{fontSize:32,marginBottom:10}}>👥</div>
+          <div style={{fontSize:14,fontWeight:700,color:C.textMid,marginBottom:6}}>
+            {search ? `No players matching "${search}"` : "No players yet"}
+          </div>
+          <div style={{fontSize:12,color:C.textLight}}>Players are added automatically when you log matches.</div>
+        </div>
+      ) : (
+        <Card style={{padding:0,overflow:"hidden"}}>
+          {/* Header row */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 120px 36px 36px",gap:12,
+            padding:"9px 18px",background:C.pageBg,borderBottom:`2px solid ${C.border}`}}>
+            {["Name","DUPR","Notes","",""].map((h,i)=>(
+              <div key={i} style={{fontSize:10,fontWeight:700,color:C.textLight,
+                textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>
+            ))}
+          </div>
+          {filtered.map((p, i) => (
+            <div key={p.id||p.name} style={{
+              display:"grid",gridTemplateColumns:"1fr 80px 120px 36px 36px",
+              gap:12,padding:"12px 18px",alignItems:"center",
+              borderBottom:i<filtered.length-1?`1px solid ${C.border}`:"none",
+              background:i%2===0?C.cardBg:"#FAFBFC",
+            }}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:C.text}}>{p.name}</div>
+              </div>
+              <div style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,
+                color:p.dupr?C.pickle:C.textLight}}>{p.dupr||"—"}</div>
+              <div style={{fontSize:12,color:C.textMid,overflow:"hidden",textOverflow:"ellipsis",
+                whiteSpace:"nowrap"}}>{p.notes||"—"}</div>
+              <button onClick={()=>setEditPlayer({id:p.id,name:p.name,dupr:p.dupr||"",notes:p.notes||""})}
+                title="Edit player"
+                style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                  background:C.pageBg,cursor:"pointer",fontSize:14,display:"flex",
+                  alignItems:"center",justifyContent:"center",color:C.textMid,transition:"all 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.color=C.blue;e.currentTarget.style.background=`${C.blue}10`;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textMid;e.currentTarget.style.background=C.pageBg;}}>
+                ✏️
+              </button>
+              <button onClick={()=>setDeleteId(p.id)}
+                title="Remove player"
+                style={{width:32,height:32,borderRadius:8,border:`1px solid ${C.border}`,
+                  background:C.pageBg,cursor:"pointer",fontSize:13,display:"flex",
+                  alignItems:"center",justifyContent:"center",color:C.textLight,transition:"all 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;e.currentTarget.style.background=`${C.rose}10`;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textLight;e.currentTarget.style.background=C.pageBg;}}>
+                🗑
+              </button>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+};
+
 const MatchCenter=({defaultTab="log", setPage})=>{
   const isMobile = useIsMobile();
   // Map old "log" default to new "log" (VideoLoggerContent), "video" also maps to "log"
@@ -5586,6 +5897,7 @@ const MatchCenter=({defaultTab="log", setPage})=>{
   const TABS=[
     {id:"log",      label:"🎬 Log Match"},
     {id:"partners", label:"👥 Partners"},
+    {id:"players",  label:"📋 Players"},
     {id:"history",  label:"🏆 Match History"},
   ];
 
@@ -5618,6 +5930,9 @@ const MatchCenter=({defaultTab="log", setPage})=>{
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
+
+      {/* ── Tab: Players Directory ── */}
+      {tab==="players"&&<PlayersContent/>}
 
       {/* ── Tab: Match History ── */}
       {tab==="history"&&<MatchHistoryContent/>}
