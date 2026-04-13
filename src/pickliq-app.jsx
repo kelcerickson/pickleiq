@@ -299,11 +299,11 @@ const GOALS = {
 // Serve Neutralization Rate = % of serves/returns where opponent cannot hit an offensive shot
 // trend = change over last 4 weeks (positive = improving, negative = declining)
 const CORE_KPIS = [
-  { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8", tip:TIPS.winRate },
-  { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL,   tip:TIPS.errors },
-  { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL,  tip:TIPS.serveNeut },
-  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL,   tip:TIPS.nvzArrival },
-  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL,   tip:TIPS.nvzWin },
+  { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8", get tip(){return TIPS.winRate} },
+  { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL,   get tip(){return TIPS.errors} },
+  { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL,  get tip(){return TIPS.serveNeut} },
+  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL,   get tip(){return TIPS.nvzArrival} },
+  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL,   get tip(){return TIPS.nvzWin} },
 ];
 
 // Legacy ALL_KPIS kept for modal/customization compatibility
@@ -1121,7 +1121,7 @@ const Dashboard=({setPage})=>{
             return (
               <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:8,marginBottom:10}}>
                 {allDrillItems.map(item=>{
-                  const drills = DRILL_LIBRARY[item.name] || [];
+                  const drills = (typeof DRILL_LIBRARY !== 'undefined' ? DRILL_LIBRARY[item.name] : null) || [];
                   const topDrill = drills[0];
                   return (
                     <div key={item.name} style={{background:C.pageBg,borderRadius:10,
@@ -4302,11 +4302,11 @@ const LogMatchContent=()=>{
 
 // ── VIDEO LOGGER ──────────────────────────────────────────────────────────────
 const SHOT_BUTTONS = [
-  { cat:"Serve/Return", color:C.amber,  tip:TIPS.cat_serve,      shots:["Serve","Return BH","Return FH"] },
-  { cat:"Transition",   color:C.blue,   tip:TIPS.cat_transition,  shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
-  { cat:"Kitchen",      color:C.mint,   tip:TIPS.cat_kitchen,     shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
-  { cat:"Attack",       color:C.rose,   tip:TIPS.cat_attack,      shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
-  { cat:"Defense",      color:C.purple, tip:TIPS.cat_defense,     shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
+  { cat:"Serve/Return", color:C.amber,  get tip(){return TIPS.cat_serve},      shots:["Serve","Return BH","Return FH"] },
+  { cat:"Transition",   color:C.blue,   get tip(){return TIPS.cat_transition},  shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
+  { cat:"Kitchen",      color:C.mint,   get tip(){return TIPS.cat_kitchen},     shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
+  { cat:"Attack",       color:C.rose,   get tip(){return TIPS.cat_attack},      shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
+  { cat:"Defense",      color:C.purple, get tip(){return TIPS.cat_defense},     shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
 ];
 
 // Map shot names to tooltip keys
