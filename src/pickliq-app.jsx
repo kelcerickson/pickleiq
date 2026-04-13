@@ -299,11 +299,11 @@ const GOALS = {
 // Serve Neutralization Rate = % of serves/returns where opponent cannot hit an offensive shot
 // trend = change over last 4 weeks (positive = improving, negative = declining)
 const CORE_KPIS = [
-  { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8" },
-  { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL },
-  { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL },
-  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL },
-  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL },
+  { id:"winRate",   label:"Win Rate",             value:"—",   numVal: 0,   get target(){return GOALS.targets.winRate},   unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.pickle, colorL:"#F5FAE8", tip:TIPS.winRate },
+  { id:"errors",    label:"My Errors / Match",        value:"—",   numVal: 0,   get target(){return GOALS.targets.errors},    unit:"",  higherIsBetter:false, trend:0,   trendLabel:"vs last 4 wks", color:C.rose,   colorL:C.roseL,   tip:TIPS.errors },
+  { id:"serveNeut", label:"My Serve Neut.",  value:"—",   numVal: 0,   get target(){return GOALS.targets.serveNeut}, unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.amber,  colorL:C.amberL,  tip:TIPS.serveNeut },
+  { id:"nvzArrival",label:"NVZ Arrival",           value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzArrival},unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.mint,   colorL:C.mintL,   tip:TIPS.nvzArrival },
+  { id:"nvzWin",    label:"NVZ Win Rate",          value:"—",   numVal: 0,   get target(){return GOALS.targets.nvzWin},    unit:"%", higherIsBetter:true,  trend:0,   trendLabel:"vs last 4 wks", color:C.blue,   colorL:C.blueL,   tip:TIPS.nvzWin },
 ];
 
 // Legacy ALL_KPIS kept for modal/customization compatibility
@@ -408,13 +408,118 @@ const Card = ({children,style={}})=>(
     padding:"20px 22px",boxShadow:"0 1px 4px rgba(0,0,0,0.04)",...style}}>{children}</div>
 );
 
+// ── Tooltip system ────────────────────────────────────────────────────────────
+// Hover over ⓘ to see explanation. Works on desktop (hover) and mobile (tap).
+const InfoTip = ({ text, position="top" }) => {
+  const [show, setShow] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!show) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setShow(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [show]);
+  const pos = position === "bottom"
+    ? { top:"100%", left:"50%", transform:"translateX(-50%)", marginTop:6 }
+    : position === "left"
+    ? { top:"50%", right:"100%", transform:"translateY(-50%)", marginRight:6 }
+    : position === "right"
+    ? { top:"50%", left:"100%", transform:"translateY(-50%)", marginLeft:6 }
+    : { bottom:"100%", left:"50%", transform:"translateX(-50%)", marginBottom:6 };
+  return (
+    <span ref={ref} style={{ position:"relative", display:"inline-flex", alignItems:"center" }}
+      onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}
+      onClick={()=>setShow(v=>!v)}>
+      <span style={{
+        display:"inline-flex", alignItems:"center", justifyContent:"center",
+        width:15, height:15, borderRadius:"50%",
+        background:"#CBD5E1", color:"white",
+        fontSize:9, fontWeight:800, cursor:"pointer",
+        fontFamily:"'Outfit'", letterSpacing:0, lineHeight:1,
+        flexShrink:0, userSelect:"none",
+        transition:"background 0.15s",
+      }}
+        onMouseEnter={e=>e.currentTarget.style.background=C.blue}
+        onMouseLeave={e=>e.currentTarget.style.background="#CBD5E1"}>
+        i
+      </span>
+      {show && (
+        <span style={{
+          position:"absolute", ...pos, zIndex:9000,
+          background:C.navy, color:"white",
+          fontSize:11, lineHeight:1.6, fontWeight:400,
+          padding:"10px 13px", borderRadius:10,
+          width:220, boxShadow:"0 8px 24px rgba(0,0,0,0.25)",
+          pointerEvents:"none", fontFamily:"'Outfit'",
+          whiteSpace:"normal", display:"block",
+        }}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+};
+
+// ── Tooltip content ────────────────────────────────────────────────────────────
+const TIPS = {
+  // Core metrics
+  winRate:    "% of matches you've won. Target 65%+ at competitive 4.0 level.",
+  errors:     "Your personal unforced errors per match — shots you missed when you had a playable ball and were not under pressure. Lower is better. Individual target: under 5 at 4.0 level.",
+  serveNeut:  "% of your serves and returns that prevented the opponent from attacking. A 'neutral' serve/return lands deep and low, forcing the opponent to drop or drive rather than attack. Target 70%+.",
+  nvzArrival: "% of rallies where both you and your partner successfully reached the kitchen line (Non-Volley Zone). Teams that arrive together win significantly more rallies. Target 80%+.",
+  nvzWin:     "% of rallies won when your team is at the kitchen. Measures how effective you are once you've arrived at the NVZ. Target 65%+.",
+  dupr:       "Dynamic Universal Pickleball Rating — the industry-standard skill rating. Ranges from 2.0 (beginner) to 8.0 (professional). Enter yours manually from the DUPR app.",
+  // Shot categories
+  cat_serve:      "Serve/Return shots — the first two shots of every rally. Serve placement and return depth set the tone for the whole point.",
+  cat_transition: "Transition shots — shots hit from mid-court as you move from the baseline to the kitchen. The 3rd/4th shot drop or drive is the most important moment in pickleball.",
+  cat_kitchen:    "Kitchen shots — dinks, resets, and volleys hit at or near the Non-Volley Zone. The battle at the kitchen decides most rallies at competitive levels.",
+  cat_attack:     "Attack shots — aggressive shots intended to end the rally: speed-ups, slams, Ernes, and ATPs. Use these when the ball is above net height with a clear angle.",
+  cat_defense:    "Defense shots — counters, scrambles, and lobs used when you're under pressure. The goal is to survive and reset, not win the point outright.",
+  // Individual shots
+  shot_serve:         "Serve — must land in the diagonal service box. Deep serves to the backhand corner are hardest to return aggressively.",
+  shot_returnBH:      "Return Backhand — returning the opponent's serve with your backhand. Aim deep to prevent them from attacking on the 3rd shot.",
+  shot_returnFH:      "Return Forehand — returning the opponent's serve with your forehand. Depth and low trajectory are more important than power.",
+  shot_4thBH:         "4th Shot Backhand — after your partner serves and the opponent returns, you hit the 4th shot. Usually a drop into the kitchen or a drive. Critical transition moment.",
+  shot_4thFH:         "4th Shot Forehand — same as above but with the forehand. The 3rd/4th shot drop is considered the most important skill in pickleball.",
+  shot_driveBH:       "Drive Backhand — a flat, fast groundstroke with the backhand. Used to pressure opponents in transition or when they're out of position.",
+  shot_driveFH:       "Drive Forehand — a flat, fast groundstroke with the forehand. Effective when the opponent's shot is high and you have time to set up.",
+  shot_dropBH:        "Drop Backhand — a soft, arcing shot from mid-court aimed at landing in the kitchen. The goal is to neutralize the rally and advance to the NVZ.",
+  shot_dropFH:        "Drop Forehand — same as the backhand drop but hit with the forehand. Requires a low-to-high swing and soft hands.",
+  shot_dinkBH:        "Dink Backhand — a soft, controlled shot hit from the kitchen that arcs just over the net and lands in the opponent's kitchen. The core of NVZ play.",
+  shot_dinkFH:        "Dink Forehand — same as the backhand dink but with the forehand. Patience and placement win dink battles, not power.",
+  shot_resetBH:       "Reset Backhand — absorbing a hard shot and redirecting it softly into the kitchen. Used when under pressure to restart the rally from a neutral position.",
+  shot_resetFH:       "Reset Forehand — same as backhand reset but with the forehand. Requires soft hands and a short, compact swing.",
+  shot_volleyBH:      "Volley Backhand — hitting the ball out of the air with the backhand before it bounces. Used at the kitchen line to keep pressure on opponents.",
+  shot_volleyFH:      "Volley Forehand — hitting the ball out of the air with the forehand before it bounces. Quick reaction time and compact swing are key.",
+  shot_speedupBH:     "Speed Up Backhand — a sudden fast shot aimed at the opponent's body or hip. Used to attack a high, hittable ball during a dink rally.",
+  shot_speedupFH:     "Speed Up Forehand — same as backhand speed-up but with the forehand. Only attempt when the ball is above the net tape and you have a clear angle.",
+  shot_slamBH:        "Slam Backhand — an overhead smash hit with the backhand to end the rally. Used on high lobs or pop-ups.",
+  shot_slamFH:        "Slam Forehand — an overhead smash hit with the forehand. The most powerful shot in pickleball when executed correctly.",
+  shot_erneBH:        "Erne Backhand — jumping around the post to hit a ball outside the court that doesn't need to go over the net. A surprise attacking shot.",
+  shot_erneFH:        "Erne Forehand — same as backhand Erne but with the forehand. Requires precise timing and footwork.",
+  shot_counterBH:     "Counter Backhand — blocking or redirecting an opponent's speed-up or slam back at them. A defensive/offensive hybrid shot.",
+  shot_counterFH:     "Counter Forehand — same as backhand counter. Requires very quick hands and a short, compact motion.",
+  shot_lobBH:         "Lob Backhand — a high, arcing shot over the opponent's head intended to land near the baseline. Used when opponents are tight to the kitchen.",
+  shot_lobFH:         "Lob Forehand — same as backhand lob but with the forehand. Topspin lobs are harder to smash and dip faster.",
+  shot_scrambleBH:    "Scramble Backhand — any backhand shot hit while out of position or off-balance. The goal is simply to keep the ball in play.",
+  shot_scrambleFH:    "Scramble Forehand — any forehand shot hit while scrambling. Aim high and deep to buy time to recover.",
+  shot_atpBH:         "ATP Backhand (Around-the-Post) — hitting a ball that has drifted wide of the post without going over the net. A low-percentage but spectacular shot.",
+  shot_atpFH:         "ATP Forehand — same as backhand ATP. The ball must travel around the outside of the net post and land in bounds.",
+  // Shot outcomes
+  outcome_pos:    "Positive — you hit a quality shot that put you or your team in an advantageous position. The shot did its job.",
+  outcome_neu:    "Neutral — the shot was acceptable but didn't create an advantage. The rally continues with no clear edge.",
+  outcome_neg:    "Negative — the shot was below standard: an error, a weak shot that put you under pressure, or a missed opportunity.",
+  outcome_won:    "Rally Won — this shot directly ended the rally in your favor (winner or opponent forced error).",
+  outcome_lost:   "Rally Lost — this shot directly ended the rally against you (you made an error or opponent hit a winner).",
+};
+
 const SLabel = ({children})=>(
   <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.09em",
     marginBottom:14,fontWeight:600}}>{children}</div>
 );
 
 // KPICard: label · big value · target · trend arrow
-const KPICard = ({label,value,color,colorL,onClick,selected,target,unit="%",higherIsBetter=true,trend})=>{
+const KPICard = ({label,value,color,colorL,onClick,selected,target,unit="%",higherIsBetter=true,trend,tip})=>{
   const trendGood = trend!=null && (higherIsBetter ? trend>0 : trend<0);
   const trendBad  = trend!=null && (higherIsBetter ? trend<0 : trend>0);
   return(
@@ -428,7 +533,10 @@ const KPICard = ({label,value,color,colorL,onClick,selected,target,unit="%",high
         background:selected?color:C.border,display:"flex",alignItems:"center",
         justifyContent:"center",fontSize:10,color:"white"}}>{selected?"✓":""}</div>}
       {/* Label */}
-      <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>{label}</div>
+      <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+        {label}
+        {tip && <InfoTip text={tip} position="bottom"/>}
+      </div>
       {/* Current value */}
       <div style={{fontFamily:"'Bebas Neue'",fontSize:32,color,letterSpacing:"0.04em",lineHeight:1,marginBottom:10}}>{value}</div>
       {/* Target + trend row */}
@@ -973,50 +1081,72 @@ const Dashboard=({setPage})=>{
           </div>
         </Card>
 
-        {/* Priority Drills */}
+        {/* Priority Drills — shows pinned shots first, then data-driven weak shots */}
         <Card style={{padding:"16px 18px"}}>
           <SectionLabelInline>🎯 Priority Drills</SectionLabelInline>
-          {GOALS.priorityShots.length === 0 ? (
-            <div style={{textAlign:"center",padding:"24px 8px"}}>
-              <div style={{fontSize:24,marginBottom:8}}>📌</div>
-              <div style={{fontSize:12,color:C.textMid,marginBottom:4,fontWeight:600}}>No drills pinned yet</div>
-              <div style={{fontSize:11,color:C.textLight,lineHeight:1.5}}>Go to Shot Analytics and tap 🎯 Focus on any shot to add it here</div>
-            </div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10,marginTop:6}}>
-              {GOALS.priorityShots.map(drill=>{
-                const shotData = SHOT_CATS.flatMap(c=>c.shots).find(s=>s.name===drill.name);
-                const current  = shotData?.misses ?? 0;
-                const gap      = current - drill.targetMisses;
-                const pct      = Math.min(100, Math.round((drill.targetMisses / Math.max(current,1)) * 100));
-                const statusColor = gap <= 0 ? C.mint : gap <= 3 ? C.amber : C.rose;
-                return (
-                  <div key={drill.name} style={{background:C.pageBg,border:`1px solid ${drill.color}25`,
-                    borderRadius:10,padding:"10px 12px",borderLeft:`3px solid ${drill.color}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                      <div style={{fontSize:13,fontWeight:600,color:C.text,lineHeight:1.3}}>{drill.name}</div>
-                      <div style={{textAlign:"right",flexShrink:0,marginLeft:8}}>
-                        <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:C.rose}}>{current}</span>
-                        <span style={{fontSize:10,color:C.textLight,margin:"0 3px"}}>→</span>
-                        <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:drill.color}}>{drill.targetMisses}</span>
-                        <div style={{fontSize:9,color:C.textLight,textAlign:"right"}}>pts lost</div>
+          {(()=>{
+            // Combine pinned shots + top 2 data-driven weak shots (Bayesian)
+            const PRIOR = 10;
+            const allShotsList = SHOT_CATS.flatMap(c=>c.shots);
+            const globalPos = (() => {
+              const p = allShotsList.reduce((a,s)=>(s.wins||0)+(s.posCount||0)+a,0);
+              const t = allShotsList.reduce((a,s)=>(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0)+a,0);
+              return t>0?p/t:0.5;
+            })();
+            const weakShots = allShotsList
+              .map(s=>{
+                const neg=(s.misses||0)+(s.negCount||0);
+                const tot=(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0);
+                const bayesNeg=(neg+PRIOR*(1-globalPos))/(tot+PRIOR);
+                return {...s,_neg:neg,_tot:tot,bayesNeg};
+              })
+              .filter(s=>s._tot>=3)
+              .sort((a,b)=>b.bayesNeg-a.bayesNeg);
+
+            const pinnedNames = new Set(GOALS.priorityShots.map(p=>p.name));
+            const dataShots = weakShots.filter(s=>!pinnedNames.has(s.name)).slice(0,2);
+            const allDrillItems = [
+              ...GOALS.priorityShots.map(p=>({name:p.name,source:"pinned",color:C.pickle})),
+              ...dataShots.map(s=>({name:s.name,source:"data",color:C.rose,negRate:Math.round(s.bayesNeg*100)})),
+            ];
+
+            if (allDrillItems.length === 0) return (
+              <div style={{textAlign:"center",padding:"20px 8px"}}>
+                <div style={{fontSize:24,marginBottom:8}}>📌</div>
+                <div style={{fontSize:12,color:C.textMid,marginBottom:4,fontWeight:600}}>No drills yet</div>
+                <div style={{fontSize:11,color:C.textLight,lineHeight:1.5}}>Log matches to get personalized drill recommendations, or pin shots from Shot Analytics.</div>
+              </div>
+            );
+
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:8,marginBottom:10}}>
+                {allDrillItems.map(item=>{
+                  const drills = DRILL_LIBRARY[item.name] || [];
+                  const topDrill = drills[0];
+                  return (
+                    <div key={item.name} style={{background:C.pageBg,borderRadius:10,
+                      padding:"9px 12px",borderLeft:`3px solid ${item.color}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:topDrill?4:0}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:C.text}}>{item.name}</div>
+                          {item.source==="pinned"
+                            ? <div style={{fontSize:10,color:C.pickle,fontWeight:600}}>📌 Pinned focus shot</div>
+                            : <div style={{fontSize:10,color:C.rose}}>{item.negRate}% negative rate · data-driven</div>
+                          }
+                        </div>
                       </div>
+                      {topDrill && (
+                        <div style={{fontSize:11,color:C.textMid,marginTop:2,lineHeight:1.4}}>
+                          → <span style={{fontWeight:600}}>{topDrill.name}</span>
+                          <span style={{color:C.textLight}}> · {topDrill.duration}</span>
+                        </div>
+                      )}
                     </div>
-                    <div style={{height:4,background:C.border,borderRadius:2}}>
-                      <div style={{height:"100%",width:`${pct}%`,background:drill.color,
-                        borderRadius:2,transition:"width 0.4s"}}/>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-                      <span style={{fontSize:10,fontWeight:700,color:statusColor}}>
-                        {gap<=0?"✓ At target":`${gap} pts to go`}
-                      </span>
-                      <span style={{fontSize:10,color:C.textLight}}>{pct}% there</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div style={{textAlign:"right"}}>
             <span onClick={()=>setPage("drills")} style={{fontSize:11,color:C.blue,cursor:"pointer",fontWeight:600}}>Go to Drills →</span>
           </div>
@@ -1634,6 +1764,7 @@ const MatchHistoryContent=()=>{
 // ── PARTNERS CONTENT ────────────────────────────────────────────────────────
 const PartnersContent=()=>{
   const isMobile = useIsMobile();
+  const [showMethodology, setShowMethodology] = useState(false);
   const [ap,setAp]=useState(null);
   const [selShots,setSelShots]=useState(["dink","drive","lob"]);
   const [showS,setShowS]=useState(false);
@@ -1727,6 +1858,38 @@ const PartnersContent=()=>{
 
   return(
     <div>
+      {/* ── Synergy Score methodology (collapsible) ── */}
+      <div style={{marginBottom:20,padding:"12px 16px",background:`${C.navy}08`,border:`1px solid ${C.navy}18`,borderRadius:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}}
+          onClick={()=>setShowMethodology(v=>!v)}>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy}}>🤝 How the Synergy Score is calculated</div>
+          <span style={{fontSize:11,color:C.textLight,transform:showMethodology?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s",display:"inline-block"}}>▼</span>
+        </div>
+        {showMethodology && (
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:10}}>
+            {[
+              {pct:"40%",label:"Win Rate",       desc:"Your win % together across all logged matches. The biggest driver of synergy."},
+              {pct:"20%",label:"NVZ Arrival",    desc:"How often you both reach the kitchen together. Teams that arrive together win more."},
+              {pct:"20%",label:"NVZ Win Rate",   desc:"How often you win rallies once at the kitchen line."},
+              {pct:"10%",label:"Error Control",  desc:"Average unforced errors per match together. Fewer errors = better synergy."},
+              {pct:"10%",label:"Serve Neut.",    desc:"Your serve/return neutralisation rate across shared matches."},
+            ].map(item=>(
+              <div key={item.label} style={{padding:"8px 11px",background:C.pageBg,borderRadius:8}}>
+                <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:3}}>
+                  <span style={{fontSize:10,fontWeight:800,color:C.blue,background:`${C.blue}15`,padding:"1px 6px",borderRadius:8}}>{item.pct}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:C.navy}}>{item.label}</span>
+                </div>
+                <div style={{fontSize:10,color:C.textMid,lineHeight:1.5}}>{item.desc}</div>
+              </div>
+            ))}
+            <div style={{padding:"8px 11px",background:`${C.blue}08`,borderRadius:8}}>
+              <div style={{fontSize:10,color:C.textMid,lineHeight:1.5}}>
+                <strong>Min data:</strong> 2+ matches together to show a score. More reliable after 5+. Score of 70+ = strong synergy.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:20,width:"100%"}}>
         <Card style={{padding:0,overflow:"hidden"}}>
@@ -2082,6 +2245,30 @@ const Shots = () => {
         </div>
       </div>
 
+      {/* ── Methodology banner ── */}
+      <div style={{marginBottom:20,padding:"14px 18px",background:`${C.navy}08`,border:`1px solid ${C.navy}18`,
+        borderRadius:14,display:"flex",gap:16,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:240}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>📊 How Top Weapon & Biggest Weakness are calculated</div>
+          <div style={{fontSize:11,color:C.textMid,lineHeight:1.7}}>
+            Shots are scored using a <strong>Bayesian weighted formula</strong> that combines two data sources: 
+            Rally Ender outcomes (did the rally end on this shot?) and Shot Tracker outcomes (was this shot positive, neutral, or negative quality-wise?).
+            Volume matters — a shot needs at least 10+ logged outcomes before its rate is fully trusted.
+            A shot hit 5 times with 100% positive rate scores lower than one hit 40 times with 75% positive rate.
+            This prevents rare shots from dominating the rankings.
+          </div>
+        </div>
+        <div style={{flex:1,minWidth:240}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>📈 How Most Improved is calculated</div>
+          <div style={{fontSize:11,color:C.textMid,lineHeight:1.7}}>
+            Compares your win rate on a shot over the <strong>last 4 match windows</strong> (oldest → newest).
+            The trend delta is weighted by log(attempts) — so genuine improvement on a frequently-hit shot 
+            ranks higher than a small sample fluke. A shot you've hit 50 times improving 10% is more meaningful 
+            than a shot you've hit 3 times improving 33%.
+          </div>
+        </div>
+      </div>
+
       {/* Summary trio */}
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)", gap:14, marginBottom:24 }}>
         <Card style={{ borderLeft:`4px solid ${C.mint}`, cursor:"pointer" }} onClick={()=>setTab("weapons")}>
@@ -2208,11 +2395,11 @@ const Shots = () => {
           <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯</div>
           <ColHeader col="name"     label="Shot / Tip" />
           <ColHeader col="category" label="Category"   />
-          <ColHeader col="wins"     label="Rally Won"  align="center"/>
-          <ColHeader col="misses"   label="Rally Lost" align="center"/>
-          <ColHeader col="posCount" label="✓ Pos"      align="center"/>
-          <ColHeader col="neuCount" label="– Neu"      align="center"/>
-          <ColHeader col="negCount" label="✕ Neg"      align="center"/>
+          <ColHeader col="wins"     label={<span style={{display:"flex",alignItems:"center",gap:4}}>Rally Won <InfoTip text={TIPS.outcome_won} position="bottom"/></span>}  align="center"/>
+          <ColHeader col="misses"   label={<span style={{display:"flex",alignItems:"center",gap:4}}>Rally Lost <InfoTip text={TIPS.outcome_lost} position="bottom"/></span>} align="center"/>
+          <ColHeader col="posCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>✓ Pos <InfoTip text={TIPS.outcome_pos} position="bottom"/></span>}      align="center"/>
+          <ColHeader col="neuCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>– Neu <InfoTip text={TIPS.outcome_neu} position="bottom"/></span>}      align="center"/>
+          <ColHeader col="negCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>✕ Neg <InfoTip text={TIPS.outcome_neg} position="bottom"/></span>}      align="center"/>
         </div>
 
         {/* Rows */}
@@ -2457,6 +2644,10 @@ Recent opponents: ${recentOpponents}
           })()}
         </div>
         <p style={{color:C.textMid,fontSize:13,marginTop:4}}>Patient · NVZ-first · drill-driven coaching</p>
+        <div style={{marginTop:10,padding:"9px 14px",background:`${C.blue}08`,border:`1px solid ${C.blue}20`,
+          borderRadius:9,fontSize:11,color:C.textMid,lineHeight:1.6}}>
+          💡 <strong>How recommendations are generated:</strong> PICKL analyzes your actual stats — win rate, NVZ arrival, errors, serve neutralisation, shot positive/negative rates — then cross-references pro benchmarks (Ben Johns, Anna Leigh Waters, Tyson McGuffin, Simone Jardim) to give personalized advice. Every recommendation is grounded in your specific numbers, not generic tips.
+        </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"20px 32px",background:C.pageBg}}>
         {msgs.map((m,i)=>{
@@ -3068,6 +3259,9 @@ const Profile=({setPage})=>{
                   <div style={{fontSize:12,color:"#94A3B8",marginTop:4}}>
                     Derived from your shot data · updates automatically as you log more matches
                   </div>
+                  <div style={{fontSize:10,color:"#64748B",marginTop:5,lineHeight:1.5}}>
+                    Scored across 4 styles using kitchen %, drive %, attack %, drop %, NVZ arrival &amp; errors. Needs 10+ shots logged.
+                  </div>
                 </div>
                 {style && (
                   <div style={{textAlign:"center",flexShrink:0}}>
@@ -3272,6 +3466,7 @@ const Profile=({setPage})=>{
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{width:10,height:10,borderRadius:2,background:m.color,flexShrink:0}}/>
                       <span style={{fontSize:14,fontWeight:700,color:C.text}}>{m.label}</span>
+                      {TIPS[m.id] && <InfoTip text={TIPS[m.id]} position="right"/>}
                     </div>
                     <div style={{fontSize:11,color:C.textLight,marginTop:2,marginLeft:18}}>{m.desc}</div>
                     {/* Pro guidance */}
@@ -4107,12 +4302,31 @@ const LogMatchContent=()=>{
 
 // ── VIDEO LOGGER ──────────────────────────────────────────────────────────────
 const SHOT_BUTTONS = [
-  { cat:"Serve/Return", color:C.amber,  shots:["Serve","Return BH","Return FH"] },
-  { cat:"Transition",   color:C.blue,   shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
-  { cat:"Kitchen",      color:C.mint,   shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
-  { cat:"Attack",       color:C.rose,   shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
-  { cat:"Defense",      color:C.purple, shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
+  { cat:"Serve/Return", color:C.amber,  tip:TIPS.cat_serve,      shots:["Serve","Return BH","Return FH"] },
+  { cat:"Transition",   color:C.blue,   tip:TIPS.cat_transition,  shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
+  { cat:"Kitchen",      color:C.mint,   tip:TIPS.cat_kitchen,     shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
+  { cat:"Attack",       color:C.rose,   tip:TIPS.cat_attack,      shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
+  { cat:"Defense",      color:C.purple, tip:TIPS.cat_defense,     shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
 ];
+
+// Map shot names to tooltip keys
+const SHOT_TIPS = {
+  "Serve":"shot_serve","Return BH":"shot_returnBH","Return FH":"shot_returnFH",
+  "4th Shot BH":"shot_4thBH","4th Shot FH":"shot_4thFH",
+  "4th Shot Backhand":"shot_4thBH","4th Shot Forehand":"shot_4thFH",
+  "Drive BH":"shot_driveBH","Drive FH":"shot_driveFH",
+  "Drop BH":"shot_dropBH","Drop FH":"shot_dropFH",
+  "Dink BH":"shot_dinkBH","Dink FH":"shot_dinkFH",
+  "Reset BH":"shot_resetBH","Reset FH":"shot_resetFH",
+  "Volley BH":"shot_volleyBH","Volley FH":"shot_volleyFH",
+  "Speed Up BH":"shot_speedupBH","Speed Up FH":"shot_speedupFH",
+  "Slam BH":"shot_slamBH","Slam FH":"shot_slamFH",
+  "Erne BH":"shot_erneBH","Erne FH":"shot_erneFH",
+  "Counter BH":"shot_counterBH","Counter FH":"shot_counterFH",
+  "Lob BH":"shot_lobBH","Lob FH":"shot_lobFH",
+  "Scramble BH":"shot_scrambleBH","Scramble FH":"shot_scrambleFH",
+  "ATP BH":"shot_atpBH","ATP FH":"shot_atpFH",
+};
 
 function VideoLoggerContent({ setPage, setTab }) {
   const isMobile = useIsMobile();
@@ -4655,7 +4869,9 @@ function VideoLoggerContent({ setPage, setTab }) {
       </div>
       {SHOT_BUTTONS.map(cat => (
         <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5, display:"flex", alignItems:"center", gap:5 }}>
+            {cat.cat}{cat.tip && <InfoTip text={cat.tip} position="right"/>}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {cat.shots.map(shot => {
               const d     = shotData[shot] || { pos:0, neu:0, neg:0 };
@@ -4750,7 +4966,9 @@ function VideoLoggerContent({ setPage, setTab }) {
       </div>
       {SHOT_BUTTONS.map(cat => (
         <div key={cat.cat} style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{cat.cat}</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: cat.color, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5, display:"flex", alignItems:"center", gap:5 }}>
+            {cat.cat}{cat.tip && <InfoTip text={cat.tip} position="right"/>}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {cat.shots.map(shot => {
               const d     = rallyData[shot] || { won:0, lost:0 };
@@ -5494,7 +5712,7 @@ function VideoLoggerContent({ setPage, setTab }) {
                         const misColor  = nvzMissed  > 0 ? C.rose    : "#E8A0A8";
                         return (
                           <div style={{background:C.mintL, border:`1.5px solid ${C.mint}30`, borderRadius:10, padding:"10px 12px"}}>
-                            <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>NVZ Arrival</div>
+                            <div style={{fontSize:10,fontWeight:700,color:C.mint,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4,display:"flex",alignItems:"center",gap:5}}>NVZ Arrival <InfoTip text={TIPS.nvzArrival} position="right"/></div>
                             <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:8}}>
                               {/* Arrived row */}
                               <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
