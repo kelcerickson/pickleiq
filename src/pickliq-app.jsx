@@ -3019,34 +3019,36 @@ const Shots = () => {
           );
         };
 
-        return SHOT_CATS.map(cat => {
-          const catShots = cat.shots.map(s => {
-            const found = all.find(x=>x.name===s.name);
-            return found || {...s,wins:0,misses:0,posCount:0,neuCount:0,negCount:0,attempts:0,
-              winHistory:[0,0,0,0],missHistory:[0,0,0,0]};
+        return SHOT_BUTTONS.map(btn => {
+          // SHOT_BUTTONS uses {cat, color, tip, shots:[string names]}
+          // Resolve each shot name to its data from the `all` array
+          const catShots = btn.shots.map(name => {
+            const found = all.find(x=>x.name===name);
+            return found || {name, wins:0, misses:0, posCount:0, neuCount:0, negCount:0,
+              attempts:0, winHistory:[0,0,0,0], missHistory:[0,0,0,0]};
           });
           const catPos  = catShots.reduce((a,s)=>a+(s.posCount||0),0);
           const catNeu  = catShots.reduce((a,s)=>a+(s.neuCount||0),0);
           const catNeg  = catShots.reduce((a,s)=>a+(s.negCount||0),0);
           const catWon  = catShots.reduce((a,s)=>a+(s.wins||0),0);
           const catLost = catShots.reduce((a,s)=>a+(s.misses||0),0);
-          const catTot  = catPos+catNeu+catNeg+catWon+catLost;
-          const catObj  = {name:cat.label,posCount:catPos,neuCount:catNeu,negCount:catNeg,
-            wins:catWon,misses:catLost,winHistory:[0,0,0,0],missHistory:[0,0,0,0],shots:cat.shots};
+          const catObj  = {name:btn.cat, posCount:catPos, neuCount:catNeu, negCount:catNeg,
+            wins:catWon, misses:catLost, winHistory:[0,0,0,0], missHistory:[0,0,0,0],
+            shots:btn.shots};
 
           const [open, setOpen] = React.useState(false);
 
           return (
-            <div key={cat.id} style={{marginBottom:14,borderRadius:14,overflow:"hidden",
-              border:`1.5px solid ${cat.color}30`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+            <div key={btn.cat} style={{marginBottom:14,borderRadius:14,overflow:"hidden",
+              border:`1.5px solid ${btn.color}30`,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
 
               {/* Category header row — always visible, clickable to expand */}
               <div onClick={()=>setOpen(v=>!v)} style={{cursor:"pointer",
-                background:`linear-gradient(to right,${cat.color}12,${cat.color}06)`}}>
-                {/* Column labels — only shown once at top */}
+                background:`linear-gradient(to right,${btn.color}12,${btn.color}06)`}}>
+                {/* Column labels */}
                 <div style={{display:"grid",
                   gridTemplateColumns:`1fr 60px ${isMobile?"1fr":"1fr 1fr"}`,
-                  gap:12,padding:"6px 20px 0",paddingLeft:isMobile?"20px":"20px"}}>
+                  gap:12,padding:"6px 20px 0"}}>
                   <div/>
                   <div style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",
                     letterSpacing:"0.07em",textAlign:"center"}}>% of all</div>
@@ -3055,32 +3057,31 @@ const Shots = () => {
                   {!isMobile&&<div style={{fontSize:9,fontWeight:700,color:C.textLight,
                     textTransform:"uppercase",letterSpacing:"0.07em"}}>Shot quality</div>}
                 </div>
-                <ShotRow shot={catObj} grandTotal={grandTotal} color={cat.color} isCategory={true}/>
+                <ShotRow shot={catObj} grandTotal={grandTotal} color={btn.color} isCategory={true}/>
                 <div style={{padding:"0 20px 8px",display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:10,color:cat.color,fontWeight:600}}>
-                    {cat.shots.length} shots {open?"▲ collapse":"▼ expand"}
+                  <span style={{fontSize:10,color:btn.color,fontWeight:600}}>
+                    {btn.shots.length} shot types · {open?"▲ collapse":"▼ expand"}
                   </span>
-                  {cat.tip && <InfoTip text={cat.tip} position="right"/>}
+                  {btn.tip && <InfoTip text={btn.tip} position="right"/>}
                 </div>
               </div>
 
               {/* Individual shot rows — shown when expanded */}
               {open && (
                 <div>
-                  {/* Sub-header */}
                   <div style={{display:"grid",
                     gridTemplateColumns:`36px 1fr 60px ${isMobile?"1fr":"1fr 1fr"}`,
                     gap:12,padding:"6px 20px 6px 48px",
-                    background:C.pageBg,borderTop:`1px solid ${cat.color}20`}}>
+                    background:C.pageBg,borderTop:`1px solid ${btn.color}20`}}>
                     <div/>
                     <div style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em"}}>Shot</div>
                     <div style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"center"}}>% of all</div>
                     <div style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em"}}>Rally enders</div>
                     {!isMobile&&<div style={{fontSize:9,fontWeight:700,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em"}}>Shot quality</div>}
                   </div>
-                  {catShots.map((shot,si) => (
+                  {catShots.map(shot => (
                     <ShotRow key={shot.name} shot={shot} grandTotal={grandTotal}
-                      color={cat.color} isCategory={false}/>
+                      color={btn.color} isCategory={false}/>
                   ))}
                 </div>
               )}
