@@ -1248,6 +1248,459 @@ const SectionLabelInline=({children})=>(
   <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:4,fontWeight:600}}>{children}</div>
 );
 
+// ── MINI SHOT LOGGER — for logging shots on a claimed/linked match ────────────
+const MiniShotLogger = ({ matchId, onSaved }) => {
+  const [shotData,  setShotData]  = useState({});
+  const [rallyData, setRallyData] = useState({});
+  const [nvzArrived,setNvzArrived]= useState(0);
+  const [nvzTotal,  setNvzTotal]  = useState(0);
+  const [nvzWon,    setNvzWon]    = useState(0);
+  const [nvzWonTotal,setNvzWonTotal]=useState(0);
+  const [errors,    setErrors]    = useState(0);
+  const [saving,    setSaving]    = useState(false);
+  const [saved,     setSaved]     = useState(false);
+
+  const logShot = (shot, outcome) => {
+    setShotData(prev => {
+      const curr = prev[shot] || {pos:0,neu:0,neg:0};
+      return {...prev, [shot]: {...curr, [outcome]: curr[outcome]+1}};
+    });
+  };
+  const unlogShot = (shot, outcome) => {
+    setShotData(prev => {
+      const curr = prev[shot] || {pos:0,neu:0,neg:0};
+      if (curr[outcome] <= 0) return prev;
+      return {...prev, [shot]: {...curr, [outcome]: curr[outcome]-1}};
+    });
+  };
+  const logRally = (shot, res) => {
+    setRallyData(prev => {
+      const curr = prev[shot] || {won:0,lost:0};
+      const k = res==="W"?"won":"lost";
+      return {...prev, [shot]: {...curr, [k]: curr[k]+1}};
+    });
+  };
+  const unlogRally = (shot, res) => {
+    setRallyData(prev => {
+      const curr = prev[shot] || {won:0,lost:0};
+      const k = res==="W"?"won":"lost";
+      if(curr[k]<=0) return prev;
+      return {...prev, [shot]: {...curr, [k]: curr[k]-1}};
+    });
+  };
+
+  const saveShots = async () => {
+    setSaving(true);
+    try {
+      await ensureFreshToken();
+      const uid = getCurrentUserId();
+      // Save to aggregate shots table
+      for (const [name, d] of Object.entries(shotData)) {
+        const tot = d.pos+d.neu+d.neg; if(!tot) continue;
+        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===name));
+        let ex = null;
+        try { ex = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        if (ex) {
+          await sb.upsert("shots",{id:ex.id,name,category:cat?.label||"",user_id:uid,
+            pos_count:(ex.pos_count||0)+d.pos, neu_count:(ex.neu_count||0)+d.neu,
+            neg_count:(ex.neg_count||0)+d.neg, attempts:(ex.attempts||0)+tot},"id");
+        } else {
+          await sb.insert("shots",{name,category:cat?.label||"",user_id:uid,
+            pos_count:d.pos,neu_count:d.neu,neg_count:d.neg,attempts:tot,wins:0,misses:0});
+        }
+      }
+      for (const [name, d] of Object.entries(rallyData)) {
+        const tot = d.won+d.lost; if(!tot) continue;
+        const cat = SHOT_CATS.find(c=>c.shots.some(s=>s.name===name));
+        let ex = null;
+        try { ex = await sb.query("shots",{filter:`name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`,single:true}); } catch(e){}
+        if (ex) {
+          await sb.upsert("shots",{id:ex.id,name,user_id:uid,
+            wins:(ex.wins||0)+d.won, misses:(ex.misses||0)+d.lost},"id");
+        } else {
+          await sb.insert("shots",{name,category:cat?.label||"",user_id:uid,
+            wins:d.won,misses:d.lost,pos_count:0,neu_count:0,neg_count:0,attempts:tot});
+        }
+      }
+      // Save to match_shots for team analytics
+      const nvzArr  = nvzTotal > 0 ? Math.round(nvzArrived/nvzTotal*100) : 0;
+      const nvzWinR = nvzWonTotal > 0 ? Math.round(nvzWon/nvzWonTotal*100) : 0;
+      await sb.upsert("match_shots", {
+        match_id: matchId, user_id: uid,
+        shot_data: shotData, rally_data: rallyData,
+        nvz_arrived: nvzArrived, nvz_total: nvzTotal,
+        nvz_won: nvzWon, nvz_won_total: nvzWonTotal,
+        errors, serve_neut: nvzArr,
+      }, "match_id,user_id");
+
+      setSaved(true);
+      setTimeout(() => onSaved(), 1200);
+    } catch(e) { alert("Save failed: " + e.message); }
+    setSaving(false);
+  };
+
+  const shotTotal  = Object.values(shotData).reduce((a,d)=>a+d.pos+d.neu+d.neg,0);
+  const rallyTotal = Object.values(rallyData).reduce((a,d)=>a+d.won+d.lost,0);
+
+  return (
+    <div style={{padding:"16px 22px"}}>
+      {/* Tracking toggles */}
+      <div style={{display:"flex",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{fontSize:11,color:C.textMid,fontWeight:700,alignSelf:"center"}}>Log:</div>
+        <div style={{fontSize:11,color:C.textMid,lineHeight:1.6,flex:1,background:`${C.blue}08`,
+          border:`1px solid ${C.blue}20`,borderRadius:9,padding:"8px 12px"}}>
+          🎯 <strong>Shot Tracker</strong> — log pos/neu/neg per shot · 
+          🏁 <strong>Rally Ender</strong> — mark the final shot won/lost
+        </div>
+      </div>
+
+      {/* Compact shot grid — both trackers side by side */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+        {/* Shot Tracker */}
+        <div style={{background:`${C.blue}06`,border:`1.5px solid ${C.blue}30`,borderRadius:12,
+          padding:"10px 12px",maxHeight:380,overflowY:"auto"}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>🎯 Shot Tracker</div>
+          {SHOT_BUTTONS.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:10}}>
+              <div style={{fontSize:8,fontWeight:700,color:cat.color,textTransform:"uppercase",
+                letterSpacing:"0.1em",marginBottom:4}}>{cat.cat}</div>
+              {cat.shots.map(shot=>{
+                const d = shotData[shot]||{pos:0,neu:0,neg:0};
+                const tot = d.pos+d.neu+d.neg;
+                return (
+                  <div key={shot} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",
+                    gap:2,marginBottom:2,alignItems:"center"}}>
+                    {[["neg",C.rose,"✕"],["neu","#9CA3AF","–"],["pos",C.mint,"✓"]].map(([k,col,icon])=>(
+                      <div key={k} style={{display:"flex",gap:2,alignItems:"center"}}>
+                        <button onClick={()=>logShot(shot,k)} style={{flex:1,padding:"4px 2px",
+                          borderRadius:5,border:`1px solid ${d[k]>0?col:col+"40"}`,
+                          background:d[k]>0?col+"20":"transparent",color:d[k]>0?col:col+"80",
+                          fontFamily:"'Outfit'",fontWeight:700,fontSize:9,cursor:"pointer",
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {icon} {shot.replace(" BH","BH").replace(" FH","FH")}{d[k]>0?` (${d[k]})`:""}
+                        </button>
+                        {d[k]>0&&<button onClick={()=>unlogShot(shot,k)} style={{
+                          width:14,height:14,borderRadius:3,border:`1px solid ${col}40`,
+                          background:`${col}15`,color:col,fontSize:9,fontWeight:700,
+                          cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                          flexShrink:0,lineHeight:1,padding:0}}>−</button>}
+                      </div>
+                    ))}
+                    <div style={{fontFamily:"'DM Mono'",fontSize:10,fontWeight:700,
+                      textAlign:"center",color:tot>0?C.text:C.textLight}}>{tot||"–"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* Rally Ender */}
+        <div style={{background:`${C.mint}06`,border:`1.5px solid ${C.mint}30`,borderRadius:12,
+          padding:"10px 12px",maxHeight:380,overflowY:"auto"}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>🏁 Rally Ender</div>
+          {SHOT_BUTTONS.map(cat=>(
+            <div key={cat.cat} style={{marginBottom:10}}>
+              <div style={{fontSize:8,fontWeight:700,color:cat.color,textTransform:"uppercase",
+                letterSpacing:"0.1em",marginBottom:4}}>{cat.cat}</div>
+              {cat.shots.map(shot=>{
+                const d = rallyData[shot]||{won:0,lost:0};
+                return (
+                  <div key={shot} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",
+                    gap:2,marginBottom:2,alignItems:"center"}}>
+                    {[["lost",C.rose,"✕"],["won",C.mint,"✓"]].map(([k,col,icon])=>(
+                      <div key={k} style={{display:"flex",gap:2,alignItems:"center"}}>
+                        <button onClick={()=>logRally(shot,k==="won"?"W":"L")} style={{flex:1,
+                          padding:"4px 2px",borderRadius:5,
+                          border:`1px solid ${d[k]>0?col:col+"40"}`,
+                          background:d[k]>0?col+"20":"transparent",color:d[k]>0?col:col+"80",
+                          fontFamily:"'Outfit'",fontWeight:700,fontSize:9,cursor:"pointer",
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {icon} {shot.replace(" BH","BH").replace(" FH","FH")}{d[k]>0?` (${d[k]})`:""}
+                        </button>
+                        {d[k]>0&&<button onClick={()=>unlogRally(shot,k==="won"?"W":"L")} style={{
+                          width:14,height:14,borderRadius:3,border:`1px solid ${col}40`,
+                          background:`${col}15`,color:col,fontSize:9,fontWeight:700,cursor:"pointer",
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                          flexShrink:0,lineHeight:1,padding:0}}>−</button>}
+                      </div>
+                    ))}
+                    <div style={{fontFamily:"'DM Mono'",fontSize:10,fontWeight:700,
+                      textAlign:"center",color:(d.won+d.lost)>0?C.text:C.textLight}}>
+                      {(d.won+d.lost)||"–"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* NVZ + Errors */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+        <div style={{background:`${C.mint}08`,border:`1px solid ${C.mint}30`,borderRadius:9,padding:"10px 12px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.mint,marginBottom:6}}>NVZ Arrival</div>
+          <div style={{display:"flex",gap:5,marginBottom:4}}>
+            <button onClick={()=>{setNvzArrived(p=>p+1);setNvzTotal(p=>p+1);}} style={{flex:1,padding:"5px 0",
+              borderRadius:7,border:`1px solid ${C.mint}`,background:`${C.mint}15`,color:C.mint,
+              fontWeight:700,fontSize:10,fontFamily:"'Outfit'",cursor:"pointer"}}>✓ ({nvzArrived})</button>
+            <button onClick={()=>setNvzArrived(p=>Math.max(0,p-1))} disabled={nvzArrived===0} style={{
+              width:22,borderRadius:7,border:`1px solid ${C.border}`,background:C.pageBg,
+              color:C.textMid,fontWeight:700,fontSize:11,cursor:"pointer"}}>−</button>
+          </div>
+          <button onClick={()=>setNvzTotal(p=>p+1)} style={{width:"100%",padding:"5px 0",
+            borderRadius:7,border:`1px solid ${C.rose}`,background:`${C.rose}15`,color:C.rose,
+            fontWeight:700,fontSize:10,fontFamily:"'Outfit'",cursor:"pointer"}}>✕ ({nvzTotal-nvzArrived})</button>
+        </div>
+        <div style={{background:`${C.blue}08`,border:`1px solid ${C.blue}30`,borderRadius:9,padding:"10px 12px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.blue,marginBottom:6}}>NVZ Win Rate</div>
+          <div style={{display:"flex",gap:5,marginBottom:4}}>
+            <button onClick={()=>{setNvzWon(p=>p+1);setNvzWonTotal(p=>p+1);}} style={{flex:1,padding:"5px 0",
+              borderRadius:7,border:`1px solid ${C.mint}`,background:`${C.mint}15`,color:C.mint,
+              fontWeight:700,fontSize:10,fontFamily:"'Outfit'",cursor:"pointer"}}>✓ ({nvzWon})</button>
+            <button onClick={()=>{setNvzWon(p=>Math.max(0,p-1));setNvzWonTotal(p=>Math.max(0,p-1));}} disabled={nvzWon===0} style={{
+              width:22,borderRadius:7,border:`1px solid ${C.border}`,background:C.pageBg,
+              color:C.textMid,fontWeight:700,fontSize:11,cursor:"pointer"}}>−</button>
+          </div>
+          <button onClick={()=>setNvzWonTotal(p=>p+1)} style={{width:"100%",padding:"5px 0",
+            borderRadius:7,border:`1px solid ${C.rose}`,background:`${C.rose}15`,color:C.rose,
+            fontWeight:700,fontSize:10,fontFamily:"'Outfit'",cursor:"pointer"}}>✕ ({nvzWonTotal-nvzWon})</button>
+        </div>
+        <div style={{background:`${C.rose}08`,border:`1px solid ${C.rose}30`,borderRadius:9,padding:"10px 12px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.rose,marginBottom:6}}>Errors</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setErrors(p=>Math.max(0,p-1))} style={{width:26,height:26,
+              borderRadius:6,border:`1px solid ${C.border}`,background:C.pageBg,
+              color:C.textMid,fontWeight:700,fontSize:14,cursor:"pointer"}}>−</button>
+            <span style={{fontFamily:"'DM Mono'",fontSize:20,fontWeight:700,color:C.rose,
+              minWidth:24,textAlign:"center"}}>{errors}</span>
+            <button onClick={()=>setErrors(p=>p+1)} style={{width:26,height:26,
+              borderRadius:6,border:`1.5px solid ${C.rose}`,background:`${C.rose}15`,
+              color:C.rose,fontWeight:700,fontSize:14,cursor:"pointer"}}>+</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary + save */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{flex:1,fontSize:12,color:C.textMid}}>
+          {shotTotal>0&&<span style={{marginRight:10}}>🎯 {shotTotal} shot outcomes</span>}
+          {rallyTotal>0&&<span>🏁 {rallyTotal} rally enders</span>}
+          {shotTotal===0&&rallyTotal===0&&<span style={{color:C.textLight}}>Log shots above then save</span>}
+        </div>
+        <button onClick={saveShots} disabled={saving||saved||(!shotTotal&&!rallyTotal&&!errors&&!nvzArrived)} style={{
+          padding:"11px 28px",borderRadius:12,border:"none",
+          background:saved?C.mint:saving?C.border:(shotTotal||rallyTotal||errors||nvzArrived)?C.pickle:C.border,
+          fontFamily:"'Outfit'",fontWeight:700,fontSize:14,color:C.navy,
+          cursor:(saving||saved||(!shotTotal&&!rallyTotal&&!errors&&!nvzArrived))?"not-allowed":"pointer",
+          transition:"all 0.2s"}}>
+          {saved?"✓ Saved!":saving?"Saving...":"💾 Save My Shots"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+
+
+// ── TEAM SHOT ANALYTICS — shown in Partners page ──────────────────────────────
+const TeamShotAnalytics = ({ partnerName, partnerUserId, myUserId, myName }) => {
+  const [myShots,      setMyShots]      = useState([]);
+  const [partnerShots, setPartnerShots] = useState([]);
+  const [loading,      setLoading]      = useState(true);
+
+  useEffect(() => {
+    if (!myUserId || !partnerUserId) return;
+    Promise.all([
+      sb.query("shots", { filter: `user_id=eq.${myUserId}`, order: "name.asc" }).catch(()=>[]),
+      sb.query("shots", { filter: `user_id=eq.${partnerUserId}`, order: "name.asc" }).catch(()=>[]),
+    ]).then(([mine, theirs]) => {
+      setMyShots(Array.isArray(mine)?mine:[]);
+      setPartnerShots(Array.isArray(theirs)?theirs:[]);
+      setLoading(false);
+    });
+  }, [myUserId, partnerUserId]);
+
+  if (loading) return <div style={{padding:"24px",textAlign:"center",color:C.textLight,fontSize:13}}>Loading team analytics…</div>;
+  if (!myShots.length && !partnerShots.length) return (
+    <div style={{padding:"24px",textAlign:"center",background:C.pageBg,borderRadius:12,border:`1px dashed ${C.border}`}}>
+      <div style={{fontSize:28,marginBottom:8}}>🎾</div>
+      <div style={{fontSize:13,color:C.textMid}}>Neither player has logged shot data yet.<br/>Use the video logger with Shot Tracker enabled to build team analytics.</div>
+    </div>
+  );
+
+  const myName1 = myName?.split(" ")[0] || "Me";
+  const partnerName1 = partnerName?.split(" ")[0] || "Partner";
+
+  // Build per-category totals for both players
+  const getCatTotals = (shots, catShots) => {
+    const pos  = catShots.reduce((a,n) => { const r=shots.find(s=>s.name===n); return a+(r?.pos_count||0); }, 0);
+    const neu  = catShots.reduce((a,n) => { const r=shots.find(s=>s.name===n); return a+(r?.neu_count||0); }, 0);
+    const neg  = catShots.reduce((a,n) => { const r=shots.find(s=>s.name===n); return a+(r?.neg_count||0); }, 0);
+    const won  = catShots.reduce((a,n) => { const r=shots.find(s=>s.name===n); return a+(r?.wins||0); }, 0);
+    const lost = catShots.reduce((a,n) => { const r=shots.find(s=>s.name===n); return a+(r?.misses||0); }, 0);
+    return { pos, neu, neg, won, lost, tot: pos+neu+neg+won+lost };
+  };
+
+  const myGrand      = myShots.reduce((a,s)=>(a+(s.pos_count||0)+(s.neu_count||0)+(s.neg_count||0)+(s.wins||0)+(s.misses||0)),0);
+  const partnerGrand = partnerShots.reduce((a,s)=>(a+(s.pos_count||0)+(s.neu_count||0)+(s.neg_count||0)+(s.wins||0)+(s.misses||0)),0);
+  const teamGrand    = myGrand + partnerGrand;
+
+  const MY_COLOR      = C.blue;
+  const PARTNER_COLOR = C.purple;
+
+  return (
+    <div>
+      {/* ── Team overview bar ── */}
+      {teamGrand > 0 && (
+        <div style={{marginBottom:20,padding:"14px 18px",background:C.cardBg,
+          border:`1px solid ${C.border}`,borderRadius:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:10}}>Team Shot Split</div>
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6}}>
+            <div style={{width:10,height:10,borderRadius:2,background:MY_COLOR,flexShrink:0}}/>
+            <span style={{fontSize:12,color:C.textMid,flex:1}}>{myName1} (you)</span>
+            <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:MY_COLOR}}>
+              {Math.round(myGrand/teamGrand*100)}%
+            </span>
+          </div>
+          <div style={{height:10,background:C.border,borderRadius:5,overflow:"hidden",marginBottom:8}}>
+            <div style={{height:"100%",width:`${myGrand/teamGrand*100}%`,background:MY_COLOR,
+              borderRadius:5,transition:"width 0.5s"}}/>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div style={{width:10,height:10,borderRadius:2,background:PARTNER_COLOR,flexShrink:0}}/>
+            <span style={{fontSize:12,color:C.textMid,flex:1}}>{partnerName1}</span>
+            <span style={{fontFamily:"'DM Mono'",fontSize:13,fontWeight:700,color:PARTNER_COLOR}}>
+              {Math.round(partnerGrand/teamGrand*100)}%
+            </span>
+          </div>
+          <div style={{height:10,background:C.border,borderRadius:5,overflow:"hidden",marginTop:6}}>
+            <div style={{height:"100%",width:`${partnerGrand/teamGrand*100}%`,background:PARTNER_COLOR,
+              borderRadius:5,transition:"width 0.5s"}}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── Per-category breakdown ── */}
+      {SHOT_CATS.map(cat => {
+        const myTot  = getCatTotals(myShots,      cat.shots.map(s=>s.name));
+        const paTot  = getCatTotals(partnerShots, cat.shots.map(s=>s.name));
+        const teamTot = myTot.tot + paTot.tot;
+        if (teamTot === 0) return null;
+
+        const myPct  = teamGrand>0 ? Math.round(myTot.tot/teamGrand*100) : 0;
+        const paPct  = teamGrand>0 ? Math.round(paTot.tot/teamGrand*100) : 0;
+        const teamCatPct = myPct + paPct;
+
+        // Success rates
+        const myOutTot  = myTot.pos+myTot.neu+myTot.neg;
+        const paOutTot  = paTot.pos+paTot.neu+paTot.neg;
+        const myPosRate  = myOutTot>0  ? Math.round(myTot.pos/myOutTot*100) : null;
+        const paPosRate  = paOutTot>0  ? Math.round(paTot.pos/paOutTot*100) : null;
+        const myWonRate  = (myTot.won+myTot.lost)>0  ? Math.round(myTot.won/(myTot.won+myTot.lost)*100) : null;
+        const paWonRate  = (paTot.won+paTot.lost)>0  ? Math.round(paTot.won/(paTot.won+paTot.lost)*100) : null;
+
+        return (
+          <div key={cat.id} style={{marginBottom:16}}>
+            <Card style={{padding:"14px 18px"}}>
+              {/* Category header */}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <span style={{fontSize:20}}>{cat.icon}</span>
+                <span style={{fontFamily:"'Bebas Neue'",fontSize:17,color:cat.color,letterSpacing:"0.05em"}}>{cat.label}</span>
+                <span style={{fontSize:11,fontWeight:700,color:cat.color,background:`${cat.color}15`,
+                  padding:"2px 8px",borderRadius:10,marginLeft:"auto"}}>{teamCatPct}% of all shots</span>
+              </div>
+
+              {/* Team combined bar — my portion + partner portion, colored by success */}
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:10,color:C.textLight,marginBottom:4}}>% of total team shots (colored by success rate)</div>
+                <div style={{display:"flex",height:16,borderRadius:6,overflow:"hidden",background:C.border}}>
+                  {/* My portion — split by pos/neg */}
+                  {myTot.tot>0&&(() => {
+                    const w = myTot.tot/teamGrand*100;
+                    const pos = myOutTot>0?myTot.pos/myOutTot:myTot.won/(myTot.won+myTot.lost+0.001);
+                    const col = pos>=0.65?C.mint:pos>=0.45?C.amber:C.rose;
+                    return <div style={{width:`${w}%`,background:col,display:"flex",alignItems:"center",
+                      justifyContent:"center",fontSize:8,color:"white",fontWeight:700,minWidth:20}}
+                      title={`${myName1}: ${Math.round(w)}%`}>{myName1.charAt(0)}</div>;
+                  })()}
+                  {/* Partner portion */}
+                  {paTot.tot>0&&(() => {
+                    const w = paTot.tot/teamGrand*100;
+                    const pos = paOutTot>0?paTot.pos/paOutTot:paTot.won/(paTot.won+paTot.lost+0.001);
+                    const col = pos>=0.65?`${C.mint}CC`:pos>=0.45?`${C.amber}CC`:`${C.rose}CC`;
+                    return <div style={{width:`${w}%`,background:col,display:"flex",alignItems:"center",
+                      justifyContent:"center",fontSize:8,color:"white",fontWeight:700,minWidth:20,
+                      borderLeft:"1px solid white"}}
+                      title={`${partnerName1}: ${Math.round(w)}%`}>{partnerName1.charAt(0)}</div>;
+                  })()}
+                </div>
+                <div style={{display:"flex",gap:16,marginTop:4}}>
+                  {myTot.tot>0&&<span style={{fontSize:10,color:MY_COLOR}}>
+                    {myName1}: {myPct}% {myPosRate!==null?`(${myPosRate}% quality)`:myWonRate!==null?`(${myWonRate}% WR)`:""}
+                  </span>}
+                  {paTot.tot>0&&<span style={{fontSize:10,color:PARTNER_COLOR}}>
+                    {partnerName1}: {paPct}% {paPosRate!==null?`(${paPosRate}% quality)`:paWonRate!==null?`(${paWonRate}% WR)`:""}
+                  </span>}
+                </div>
+              </div>
+
+              {/* Per-shot rows for this category */}
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {cat.shots.map(s => {
+                  const mySh = myShots.find(x=>x.name===s.name)||{};
+                  const paSh = partnerShots.find(x=>x.name===s.name)||{};
+                  const myN  = (mySh.pos_count||0)+(mySh.neu_count||0)+(mySh.neg_count||0)+(mySh.wins||0)+(mySh.misses||0);
+                  const paN  = (paSh.pos_count||0)+(paSh.neu_count||0)+(paSh.neg_count||0)+(paSh.wins||0)+(paSh.misses||0);
+                  if (myN+paN === 0) return null;
+
+                  const total = myN+paN;
+                  const myPosR = (mySh.pos_count||0)+( mySh.neu_count||0)+(mySh.neg_count||0)>0
+                    ? Math.round((mySh.pos_count||0)/((mySh.pos_count||0)+(mySh.neu_count||0)+(mySh.neg_count||0))*100) : null;
+                  const paPosR = (paSh.pos_count||0)+(paSh.neu_count||0)+(paSh.neg_count||0)>0
+                    ? Math.round((paSh.pos_count||0)/((paSh.pos_count||0)+(paSh.neu_count||0)+(paSh.neg_count||0))*100) : null;
+
+                  const getColor = r => r===null?C.textLight:r>=65?C.mint:r>=45?C.amber:C.rose;
+
+                  return (
+                    <div key={s.name} style={{background:C.pageBg,borderRadius:9,padding:"8px 12px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                        <span style={{fontSize:12,fontWeight:700,color:C.text}}>{s.name}</span>
+                        <span style={{fontSize:10,color:C.textLight}}>{total} total</span>
+                      </div>
+                      {/* Side-by-side bar */}
+                      <div style={{display:"flex",height:10,borderRadius:4,overflow:"hidden",background:C.border}}>
+                        {myN>0&&<div style={{width:`${myN/total*100}%`,
+                          background:myPosR!==null?getColor(myPosR):MY_COLOR,
+                          transition:"width 0.4s"}}/>}
+                        {paN>0&&<div style={{width:`${paN/total*100}%`,
+                          background:paPosR!==null?getColor(paPosR)+"99":PARTNER_COLOR,
+                          borderLeft:myN>0?"1px solid rgba(255,255,255,0.4)":"none",
+                          transition:"width 0.4s"}}/>}
+                      </div>
+                      <div style={{display:"flex",gap:12,marginTop:3}}>
+                        {myN>0&&<span style={{fontSize:9,color:getColor(myPosR)||MY_COLOR}}>
+                          {myName1}: {Math.round(myN/total*100)}%
+                          {myPosR!==null?` · ${myPosR}% quality`:""}
+                        </span>}
+                        {paN>0&&<span style={{fontSize:9,color:getColor(paPosR)||PARTNER_COLOR}}>
+                          {partnerName1}: {Math.round(paN/total*100)}%
+                          {paPosR!==null?` · ${paPosR}% quality`:""}
+                        </span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+
 // ── MATCH HISTORY CONTENT ───────────────────────────────────────────────────
 const MatchHistoryContent=()=>{
   const isMobile = useIsMobile();
@@ -1260,9 +1713,10 @@ const MatchHistoryContent=()=>{
       .then(p=>{ if(p?.player_name) setProfileName(p.player_name.split(" ")[0]); })
       .catch(()=>{});
   },[]);
-  const [editMatch,   setEditMatch]   = useState(null);
-  const [editSaving,  setEditSaving]  = useState(false);
-  const [editError,   setEditError]   = useState("");
+  const [editMatch,      setEditMatch]      = useState(null);
+  const [editSaving,     setEditSaving]     = useState(false);
+  const [editError,      setEditError]      = useState("");
+  const [logShotsMatchId,setLogShotsMatchId]= useState(null); // opens mini shot logger for claimed match
   const [deleteId,    setDeleteId]    = useState(null); // id pending confirmation
   const [deleting,    setDeleting]    = useState(false);
 
@@ -1564,6 +2018,27 @@ const MatchHistoryContent=()=>{
       {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
 
+      {/* ── Log My Shots modal for claimed matches ── */}
+      {logShotsMatchId && (
+        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.8)",backdropFilter:"blur(6px)",
+          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+          <div style={{background:C.cardBg,borderRadius:18,width:"100%",maxWidth:620,
+            maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.3)"}}>
+            <div style={{padding:"16px 22px",borderBottom:`1px solid ${C.border}`,
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,borderRadius:"18px 18px 0 0"}}>
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:"white",letterSpacing:"0.04em"}}>Log My Shots</div>
+                <div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>Add your shot data for this claimed match</div>
+              </div>
+              <button onClick={()=>setLogShotsMatchId(null)} style={{background:"none",border:"none",
+                fontSize:22,color:"#94A3B8",cursor:"pointer",lineHeight:1}}>×</button>
+            </div>
+            <MiniShotLogger matchId={logShotsMatchId} onSaved={()=>{setLogShotsMatchId(null);loadMatches();}}/>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete confirmation modal — rendered at fragment root so fixed positioning works ── */}
       {deleteId && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,
@@ -1703,6 +2178,13 @@ const MatchHistoryContent=()=>{
                   borderRadius:8,border:`1px solid ${C.border}`,background:C.pageBg,
                   fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,
                   cursor:"pointer"}}>✏️ Edit</button>
+                {selMatch?.isClaimed && (
+                  <button onClick={()=>setLogShotsMatchId(selMatch.id)} style={{
+                    display:"flex",alignItems:"center",gap:5,padding:"6px 12px",
+                    borderRadius:8,border:`1px solid ${C.blue}`,background:`${C.blue}10`,
+                    fontFamily:"'Outfit'",fontWeight:700,fontSize:12,color:C.blue,
+                    cursor:"pointer"}}>🎯 Log my shots</button>
+                )}
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:12,marginBottom:20}}>
@@ -1764,7 +2246,9 @@ const MatchHistoryContent=()=>{
 // ── PARTNERS CONTENT ────────────────────────────────────────────────────────
 const PartnersContent=()=>{
   const isMobile = useIsMobile();
-  const [showMethodology, setShowMethodology] = useState(false);
+  const [showMethodology,  setShowMethodology]  = useState(false);
+  const [showTeamAnalytics,setShowTeamAnalytics]= useState(false);
+  const [partnerUserId,    setPartnerUserId]     = useState(null);
   const [ap,setAp]=useState(null);
   const [selShots,setSelShots]=useState(["dink","drive","lob"]);
   const [showS,setShowS]=useState(false);
@@ -1831,6 +2315,15 @@ const PartnersContent=()=>{
   })).sort((a,b)=>b.synergy-a.synergy);
 
   useEffect(()=>{ if(livePartners.length>0&&!ap) setAp(livePartners[0]); },[dbMatches]);
+
+  // Look up the selected partner's user_id for team analytics
+  useEffect(()=>{
+    if (!ap) return;
+    setPartnerUserId(null);
+    sb.query("profile",{filter:`player_name=ilike.${encodeURIComponent(ap.name)}`,select:"user_id",single:true})
+      .then(r=>{ if(r?.user_id) setPartnerUserId(r.user_id); })
+      .catch(()=>{});
+  },[ap]);
 
   const getTeamKPIs=(p)=>!p?[]:[
     { id:"winRate",    label:"Win Rate Together",    value:`${Math.round(p.wins/p.matches*100)}%`, numVal:Math.round(p.wins/p.matches*100), target:65, unit:"%", higherIsBetter:true,  color:C.pickle, colorL:"#F5FAE8" },
@@ -2053,6 +2546,42 @@ const PartnersContent=()=>{
           </div>
         </div>
       </div>
+
+      {/* ── Team Shot Analytics ── */}
+      {safeAp && (
+        <div style={{marginTop:24}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+            <div style={{width:3,height:20,background:C.purple,borderRadius:2}}/>
+            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>🤝 Team Shot Analytics</span>
+            {partnerUserId
+              ? <span style={{fontSize:11,color:C.mint,fontWeight:600}}>✓ {safeAp.name} is on PickleIntel</span>
+              : <span style={{fontSize:11,color:C.amber}}>⚠ {safeAp.name} hasn't joined PickleIntel yet</span>
+            }
+            <button onClick={()=>setShowTeamAnalytics(v=>!v)}
+              style={{marginLeft:"auto",padding:"6px 14px",borderRadius:9,
+                border:`1px solid ${C.border}`,background:C.pageBg,
+                fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,cursor:"pointer"}}>
+              {showTeamAnalytics?"Hide":"Show"} analytics
+            </button>
+          </div>
+          {!partnerUserId && (
+            <div style={{padding:"14px 18px",background:`${C.amber}10`,border:`1px solid ${C.amber}30`,
+              borderRadius:12,fontSize:12,color:C.textMid,lineHeight:1.6,marginBottom:16}}>
+              Team analytics require both players to have PickleIntel accounts and logged shot data.
+              Invite {safeAp.name} to join at <strong>pickleintel.vercel.app</strong> — once they log their shots,
+              full team breakdown will appear here automatically.
+            </div>
+          )}
+          {showTeamAnalytics && partnerUserId && (
+            <TeamShotAnalytics
+              partnerName={safeAp.name}
+              partnerUserId={partnerUserId}
+              myUserId={getCurrentUserId()}
+              myName={profileName}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -2377,136 +2906,219 @@ const Shots = () => {
         </div>
       </div>
 
-      {/* Shot count */}
-      <div style={{ fontSize:12, color:C.textLight, marginBottom:10 }}>
-        {displayed.length} shots · click any column header to sort
-      </div>
+      {/* ── Category-grouped shot breakdown ── */}
+      {(()=>{
+        // Total shots across all categories for % of total calculation
+        const grandTotal = all.reduce((a,s) => a + (s.wins||0) + (s.misses||0) + (s.posCount||0) + (s.negCount||0) + (s.neuCount||0), 0);
 
-      {/* ── SORTABLE TABLE ── */}
-      <Card style={{ padding:0, overflow:"hidden" }}>
-        {/* Header */}
-        <div style={{
-          display:"grid",
-          gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
-          gap:8, padding:"10px 18px",
-          borderBottom:`2px solid ${C.border}`, background:C.pageBg,
-          alignItems:"center"
-        }}>
-          <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:700}}>🎯</div>
-          <ColHeader col="name"     label="Shot / Tip" />
-          <ColHeader col="category" label="Category"   />
-          <ColHeader col="wins"     label={<span style={{display:"flex",alignItems:"center",gap:4}}>Rally Won <InfoTip text={TIPS.outcome_won} position="bottom"/></span>}  align="center"/>
-          <ColHeader col="misses"   label={<span style={{display:"flex",alignItems:"center",gap:4}}>Rally Lost <InfoTip text={TIPS.outcome_lost} position="bottom"/></span>} align="center"/>
-          <ColHeader col="posCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>✓ Pos <InfoTip text={TIPS.outcome_pos} position="bottom"/></span>}      align="center"/>
-          <ColHeader col="neuCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>– Neu <InfoTip text={TIPS.outcome_neu} position="bottom"/></span>}      align="center"/>
-          <ColHeader col="negCount" label={<span style={{display:"flex",alignItems:"center",gap:4}}>✕ Neg <InfoTip text={TIPS.outcome_neg} position="bottom"/></span>}      align="center"/>
-        </div>
-
-        {/* Rows */}
-        {displayed.map((shot, i) => {
-          const hasTrend   = shot.winHistory.filter(v=>v>0).length >= 2;
-          const winDelta   = shot.winHistory[3] - shot.winHistory[0];
-          const missDelta  = shot.missHistory[3] - shot.missHistory[0];
-          const isPinned   = GOALS.priorityShots.some(p=>p.name===shot.name);
-          const atMax      = GOALS.priorityShots.length >= 3 && !isPinned;
+        // Inline bar chart component
+        const HBar = ({pos, neu, neg, won, lost, height=8}) => {
+          const outcomeTotal = pos + neu + neg;
+          const rallyTotal   = won + lost;
+          const hasST = outcomeTotal > 0;
+          const hasRE = rallyTotal > 0;
+          if (!hasST && !hasRE) return <div style={{fontSize:10,color:C.textLight}}>No data</div>;
           return (
-            <div key={shot.name} style={{
-              display:"grid",
-              gridTemplateColumns:"36px 1fr 80px 60px 60px 60px 70px 70px",
-              gap:8, padding:"12px 18px",
-              borderBottom:`1px solid ${C.border}`,
-              background:isPinned?`${C.pickle}08`:i%2===0?C.cardBg:"#FAFBFC",
-              alignItems:"start", transition:"background 0.15s"
-            }}>
-
-              {/* Pin button */}
-              <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
-                <button onClick={()=>{
-                  if(isPinned){
-                    GOALS.priorityShots = GOALS.priorityShots.filter(p=>p.name!==shot.name);
-                  } else if(!atMax){
-                    GOALS.priorityShots = [...GOALS.priorityShots,
-                      {name:shot.name, targetMisses:Math.max(1,shot.misses-2), color:shot.catColor||C.blue}];
-                  }
-                  setPinVer(v=>v+1);
-                }} title={isPinned?"Unpin drill":atMax?"Max 3 reached":"Pin as priority drill"}
-                style={{
-                  width:28, height:28, borderRadius:7,
-                  border:`1.5px solid ${isPinned?C.pickle:C.border}`,
-                  background:isPinned?`${C.pickle}20`:"transparent",
-                  color:isPinned?C.pickleD:atMax?"#D1D5DB":C.textLight,
-                  cursor:atMax&&!isPinned?"not-allowed":"pointer",
-                  fontSize:13, display:"flex", alignItems:"center", justifyContent:"center",
-                  transition:"all 0.15s",
-                }}>📌</button>
-              </div>
-
-              {/* Shot name + tip inline */}
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                  <span style={{ fontSize:13, fontWeight:700, color:C.text }}>{shot.name}</span>
-                  {isPinned&&<span style={{fontSize:9,color:C.pickleD,fontWeight:700,textTransform:"uppercase",
-                    letterSpacing:"0.05em",background:`${C.pickle}20`,borderRadius:4,padding:"2px 5px"}}>Priority</span>}
+            <div style={{display:"flex",flexDirection:"column",gap:3}}>
+              {hasST && (
+                <div>
+                  <div style={{fontSize:9,color:C.textLight,marginBottom:2}}>Shot quality</div>
+                  <div style={{display:"flex",height,borderRadius:4,overflow:"hidden",background:C.border}}>
+                    {pos>0&&<div style={{width:`${pos/outcomeTotal*100}%`,background:C.mint,transition:"width 0.4s"}}/>}
+                    {neu>0&&<div style={{width:`${neu/outcomeTotal*100}%`,background:"#9CA3AF",transition:"width 0.4s"}}/>}
+                    {neg>0&&<div style={{width:`${neg/outcomeTotal*100}%`,background:C.rose,transition:"width 0.4s"}}/>}
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:2}}>
+                    {pos>0&&<span style={{fontSize:9,color:C.mint,fontWeight:700}}>{Math.round(pos/outcomeTotal*100)}% pos</span>}
+                    {neu>0&&<span style={{fontSize:9,color:"#6B7280"}}>{Math.round(neu/outcomeTotal*100)}% neu</span>}
+                    {neg>0&&<span style={{fontSize:9,color:C.rose,fontWeight:700}}>{Math.round(neg/outcomeTotal*100)}% neg</span>}
+                  </div>
                 </div>
-                {shot.tip&&<div style={{fontSize:11,color:C.textMid,lineHeight:1.5,marginTop:3,maxWidth:420}}>{shot.tip}</div>}
-              </div>
-
-              {/* Category */}
-              <div style={{fontSize:11,color:shot.catColor,display:"flex",alignItems:"center",gap:3,paddingTop:2}}>
-                <span>{shot.icon}</span>{shot.category}
-              </div>
-
-              {/* Rally Won */}
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:shot.wins>0?C.mint:C.textLight}}>{shot.wins||"—"}</span>
-                {hasTrend && (
-                  <span style={{fontSize:10,fontWeight:700,color:winDelta>=0?C.mint:C.rose}}>
-                    {winDelta>=0?`▲+${winDelta}%`:`▼${winDelta}%`}
-                  </span>
-                )}
-              </div>
-
-              {/* Rally Lost */}
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:shot.misses>0?C.rose:C.textLight}}>{shot.misses||"—"}</span>
-                {hasTrend && (
-                  <span style={{fontSize:10,fontWeight:700,color:missDelta<=0?C.mint:C.rose}}>
-                    {missDelta<=0?`▼${missDelta}%`:`▲+${missDelta}%`}
-                  </span>
-                )}
-              </div>
-
-              {/* Positive count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.posCount||0)>0?C.mint:C.textLight}}>{shot.posCount||"—"}</span>
-              </div>
-
-              {/* Neutral count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.neuCount||0)>0?C.textMid:C.textLight}}>{shot.neuCount||"—"}</span>
-              </div>
-
-              {/* Negative count */}
-              <div style={{display:"flex",justifyContent:"center",alignItems:"center",paddingTop:2}}>
-                <span style={{fontFamily:"'DM Mono'",fontSize:15,fontWeight:700,
-                  color:(shot.negCount||0)>0?C.rose:C.textLight}}>{shot.negCount||"—"}</span>
-              </div>
-
+              )}
+              {hasRE && (
+                <div>
+                  <div style={{fontSize:9,color:C.textLight,marginBottom:2}}>Rally enders</div>
+                  <div style={{display:"flex",height,borderRadius:4,overflow:"hidden",background:C.border}}>
+                    {won>0&&<div style={{width:`${won/rallyTotal*100}%`,background:C.mint,transition:"width 0.4s"}}/>}
+                    {lost>0&&<div style={{width:`${lost/rallyTotal*100}%`,background:C.rose,transition:"width 0.4s"}}/>}
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:2}}>
+                    {won>0&&<span style={{fontSize:9,color:C.mint,fontWeight:700}}>{Math.round(won/rallyTotal*100)}% won</span>}
+                    {lost>0&&<span style={{fontSize:9,color:C.rose}}>{Math.round(lost/rallyTotal*100)}% lost</span>}
+                  </div>
+                </div>
+              )}
             </div>
           );
-        })}
+        };
 
-        {/* Empty state */}
-        {displayed.length === 0 && (
-          <div style={{padding:"48px",textAlign:"center",color:C.textLight,fontSize:13}}>
-            No shots match this filter
-          </div>
-        )}
-      </Card>
+        return SHOT_CATS.map(cat => {
+          // Get shots in this category that have data or are in the filtered set
+          const catShots = cat.shots.map(s => {
+            const found = all.find(x => x.name === s.name);
+            return found || {...s, wins:0, misses:0, posCount:0, neuCount:0, negCount:0, attempts:0 };
+          });
+
+          // Filter: if user has selected a tab filter, only show if cat has matching shots
+          const visibleShots = catShots.filter(s => {
+            if (tab === "all") return true;
+            if (tab === "weapons")    return (s._bayesPos||0) > 0.5 || s.wins > 0;
+            if (tab === "weaknesses") return (s._bayesNeg||0) > 0.4 || s.misses > 0;
+            return true;
+          });
+          if (cat !== SHOT_CATS[0] && !catShots.some(s => (s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0) > 0)) return null;
+
+          // Category totals
+          const catPos  = catShots.reduce((a,s)=>a+(s.posCount||0),0);
+          const catNeu  = catShots.reduce((a,s)=>a+(s.neuCount||0),0);
+          const catNeg  = catShots.reduce((a,s)=>a+(s.negCount||0),0);
+          const catWon  = catShots.reduce((a,s)=>a+(s.wins||0),0);
+          const catLost = catShots.reduce((a,s)=>a+(s.misses||0),0);
+          const catTotal = catPos + catNeu + catNeg + catWon + catLost;
+          const catPct  = grandTotal > 0 ? Math.round(catTotal / grandTotal * 100) : 0;
+
+          return (
+            <div key={cat.id} style={{marginBottom:20}}>
+              {/* Category header */}
+              <div style={{background:C.cardBg, border:`1.5px solid ${cat.color}30`,
+                borderRadius:"14px 14px 0 0", padding:"12px 18px",
+                borderBottom:`2px solid ${cat.color}40`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:22}}>{cat.icon}</span>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontFamily:"'Bebas Neue'",fontSize:18,color:cat.color,letterSpacing:"0.05em"}}>{cat.label}</span>
+                        {cat.tip && <InfoTip text={cat.tip} position="right"/>}
+                      </div>
+                      <div style={{fontSize:11,color:C.textLight,marginTop:1}}>{cat.shots.length} shot types</div>
+                    </div>
+                  </div>
+                  {/* Category % of total bar */}
+                  {catTotal > 0 && (
+                    <div style={{minWidth:200,flex:1,maxWidth:320}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:10,color:C.textLight}}>% of all shots</span>
+                        <span style={{fontSize:11,fontWeight:700,color:cat.color}}>{catPct}%</span>
+                      </div>
+                      <div style={{height:6,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${catPct}%`,background:cat.color,
+                          borderRadius:3,transition:"width 0.5s"}}/>
+                      </div>
+                      <div style={{display:"flex",gap:12,marginTop:4}}>
+                        {catPos>0&&<span style={{fontSize:9,color:C.mint,fontWeight:700}}>{catPos} pos</span>}
+                        {catNeu>0&&<span style={{fontSize:9,color:"#6B7280"}}>{catNeu} neu</span>}
+                        {catNeg>0&&<span style={{fontSize:9,color:C.rose,fontWeight:700}}>{catNeg} neg</span>}
+                        {catWon>0&&<span style={{fontSize:9,color:C.mint}}>✓ {catWon} won</span>}
+                        {catLost>0&&<span style={{fontSize:9,color:C.rose}}>✕ {catLost} lost</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Shot rows */}
+              <div style={{border:`1px solid ${cat.color}20`,borderTop:"none",
+                borderRadius:"0 0 14px 14px",overflow:"hidden"}}>
+                {catShots.map((shot, si) => {
+                  const pos = shot.posCount||0, neu = shot.neuCount||0, neg = shot.negCount||0;
+                  const won = shot.wins||0, lost = shot.misses||0;
+                  const shotTotal = pos + neu + neg + won + lost;
+                  const shotPct = grandTotal > 0 ? Math.round(shotTotal/grandTotal*100) : 0;
+                  const isPinned = GOALS.priorityShots.some(p=>p.name===shot.name);
+                  const atMax    = GOALS.priorityShots.length >= 3 && !isPinned;
+                  const hasTrend = (shot.winHistory||[]).filter(v=>v>0).length >= 2;
+                  const winDelta = (shot.winHistory||[0,0,0,0])[3] - (shot.winHistory||[0,0,0,0])[0];
+                  const tipKey   = SHOT_TIPS[shot.name];
+                  const hasData  = shotTotal > 0;
+
+                  return (
+                    <div key={shot.name} style={{
+                      display:"grid",
+                      gridTemplateColumns:isMobile?"36px 1fr 1fr":"36px 1fr 200px 140px 80px",
+                      gap:12, padding:"12px 18px",
+                      borderBottom: si < catShots.length-1 ? `1px solid ${C.border}` : "none",
+                      background: isPinned ? `${C.pickle}06` : si%2===0 ? C.cardBg : "#FAFBFC",
+                      alignItems:"center",
+                    }}>
+                      {/* Pin */}
+                      <button onClick={()=>{
+                        if(isPinned) GOALS.priorityShots=GOALS.priorityShots.filter(p=>p.name!==shot.name);
+                        else if(!atMax) GOALS.priorityShots=[...GOALS.priorityShots,
+                          {name:shot.name,targetMisses:Math.max(1,(shot.misses||0)-2),color:cat.color}];
+                        setPinVer(v=>v+1);
+                      }} title={isPinned?"Unpin":atMax?"Max 3":"Pin drill"}
+                      style={{width:28,height:28,borderRadius:7,border:`1.5px solid ${isPinned?C.pickle:C.border}`,
+                        background:isPinned?`${C.pickle}20`:"transparent",
+                        color:isPinned?C.pickleD:atMax?"#D1D5DB":C.textLight,
+                        cursor:atMax&&!isPinned?"not-allowed":"pointer",
+                        fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>📌</button>
+
+                      {/* Name + tip + priority badge */}
+                      <div>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          <span style={{fontSize:13,fontWeight:700,color:C.text}}>{shot.name}</span>
+                          {tipKey && <InfoTip text={TIPS[tipKey]} position="right"/>}
+                          {isPinned && <span style={{fontSize:9,color:C.pickleD,fontWeight:700,
+                            background:`${C.pickle}20`,borderRadius:4,padding:"1px 5px"}}>📌 Priority</span>}
+                          {hasTrend && winDelta > 0 && <span style={{fontSize:9,color:C.mint,fontWeight:700}}>▲ improving</span>}
+                          {hasTrend && winDelta < 0 && <span style={{fontSize:9,color:C.rose,fontWeight:700}}>▼ declining</span>}
+                        </div>
+                        {!hasData && <div style={{fontSize:10,color:C.textLight,marginTop:2}}>No data logged yet</div>}
+                      </div>
+
+                      {/* Outcome bars */}
+                      <div>
+                        {hasData
+                          ? <HBar pos={pos} neu={neu} neg={neg} won={won} lost={lost}/>
+                          : <div style={{height:20,background:C.pageBg,borderRadius:4,
+                              display:"flex",alignItems:"center",paddingLeft:8}}>
+                              <span style={{fontSize:10,color:C.textLight}}>—</span>
+                            </div>
+                        }
+                      </div>
+
+                      {/* % of total shots bar */}
+                      <div>
+                        {shotPct > 0 ? (
+                          <>
+                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                              <span style={{fontSize:9,color:C.textLight}}>% of all shots</span>
+                              <span style={{fontSize:10,fontWeight:700,color:cat.color}}>{shotPct}%</span>
+                            </div>
+                            <div style={{height:5,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                              <div style={{height:"100%",width:`${shotPct}%`,background:cat.color,
+                                borderRadius:3,transition:"width 0.5s",minWidth:shotPct>0?2:0}}/>
+                            </div>
+                            <div style={{fontSize:9,color:C.textLight,marginTop:1}}>{shotTotal} logged</div>
+                          </>
+                        ) : (
+                          <span style={{fontSize:10,color:C.textLight}}>—</span>
+                        )}
+                      </div>
+
+                      {/* Totals summary */}
+                      {!isMobile && (
+                        <div style={{textAlign:"right"}}>
+                          {(won+lost)>0 && (
+                            <div style={{fontSize:11,fontWeight:700,
+                              color:(won/(won+lost))>=0.6?C.mint:(won/(won+lost))>=0.4?C.amber:C.rose}}>
+                              {Math.round(won/Math.max(1,won+lost)*100)}% WR
+                            </div>
+                          )}
+                          {(pos+neu+neg)>0 && (
+                            <div style={{fontSize:10,color:C.textLight,marginTop:1}}>{pos+neu+neg} tracked</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        });
+      })()}
     </div>
   );
 };
@@ -4828,6 +5440,22 @@ function VideoLoggerContent({ setPage, setTab }) {
           serve_neut:  serveNeut,
           errors:      errors,
         }, "id");
+
+        // Save per-match shot data for team analytics
+        try {
+          await sb.upsert("match_shots", {
+            match_id:      matchId,
+            user_id:       uid,
+            shot_data:     shotData,
+            rally_data:    rallyData,
+            nvz_arrived:   nvzArrived,
+            nvz_total:     nvzTotal,
+            nvz_won:       nvzWon,
+            nvz_won_total: nvzWonTotal,
+            errors:        errors,
+            serve_neut:    serveNeut,
+          }, "match_id,user_id");
+        } catch(e) { console.warn("match_shots save failed:", e); }
       }
       // Clear autosave — session complete
       clearSession();
@@ -5862,6 +6490,9 @@ function VideoLoggerContent({ setPage, setTab }) {
     </div>
   );
 }
+
+
+
 
 
 // ── PLAYERS DIRECTORY ─────────────────────────────────────────────────────────
