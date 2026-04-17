@@ -1702,7 +1702,7 @@ const TeamShotAnalytics = ({ partnerName, partnerUserId, myUserId, myName }) => 
 
 
 // ── MATCH HISTORY CONTENT ───────────────────────────────────────────────────
-const MatchHistoryContent=()=>{
+const MatchHistoryContent=({setTab, setClaimPrefill})=>{
   const isMobile = useIsMobile();
   const [dbMatches, setDbMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1716,7 +1716,7 @@ const MatchHistoryContent=()=>{
   const [editMatch,      setEditMatch]      = useState(null);
   const [editSaving,     setEditSaving]     = useState(false);
   const [editError,      setEditError]      = useState("");
-  const [logShotsMatchId,setLogShotsMatchId]= useState(null); // opens mini shot logger for claimed match
+
   const [deleteId,    setDeleteId]    = useState(null); // id pending confirmation
   const [deleting,    setDeleting]    = useState(false);
 
@@ -2018,26 +2018,7 @@ const MatchHistoryContent=()=>{
       {editMatch&&<EditModal m={editMatch} onClose={()=>{ setEditMatch(null); setSel(null); }}/>}
       {showS&&<ShotModal selected={selShots} onSave={setSelShots} onClose={()=>setShowS(false)}/>}
 
-      {/* ── Log My Shots modal for claimed matches ── */}
-      {logShotsMatchId && (
-        <div style={{position:"fixed",inset:0,background:"rgba(10,22,40,0.8)",backdropFilter:"blur(6px)",
-          zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
-          <div style={{background:C.cardBg,borderRadius:18,width:"100%",maxWidth:620,
-            maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.3)"}}>
-            <div style={{padding:"16px 22px",borderBottom:`1px solid ${C.border}`,
-              display:"flex",justifyContent:"space-between",alignItems:"center",
-              background:`linear-gradient(135deg,${C.navy},${C.navyMid})`,borderRadius:"18px 18px 0 0"}}>
-              <div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:"white",letterSpacing:"0.04em"}}>Log My Shots</div>
-                <div style={{fontSize:11,color:"#94A3B8",marginTop:2}}>Add your shot data for this claimed match</div>
-              </div>
-              <button onClick={()=>setLogShotsMatchId(null)} style={{background:"none",border:"none",
-                fontSize:22,color:"#94A3B8",cursor:"pointer",lineHeight:1}}>×</button>
-            </div>
-            <MiniShotLogger matchId={logShotsMatchId} onSaved={()=>{setLogShotsMatchId(null);loadMatches();}}/>
-          </div>
-        </div>
-      )}
+      {/* Log my shots now redirects to Log Match tab with prefill */}
 
       {/* ── Delete confirmation modal — rendered at fragment root so fixed positioning works ── */}
       {deleteId && (
@@ -2178,8 +2159,24 @@ const MatchHistoryContent=()=>{
                   borderRadius:8,border:`1px solid ${C.border}`,background:C.pageBg,
                   fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,
                   cursor:"pointer"}}>✏️ Edit</button>
-                {selMatch?.isClaimed && (
-                  <button onClick={()=>setLogShotsMatchId(selMatch.id)} style={{
+                {selMatch?.isClaimed && setTab && setClaimPrefill && (
+                  <button onClick={()=>{
+                    // Pre-populate Log Match with this match's data, then redirect
+                    setClaimPrefill({
+                      matchId:    selMatch.id,
+                      date:       selMatch.date,
+                      opponent:   selMatch.opponent === "—" ? "" : selMatch.opponent,
+                      partner:    selMatch.partner  === "—" ? "" : selMatch.partner,
+                      score:      selMatch.score    === "—" ? "" : selMatch.score,
+                      result:     selMatch.result,
+                      notes:      selMatch.notes,
+                      nvzArrival: selMatch.nvz_arrival || 0,
+                      nvzWin:     selMatch.nvz_win     || 0,
+                      serveNeut:  selMatch.serve_neut  || 0,
+                      errors:     selMatch.errors      || 0,
+                    });
+                    setTab("log");
+                  }} style={{
                     display:"flex",alignItems:"center",gap:5,padding:"6px 12px",
                     borderRadius:8,border:`1px solid ${C.blue}`,background:`${C.blue}10`,
                     fontFamily:"'Outfit'",fontWeight:700,fontSize:12,color:C.blue,
@@ -4907,7 +4904,7 @@ const SHOT_TIPS = {
   "ATP BH":"shot_atpBH","ATP FH":"shot_atpFH",
 };
 
-function VideoLoggerContent({ setPage, setTab }) {
+function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
   const isMobile = useIsMobile();
 
   // ── Match info ────────────────────────────────────────────────────────────────
@@ -4921,6 +4918,35 @@ function VideoLoggerContent({ setPage, setTab }) {
   const [matchSaved,   setMatchSaved]   = useState(false);
   const [matchSaving,  setMatchSaving]  = useState(false);
   const [matchErr,     setMatchErr]     = useState("");
+
+  // ── Prefill from claimed match (Log My Shots flow) ────────────────────────────
+  const [prefillApplied, setPrefillApplied] = useState(false);
+  useEffect(() => {
+    if (!prefill || prefillApplied) return;
+    // Parse date string to ISO format for the date input
+    const parsedDate = (() => {
+      try {
+        const d = new Date(prefill.date);
+        if (!isNaN(d)) return d.toISOString().slice(0,10);
+      } catch(e) {}
+      return new Date().toISOString().slice(0,10);
+    })();
+    if (prefill.date)     setDate(parsedDate);
+    if (prefill.opponent) setOpponent(prefill.opponent);
+    if (prefill.partner)  setPartner(prefill.partner);
+    if (prefill.score)    setScore(prefill.score);
+    if (prefill.result)   setResult(prefill.result || "W");
+    if (prefill.notes)    setNotes(prefill.notes);
+    if (prefill.matchId)  setSavedMatchId(prefill.matchId);
+    // Pre-fill metrics if partner had logged them
+    if (prefill.nvzArrival) setNvzArrived(prefill.nvzArrival);
+    if (prefill.nvzWin)     setNvzWon(prefill.nvzWin);
+    if (prefill.errors)     setErrors(prefill.errors);
+    // Mark the match row as already saved so we write shots to it, not create a new match
+    setMatchSaved(true);
+    setPrefillApplied(true);
+    if (onPrefillConsumed) onPrefillConsumed();
+  }, [prefill]);
 
   // ── Autosave / session restore ────────────────────────────────────────────────
   const AUTOSAVE_KEY = `pi_session_${getCurrentUserId()}`;
@@ -5666,6 +5692,35 @@ function VideoLoggerContent({ setPage, setTab }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
+
+      {/* ── Claimed Match Banner — shown when logging shots for a partner's match ── */}
+      {prefillApplied && prefill?.matchId && (
+        <div style={{
+          background:`linear-gradient(135deg,${C.blue},#2563EB)`,
+          borderRadius:14,padding:"14px 20px",
+          display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",
+          boxShadow:`0 4px 20px rgba(37,99,235,0.2)`,marginBottom:0,
+        }}>
+          <div style={{fontSize:24,flexShrink:0}}>🔗</div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:"white",letterSpacing:"0.04em",lineHeight:1,marginBottom:3}}>
+              Logging Your Shots for a Claimed Match
+            </div>
+            <div style={{fontSize:12,color:"#BFDBFE",lineHeight:1.5}}>
+              Match info is pre-filled from your partner's log.
+              Upload video or paste a URL, then track your shots — save when done.
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",flexShrink:0}}>
+            {prefill.opponent&&<span style={{fontSize:11,color:"white",background:"rgba(255,255,255,0.15)",
+              padding:"3px 10px",borderRadius:20}}>vs {prefill.opponent}</span>}
+            {prefill.score&&<span style={{fontSize:11,color:"white",background:"rgba(255,255,255,0.15)",
+              padding:"3px 10px",borderRadius:20}}>{prefill.score}</span>}
+            <span style={{fontSize:11,color:"white",background:"rgba(255,255,255,0.15)",
+              padding:"3px 10px",borderRadius:20}}>{prefill.result==="W"?"Win":"Loss"}</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Resume Session Banner ── */}
       {showResumeBanner && pendingRestore && (
@@ -6706,9 +6761,10 @@ const PlayersContent = () => {
 
 const MatchCenter=({defaultTab="log", setPage})=>{
   const isMobile = useIsMobile();
-  // Map old "log" default to new "log" (VideoLoggerContent), "video" also maps to "log"
   const resolveTab = (t) => (t==="video"||t==="log") ? "log" : t;
   const [tab,setTab]=useState(resolveTab(defaultTab));
+  // Prefill data passed from Match History → Log Match when claiming
+  const [claimPrefill, setClaimPrefill] = useState(null);
 
   const TABS=[
     {id:"log",      label:"🎬 Log Match"},
@@ -6742,7 +6798,7 @@ const MatchCenter=({defaultTab="log", setPage})=>{
       </div>
 
       {/* ── Tab: Log Match (unified) ── */}
-      {tab==="log"&&<VideoLoggerContent setPage={setPage} setTab={setTab}/>}
+      {tab==="log"&&<VideoLoggerContent setPage={setPage} setTab={setTab} prefill={claimPrefill} onPrefillConsumed={()=>setClaimPrefill(null)}/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
@@ -6751,7 +6807,7 @@ const MatchCenter=({defaultTab="log", setPage})=>{
       {tab==="players"&&<PlayersContent/>}
 
       {/* ── Tab: Match History ── */}
-      {tab==="history"&&<MatchHistoryContent/>}
+      {tab==="history"&&<MatchHistoryContent setTab={setTab} setClaimPrefill={setClaimPrefill}/>}
 
     </div>
   );
