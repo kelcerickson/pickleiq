@@ -2798,113 +2798,110 @@ const Shots = () => {
         </div>
       </div>
 
-      {/* Summary trio */}
-      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)", gap:14, marginBottom:24 }}>
-        <Card style={{ borderLeft:`4px solid ${C.mint}`, cursor:"pointer" }} onClick={()=>setTab("weapons")}>
-          <div style={{ fontSize:11, color:C.mint, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>🏆 Top Weapon</div>
-          <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{topWeapon?.name}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div>
-              <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.mint }}>{topWeapon?._pos||topWeapon?.wins||0} positive</span>
-              {(topWeapon?._tot||0)>0&&<div style={{fontSize:10,color:C.mint,marginTop:1}}>{Math.round((topWeapon._posRate||0)*100)}% positive rate</div>}
-            </div>
-            <div style={{ flex:1 }}><Sparkline data={topWeapon?.winHistory||[]} color={C.mint} width={90} height={36} showDots={false}/></div>
-          </div>
-        </Card>
-        <Card style={{ borderLeft:`4px solid ${C.rose}`, cursor:"pointer" }} onClick={()=>setTab("weaknesses")}>
-          <div style={{ fontSize:11, color:C.rose, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>⚠️ Biggest Weakness</div>
-          <div style={{ fontFamily:"'Bebas Neue'", fontSize:18, color:C.text, marginBottom:6 }}>{topWeakness?.name}</div>
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div>
-              <span style={{ fontFamily:"'DM Mono'", fontSize:isMobile?18:26, fontWeight:700, color:C.rose }}>{topWeakness?._neg||topWeakness?.misses||0} negative</span>
-              {(topWeakness?._tot||0)>0&&<div style={{fontSize:10,color:C.rose,marginTop:1}}>{Math.round((topWeakness._negRate||0)*100)}% negative rate</div>}
-            </div>
-            <div style={{ flex:1 }}><Sparkline data={topWeakness?.missHistory||[]} color={C.rose} width={90} height={36} showDots={false}/></div>
-          </div>
-        </Card>
-        <Card style={{ borderLeft:`4px solid ${C.blue}` }}>
-          <div style={{ fontSize:11, color:C.blue, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:4 }}>📈 Most Improved (4wk)</div>
-          {(()=>{
-            // winHistory stores win-rate % per week slot [oldest … newest]
-            // Only count slots that had real data logged (non-zero)
-            const h = mostImproved?.winHistory||[0,0,0,0];
-            const nonZeroSlots = h.filter(v=>v>0);
-            const hasMultiWeek = nonZeroSlots.length >= 2;
-            // Find oldest non-zero and newest non-zero for a meaningful delta
-            const firstIdx = h.findIndex(v=>v>0);
-            const lastIdx  = h.length - 1 - [...h].reverse().findIndex(v=>v>0);
-            const delta    = hasMultiWeek ? h[lastIdx] - h[firstIdx] : 0;
-            const totalAttempts = (mostImproved?.wins||0) + (mostImproved?.misses||0);
-            const winRate = totalAttempts > 0 ? Math.round((mostImproved?.wins||0)/totalAttempts*100) : 0;
-            if(!hasMultiWeek) return (
-              <div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.text,marginBottom:4}}>{mostImproved?.name||"—"}</div>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div>
-                    <div style={{fontFamily:"'DM Mono'",fontSize:isMobile?14:18,fontWeight:700,color:C.blue}}>{winRate}% win rate</div>
-                    <div style={{fontSize:10,color:C.textLight,marginTop:2,fontStyle:"italic"}}>Log across 2+ sessions to see trend</div>
-                  </div>
-                  <div style={{flex:1}}><Sparkline data={h} color={C.blue} width={90} height={36} showDots={false}/></div>
-                </div>
-              </div>
-            );
-            return (
-              <div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.text,marginBottom:4}}>{mostImproved?.name}</div>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div>
-                    <span style={{fontFamily:"'DM Mono'",fontSize:isMobile?18:26,fontWeight:700,color:delta>=0?C.blue:C.rose}}>
-                      {delta>=0?"+":""}{delta}%
-                    </span>
-                    <div style={{fontSize:10,color:C.textLight,marginTop:2}}>win rate change · now {h[lastIdx]}%</div>
-                  </div>
-                  <div style={{flex:1}}><Sparkline data={h} color={C.blue} width={90} height={36} showDots={false}/></div>
-                </div>
-              </div>
-            );
-          })()}
-        </Card>
-      </div>
+      {/* ── Three insight widgets: Top 3 Weapons · Top 3 Weaknesses · Top 3 Most Improved ── */}
+      {(()=>{
+        const PRIOR = 10;
+        const globalRate = withData.length>0
+          ? withData.reduce((a,s)=>a+s._posRate,0)/withData.length
+          : 0.5;
 
-      {/* Controls row */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:12 }}>
-        {/* Tab switcher */}
-        <div style={{ display:"flex", gap:0, background:C.cardBg,
-          border:`1px solid ${C.border}`, borderRadius:12, padding:4 }}>
-          {[
-            { id:"all",        label:"📊 All Shots",     activeColor:C.navy,  activeBg:"#E5E9F0" },
-            { id:"weapons",    label:"🏆 Weapons",       activeColor:C.mint,  activeBg:C.mintL  },
-            { id:"weaknesses", label:"⚠️ Weaknesses",    activeColor:C.rose,  activeBg:C.roseL  },
-          ].map(t => (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{
-              background:tab===t.id?t.activeBg:"transparent",
-              border:`1px solid ${tab===t.id?t.activeColor+"40":"transparent"}`,
-              borderRadius:9, padding:"8px 18px", fontSize:13, fontWeight:600,
-              color:tab===t.id?t.activeColor:C.textMid,
-              cursor:"pointer", fontFamily:"'Outfit'", transition:"all 0.15s" }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        // Top 3 weapons by Bayesian positive rate
+        const top3Weapons = [...withData]
+          .sort((a,b)=>b._bayesPos-a._bayesPos)
+          .slice(0,3);
 
-        {/* Category chips */}
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-          {[{id:"all",label:"All",color:C.navy}, ...SHOT_CATS].map(c => {
-            const active = cat===c.id;
-            return (
-              <button key={c.id} onClick={()=>setCat(c.id)} style={{
-                background:active?c.color:C.cardBg,
-                border:`1.5px solid ${active?c.color:C.border}`,
-                borderRadius:20, padding:"4px 11px", fontSize:11, fontWeight:600,
-                color:active?(c.id==="all"?"white":C.navy):C.textMid,
-                cursor:"pointer", fontFamily:"'Outfit'", transition:"all 0.15s" }}>
-                {c.id!=="all"&&<span style={{marginRight:3}}>{SHOT_CATS.find(x=>x.id===c.id)?.icon}</span>}
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+        // Top 3 weaknesses by Bayesian negative rate
+        const top3Weak = [...withData]
+          .sort((a,b)=>b._bayesNeg-a._bayesNeg)
+          .slice(0,3);
+
+        // Top 3 most improved by trend delta × log(volume)
+        const top3Improved = [...all]
+          .filter(s=>s.winHistory.filter(v=>v>0).length>=2)
+          .map(s=>{
+            const h=s.winHistory||[0,0,0,0];
+            const firstIdx=h.findIndex(v=>v>0);
+            const lastIdx=h.length-1-[...h].reverse().findIndex(v=>v>0);
+            const delta=h[lastIdx]-h[firstIdx];
+            return {...s, _delta:delta, _lastRate:h[lastIdx], _firstIdx:firstIdx, _lastIdx:lastIdx};
+          })
+          .sort((a,b)=>(b._delta*Math.log1p(b.attempts||0))-(a._delta*Math.log1p(a.attempts||0)))
+          .slice(0,3);
+
+        const ShotInsightRow = ({shot, rank, color, metric}) => {
+          const pos=shot.posCount||0, neu=shot.neuCount||0, neg=shot.negCount||0;
+          const won=shot.wins||0, lost=shot.misses||0;
+          const outTot=pos+neu+neg, rallyTot=won+lost;
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",
+              borderBottom:`1px solid ${C.border}`}}>
+              <div style={{width:20,height:20,borderRadius:"50%",background:`${color}20`,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:10,fontWeight:800,color,flexShrink:0}}>{rank}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:3}}>{shot.name}</div>
+                <div style={{fontSize:11,fontWeight:700,color}}>{metric}</div>
+              </div>
+              {/* Rally ender bar */}
+              {rallyTot>0 && (
+                <div style={{width:80,flexShrink:0}}>
+                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:C.border,marginBottom:2}}>
+                    <div style={{width:`${won/rallyTot*100}%`,background:C.mint}}/>
+                    <div style={{width:`${lost/rallyTot*100}%`,background:C.rose}}/>
+                  </div>
+                  <div style={{fontSize:9,color:C.textLight}}>{Math.round(won/rallyTot*100)}% won</div>
+                </div>
+              )}
+              {/* Quality bar */}
+              {outTot>0 && (
+                <div style={{width:80,flexShrink:0}}>
+                  <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:C.border,marginBottom:2}}>
+                    <div style={{width:`${pos/outTot*100}%`,background:C.mint}}/>
+                    <div style={{width:`${neu/outTot*100}%`,background:"#9CA3AF"}}/>
+                    <div style={{width:`${neg/outTot*100}%`,background:C.rose}}/>
+                  </div>
+                  <div style={{fontSize:9,color:C.textLight}}>{Math.round(pos/outTot*100)}% pos</div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        const InsightWidget = ({title, icon, color, borderColor, shots, metricFn, emptyMsg}) => (
+          <Card style={{borderTop:`3px solid ${borderColor}`,padding:"16px 18px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <span style={{fontSize:16}}>{icon}</span>
+              <span style={{fontFamily:"'Bebas Neue'",fontSize:17,color,letterSpacing:"0.04em"}}>{title}</span>
+            </div>
+            {shots.length===0
+              ? <div style={{padding:"20px 0",textAlign:"center",fontSize:12,color:C.textLight}}>{emptyMsg}</div>
+              : shots.map((s,i)=>(
+                  <ShotInsightRow key={s.name} shot={s} rank={i+1} color={color} metric={metricFn(s)}/>
+                ))
+            }
+          </Card>
+        );
+
+        return (
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:14,marginBottom:24}}>
+            <InsightWidget
+              title="Biggest Weapons" icon="🏆" color={C.mint} borderColor={C.mint}
+              shots={top3Weapons}
+              metricFn={s=>`${Math.round((s._posRate||0)*100)}% positive rate`}
+              emptyMsg="Log 3+ shots to see weapons"/>
+            <InsightWidget
+              title="Biggest Weaknesses" icon="⚠️" color={C.rose} borderColor={C.rose}
+              shots={top3Weak}
+              metricFn={s=>`${Math.round((s._negRate||0)*100)}% negative rate`}
+              emptyMsg="Log 3+ shots to see weaknesses"/>
+            <InsightWidget
+              title="Most Improved (4wk)" icon="📈" color={C.blue} borderColor={C.blue}
+              shots={top3Improved}
+              metricFn={s=>`${s._delta>=0?"+":""}${s._delta}% · now ${s._lastRate}%`}
+              emptyMsg="Log across 2+ sessions to see trends"/>
+          </div>
+        );
+      })()}
 
       {/* ── Category-grouped shot breakdown ── */}
       {(()=>{
