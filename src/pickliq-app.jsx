@@ -800,6 +800,116 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
   );
 };
 
+// ── SHARED PLAYER IDENTITY CALCULATION ────────────────────────────────────────
+// Single source of truth — used by both Dashboard and Profile
+const IDENTITY_STYLES = {
+  Resetter: {
+    icon:"🔄", color:"#34D399", colorL:"#F0FDF4",
+    tagline:"Patient · NVZ-first · Outlast the opponent",
+    description:"You win by controlling the kitchen, minimising errors, and forcing opponents into mistakes. Your 3rd/4th shot drops are a primary weapon — you get to the NVZ consistently and let the opponent self-destruct.",
+    strengths:["Elite NVZ arrival rate","Low unforced errors","Strong reset game under pressure","Makes opponents impatient"],
+    improvements:["Develop a speed-up to punish high balls","Add an occasional drive to keep opponents honest","Work on transition speed to reach NVZ even faster"],
+    proPrinciple:"Ben Johns: 'Never force pace from a weak position. Reset until you have a ball above the net, then attack.'",
+    strategy:"Stay patient at the kitchen. Your goal every rally is to arrive at the NVZ together and out-dink the opponent. Only speed up when the ball is above the net tape and you have a clear angle.",
+  },
+  Driver: {
+    icon:"💥", color:"#60A5FA", colorL:"#EFF6FF",
+    tagline:"Aggressive · Transition-focused · Apply pressure",
+    description:"You impose pace from the baseline and transition zone. Your drive keeps opponents pinned back and disrupts their kitchen game. You prefer tempo over patience.",
+    strengths:["Strong baseline driving game","Effective in transition","Controls rally pace","Puts opponents on defence early"],
+    improvements:["Improve kitchen patience when drives don't land","Develop a softer reset when under pressure","Work on NVZ arrival after your drives"],
+    proPrinciple:"Tyson McGuffin: 'Take time away from your opponent — hit through them before they can reset.'",
+    strategy:"Push pace early, especially on the 4th shot. Use your drive to force weak pop-ups, then attack the high ball. Mix in drops occasionally to keep opponents guessing.",
+  },
+  Attacker: {
+    icon:"⚡", color:"#F87171", colorL:"#FFF5F5",
+    tagline:"Explosive · Speed-up specialist · Win at the net",
+    description:"You're a net threat — your speed-ups and slams win rallies outright. You have elite attack shot selection and play best when dictating at the NVZ.",
+    strengths:["High attack shot win rate","Explosive hands at the kitchen","Strong at ending rallies","Creates fear in opponents"],
+    improvements:["Reduce unforced attack errors","Improve reset when speed-up is read","Add more drops to set up cleaner attacks"],
+    proPrinciple:"Anna Leigh Waters: 'Only attack balls above the net tape. Be patient until you get the right ball, then be ruthless.'",
+    strategy:"Wait for the high ball, then commit. Your best plays come from setting up the attack with a disciplined dink pattern, then finishing with a speed-up or slam when the ball is attackable.",
+  },
+  Balanced: {
+    icon:"⚖️", color:"#A78BFA", colorL:"#F5F3FF",
+    tagline:"Versatile · Adaptable · Hard to read",
+    description:"You have a well-rounded game without an obvious pattern opponents can exploit. You can reset, drive, or attack depending on what the match demands — making you an unpredictable and dangerous partner.",
+    strengths:["No obvious weakness for opponents to target","Can adapt to any partner's style","Effective in multiple game situations","Strong all-court awareness"],
+    improvements:["Identify your single strongest shot and make it elite","Develop a clear identity for high-pressure moments","Sharpen your decision-making — know when to reset vs attack"],
+    proPrinciple:"Simone Jardim: 'The best players don't have one weapon — they have no weaknesses. Make every shot a threat.'",
+    strategy:"Your adaptability is your edge. In close games, identify what's working and lean into it. Communicate with your partner to establish clear roles so you're not both going for the same ball.",
+  },
+};
+
+function computePlayerIdentity(shots, nvzArrival, errors) {
+  const get = (name) => shots.find(s=>s.name===name) || {};
+  const sum = (names, field) => names.reduce((a,n)=>a+(get(n)[field]||0), 0);
+
+  const kitchenNames = ["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"];
+  const dropNames    = ["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand","4th Shot BH","4th Shot FH"];
+  const driveNames   = ["Drive BH","Drive FH"];
+  const attackNames  = ["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"];
+
+  const kitchenAtt = sum(kitchenNames, "attempts");
+  const dropAtt    = sum(dropNames,    "attempts");
+  const driveAtt   = sum(driveNames,   "attempts");
+  const attackAtt  = sum(attackNames,  "attempts");
+  const totalAtt   = kitchenAtt + dropAtt + driveAtt + attackAtt;
+
+  const kitchenWins = sum(kitchenNames, "wins");
+  const driveWins   = sum(driveNames,   "wins");
+  const attackWins  = sum(attackNames,  "wins");
+  const dropWins    = sum(dropNames,    "wins");
+
+  const kitchenPct = totalAtt>0 ? Math.round(kitchenAtt/totalAtt*100) : 0;
+  const drivePct   = totalAtt>0 ? Math.round(driveAtt/totalAtt*100)   : 0;
+  const attackPct  = totalAtt>0 ? Math.round(attackAtt/totalAtt*100)  : 0;
+  const dropPct    = totalAtt>0 ? Math.round(dropAtt/totalAtt*100)    : 0;
+
+  const kitchenWR = kitchenAtt>0 ? Math.round(kitchenWins/kitchenAtt*100) : 0;
+  const driveWR   = driveAtt>0   ? Math.round(driveWins/driveAtt*100)     : 0;
+  const attackWR  = attackAtt>0  ? Math.round(attackWins/attackAtt*100)   : 0;
+  const dropWR    = dropAtt>0    ? Math.round(dropWins/dropAtt*100)       : 0;
+
+  const hasData = totalAtt > 10;
+  let scores = { Resetter:0, Driver:0, Attacker:0, Balanced:0 };
+  if (hasData) {
+    scores.Resetter += kitchenPct>40?30:kitchenPct>25?15:0;
+    scores.Resetter += nvzArrival>70?25:nvzArrival>55?12:0;
+    scores.Resetter += errors<3?20:errors<5?10:0;
+    scores.Resetter += dropWR>60?15:dropWR>45?7:0;
+    scores.Resetter += dropPct>15?10:0;
+
+    scores.Driver   += drivePct>20?35:drivePct>12?18:0;
+    scores.Driver   += driveWR>55?25:driveWR>40?12:0;
+    scores.Driver   += driveAtt>0?10:0;
+    scores.Driver   += errors>8?-10:0;
+
+    scores.Attacker += attackPct>15?35:attackPct>8?18:0;
+    scores.Attacker += attackWR>60?30:attackWR>45?15:0;
+    scores.Attacker += kitchenWR>65?10:0;
+    scores.Attacker += errors>10?-15:0;
+
+    const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
+    scores.Balanced += maxPct<40?30:maxPct<55?15:0;
+    scores.Balanced += kitchenPct>15&&drivePct>8&&attackPct>5?20:0;
+    scores.Balanced += nvzArrival>55&&attackWR>40?15:0;
+  }
+
+  const identity = hasData
+    ? Object.entries(scores).reduce((a,b)=>b[1]>a[1]?b:a)[0]
+    : null;
+
+  return {
+    identity,
+    hasData,
+    kitchenPct, drivePct, attackPct, dropPct,
+    kitchenWR, driveWR, attackWR, dropWR,
+    totalAtt, scores,
+    style: identity ? IDENTITY_STYLES[identity] : null,
+  };
+}
+
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 const Dashboard=({setPage})=>{
   const isMobile = useIsMobile();
@@ -940,43 +1050,14 @@ const Dashboard=({setPage})=>{
       {(()=>{
         const dupr = profileData?.dupr;
 
-        // Compute player identity from shot data
-        const shots = dashShots;
-        const get = (name) => shots.find(s => s.name === name) || {};
-        const sumF = (names, field) => names.reduce((a,n) => a + (get(n)[field] || 0), 0);
-        const kitchenAtt  = sumF(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "attempts");
-        const dropAtt     = sumF(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "attempts");
-        const driveAtt    = sumF(["Drive BH","Drive FH"], "attempts");
-        const attackAtt   = sumF(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "attempts");
-        const totalAtt    = kitchenAtt + dropAtt + driveAtt + attackAtt;
-        const kitchenPct  = totalAtt > 0 ? Math.round(kitchenAtt / totalAtt * 100) : 0;
-        const drivePct    = totalAtt > 0 ? Math.round(driveAtt   / totalAtt * 100) : 0;
-        const attackPct   = totalAtt > 0 ? Math.round(attackAtt  / totalAtt * 100) : 0;
-        const dropPct     = totalAtt > 0 ? Math.round(dropAtt    / totalAtt * 100) : 0;
-        const hasIdData   = totalAtt > 10;
-
-        let scores = { Resetter:0, Driver:0, Attacker:0, Balanced:0 };
-        if (hasIdData) {
-          scores.Resetter += kitchenPct>40?30:kitchenPct>25?15:0;
-          scores.Resetter += CORE_KPIS[3].numVal>70?25:CORE_KPIS[3].numVal>55?12:0;
-          scores.Resetter += CORE_KPIS[1].numVal<3?20:CORE_KPIS[1].numVal<5?10:0;
-          scores.Resetter += dropPct>15?10:0;
-          scores.Driver   += drivePct>20?35:drivePct>12?18:0;
-          scores.Driver   += driveAtt>0?10:0;
-          scores.Attacker += attackPct>15?35:attackPct>8?18:0;
-          scores.Attacker += attackAtt>0&&(sumF(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"],"wins")/Math.max(1,attackAtt))>0.6?20:0;
-          const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
-          scores.Balanced += maxPct<40?30:maxPct<55?15:0;
-          scores.Balanced += kitchenPct>15&&drivePct>8&&attackPct>5?20:0;
-        }
-        const identity = hasIdData ? Object.entries(scores).reduce((a,b)=>b[1]>a[1]?b:a)[0] : null;
-        const IDENTITY_META = {
-          Resetter:{ icon:"🔄", color:C.mint,   tagline:"Patient · NVZ-first · Outlast the opponent" },
-          Driver:  { icon:"💥", color:C.blue,   tagline:"Aggressive · Transition-focused · Apply pressure" },
-          Attacker:{ icon:"⚡", color:C.rose,   tagline:"Explosive · Speed-up specialist · Win at the net" },
-          Balanced:{ icon:"⚖️", color:C.purple, tagline:"Versatile · Adaptable · Hard to read" },
-        };
-        const meta = identity ? IDENTITY_META[identity] : null;
+        // Compute player identity using shared function (same algorithm as Profile page)
+        const idResult = computePlayerIdentity(
+          dashShots,
+          CORE_KPIS[3].numVal || 0,  // nvzArrival
+          CORE_KPIS[1].numVal || 0   // errors
+        );
+        const { identity, hasData:hasIdData, kitchenPct, drivePct, attackPct, dropPct } = idResult;
+        const meta = idResult.style;
 
         return (
           <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"1fr 1fr 2fr", gap:isMobile?10:14, marginBottom:14}}>
@@ -2170,10 +2251,10 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                       score:      selMatch.score    === "—" ? "" : selMatch.score,
                       result:     selMatch.result,
                       notes:      selMatch.notes,
+                      // Only team metrics — NVZ arrival and NVZ win rate
+                      // Errors and Serve Neut are individual, don't prefill from partner's log
                       nvzArrival: selMatch.nvz_arrival || 0,
                       nvzWin:     selMatch.nvz_win     || 0,
-                      serveNeut:  selMatch.serve_neut  || 0,
-                      errors:     selMatch.errors      || 0,
                     });
                     setTab("log");
                   }} style={{
@@ -3713,112 +3794,17 @@ const Profile=({setPage})=>{
 
       {/* ── Pickleball Identity ── */}
       {(()=>{
-        // ── Derive identity from shot data ──────────────────────────────────────
-        const shots = profileShots;
-        const get = (name) => shots.find(s => s.name === name) || {};
-        const sum = (names, field) => names.reduce((a,n) => a + (get(n)[field] || 0), 0);
+        // ── Derive identity using shared function (same as Dashboard) ────────────
+        const idResult   = computePlayerIdentity(
+          profileShots,
+          CORE_KPIS[3].numVal || 0,  // nvzArrival
+          CORE_KPIS[1].numVal || 0   // errors
+        );
+        const { identity, hasData, kitchenPct, drivePct, attackPct, dropPct,
+                kitchenWR, driveWR, attackWR, dropWR } = idResult;
 
-        // Shot volume by style category
-        const kitchenAttempts  = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "attempts");
-        const transitionAttempts = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "attempts");
-        const driveAttempts    = sum(["Drive BH","Drive FH"], "attempts");
-        const attackAttempts   = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "attempts");
-        const totalAttempts    = kitchenAttempts + transitionAttempts + driveAttempts + attackAttempts;
-
-        // Win rates by category
-        const kitchenWins   = sum(["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"], "wins");
-        const driveWins     = sum(["Drive BH","Drive FH"], "wins");
-        const attackWins    = sum(["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"], "wins");
-        const dropWins      = sum(["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand"], "wins");
-
-        const kitchenWR  = kitchenAttempts  > 0 ? Math.round(kitchenWins  / kitchenAttempts  * 100) : 0;
-        const driveWR    = driveAttempts    > 0 ? Math.round(driveWins    / driveAttempts    * 100) : 0;
-        const attackWR   = attackAttempts   > 0 ? Math.round(attackWins   / attackAttempts   * 100) : 0;
-        const dropWR     = transitionAttempts > 0 ? Math.round(dropWins   / transitionAttempts* 100) : 0;
-
-        const kitchenPct  = totalAttempts > 0 ? Math.round(kitchenAttempts  / totalAttempts * 100) : 0;
-        const drivePct    = totalAttempts > 0 ? Math.round(driveAttempts    / totalAttempts * 100) : 0;
-        const attackPct   = totalAttempts > 0 ? Math.round(attackAttempts   / totalAttempts * 100) : 0;
-        const dropPct     = totalAttempts > 0 ? Math.round(transitionAttempts/ totalAttempts * 100) : 0;
-        const nvzArrival  = CORE_KPIS[3].numVal || 0;
-        const errors      = CORE_KPIS[1].numVal || 0;
-
-        const hasData = totalAttempts > 10;
-
-        // ── Identity assignment algorithm ──────────────────────────────────────
-        // Score each style based on shot mix + performance metrics
-        let scores = { Resetter: 0, Driver: 0, Attacker: 0, Balanced: 0 };
-        if (hasData) {
-          // Resetter: high kitchen %, high NVZ arrival, low errors, good drop WR
-          scores.Resetter += kitchenPct > 40 ? 30 : kitchenPct > 25 ? 15 : 0;
-          scores.Resetter += nvzArrival > 70 ? 25 : nvzArrival > 55 ? 12 : 0;
-          scores.Resetter += errors < 3 ? 20 : errors < 5 ? 10 : 0;
-          scores.Resetter += dropWR > 60 ? 15 : dropWR > 45 ? 7 : 0;
-          scores.Resetter += dropPct > 15 ? 10 : 0;
-
-          // Driver: high drive %, high drive WR
-          scores.Driver += drivePct > 20 ? 35 : drivePct > 12 ? 18 : 0;
-          scores.Driver += driveWR > 55 ? 25 : driveWR > 40 ? 12 : 0;
-          scores.Driver += transitionAttempts > 0 ? 10 : 0;
-          scores.Driver += errors > 8 ? -10 : 0; // penalise high errors
-
-          // Attacker: high attack %, high attack WR
-          scores.Attacker += attackPct > 15 ? 35 : attackPct > 8 ? 18 : 0;
-          scores.Attacker += attackWR > 60 ? 30 : attackWR > 45 ? 15 : 0;
-          scores.Attacker += kitchenWR > 65 ? 10 : 0; // good setup for attacks
-          scores.Attacker += errors > 10 ? -15 : 0;
-
-          // Balanced: no single style dominates
-          const maxPct = Math.max(kitchenPct, drivePct, attackPct, dropPct);
-          scores.Balanced += maxPct < 40 ? 30 : maxPct < 55 ? 15 : 0;
-          scores.Balanced += kitchenPct > 15 && drivePct > 8 && attackPct > 5 ? 20 : 0;
-          scores.Balanced += nvzArrival > 55 && attackWR > 40 ? 15 : 0;
-        }
-
-        const identity = hasData
-          ? Object.entries(scores).reduce((a,b) => b[1] > a[1] ? b : a)[0]
-          : null;
-
-        const STYLES = {
-          Resetter: {
-            icon:"🔄", color:C.mint, colorL:C.mintL,
-            tagline:"Patient. NVZ-first. Outlast the opponent.",
-            description:"You win by controlling the kitchen, minimising errors, and forcing opponents into mistakes. Your 3rd/4th shot drops are a primary weapon — you get to the NVZ consistently and let the opponent self-destruct.",
-            strengths:["Elite NVZ arrival rate","Low unforced errors","Strong reset game under pressure","Makes opponents impatient"],
-            improvements:["Develop a speed-up to punish high balls","Add an occasional drive to keep opponents honest","Work on transition speed to reach NVZ even faster"],
-            proPrinciple:"Ben Johns philosophy: 'Never force pace from a weak position. Reset until you have a ball above the net, then attack.'",
-            strategy:"Stay patient at the kitchen. Your goal every rally is to arrive at the NVZ together and out-dink the opponent. Only speed up when the ball is above the net tape and you have a clear angle. Protect your backhand side in transition.",
-          },
-          Driver: {
-            icon:"💥", color:C.blue, colorL:C.blueL,
-            tagline:"Aggressive. Transition-focused. Apply pressure from mid-court.",
-            description:"You use pace and power to disrupt opponents in transition. Your drives prevent opponents from settling into a dinking game and force weak responses you can attack.",
-            strengths:["Strong transition game","Effective use of pace","Keeps opponents back","Creates offensive opportunities"],
-            improvements:["Improve drop accuracy to complement driving","Reduce errors by choosing drives more selectively","Develop more NVZ patience once you arrive at the kitchen"],
-            proPrinciple:"Tyson McGuffin: 'Your drive needs a purpose — either to win the point outright or force a weak pop-up you can put away.'",
-            strategy:"Use your drive strategically — not on every ball, but when the opponent is off-balance or out of position. Pair every drive with a plan for the next ball. Work on the drive-drop combination to keep opponents guessing.",
-          },
-          Attacker: {
-            icon:"⚡", color:C.rose, colorL:C.roseL,
-            tagline:"Explosive. Speed-up specialist. Win at the net.",
-            description:"You look to end rallies with aggressive NVZ attacks. Your speed-ups and slams are your primary finishing weapons. You play to win points, not just avoid losing them.",
-            strengths:["High attack win rate","Strong speed-up recognition","Creates pressure at the NVZ","Can end rallies quickly"],
-            improvements:["Be more selective — only attack balls you win 70%+","Develop more patience to set up better attack opportunities","Strengthen your reset game to recover when attacks are countered"],
-            proPrinciple:"Anna Leigh Waters: 'Be selective with your attacks. The best attackers only speed up when the percentage is strongly in their favour.'",
-            strategy:"Your attack game is a weapon — protect it by being selective. Build the rally through quality dinks until you create a ball above the net tape with a clear angle. When the moment comes, commit fully. Work on your reset to handle counter-attacks.",
-          },
-          Balanced: {
-            icon:"⚖️", color:C.purple, colorL:C.purpleL,
-            tagline:"Versatile. Adaptable. Hard to read.",
-            description:"You have a well-rounded game without an obvious pattern opponents can exploit. You can reset, drive, or attack depending on what the match demands — making you an unpredictable and dangerous partner.",
-            strengths:["No obvious weakness for opponents to target","Can adapt to any partner's style","Effective in multiple game situations","Strong all-court awareness"],
-            improvements:["Identify your single strongest shot and make it elite","Develop a clear identity for high-pressure moments","Sharpen your decision-making — know when to reset vs attack"],
-            proPrinciple:"Simone Jardim: 'Know your strengths deeply. Versatility is only powerful when backed by at least one shot you can rely on under pressure.'",
-            strategy:"Your adaptability is your edge — use it. In close games, identify what's working and lean into it. Communicate with your partner to establish clear roles: one player covers the middle, one covers angles. Your balanced game makes you an excellent partner for specialists.",
-          },
-        };
-
-        const style = identity ? STYLES[identity] : null;
+        // Use shared IDENTITY_STYLES (same source as Dashboard)
+        const style = idResult.style;
 
         return (
           <Card style={{marginBottom:20, overflow:"hidden"}}>
@@ -4238,8 +4224,17 @@ function PlayerSearch({ label, value, onChange, placeholder, multi=false }) {
   const ref  = useRef(null);
   const inpRef = useRef(null);
 
-  // Reset chips when parent clears value (e.g. after save)
-  useEffect(()=>{ if(value==="") setChips([]); }, [value]);
+  // Sync chips whenever value changes from outside (clear on empty, repopulate on prefill)
+  useEffect(()=>{
+    if (value === "") { setChips([]); return; }
+    const incoming = toChips(value);
+    // Only update if chips don't already match (avoid infinite loop)
+    setChips(prev => {
+      const prevStr = prev.join(",");
+      const newStr  = incoming.join(",");
+      return prevStr === newStr ? prev : incoming;
+    });
+  }, [value]);
 
   // Load players + registered users on mount
   useEffect(()=>{
@@ -4938,10 +4933,21 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
     if (prefill.result)   setResult(prefill.result || "W");
     if (prefill.notes)    setNotes(prefill.notes);
     if (prefill.matchId)  setSavedMatchId(prefill.matchId);
-    // Pre-fill metrics if partner had logged them
-    if (prefill.nvzArrival) setNvzArrived(prefill.nvzArrival);
-    if (prefill.nvzWin)     setNvzWon(prefill.nvzWin);
-    if (prefill.errors)     setErrors(prefill.errors);
+    // Pre-fill ONLY team metrics from partner's log (NVZ arrival + NVZ win rate).
+    // Errors and Serve Neut are individual metrics — don't carry over partner's numbers.
+    // The match stores these as percentages; set the display counters to match.
+    // We use the percentage directly as the manual value rather than trying to reconstruct counts.
+    if (prefill.nvzArrival) {
+      // Store the partner's NVZ arrival % as a reference display value
+      // Set arrived = nvzArrival, total = 100 so the % displays correctly
+      setNvzArrived(prefill.nvzArrival);
+      setNvzTotal(100);
+    }
+    if (prefill.nvzWin) {
+      setNvzWon(prefill.nvzWin);
+      setNvzWonTotal(100);
+    }
+    // Explicitly do NOT copy errors or serve neut — those are per-player
     // Mark the match row as already saved so we write shots to it, not create a new match
     setMatchSaved(true);
     setPrefillApplied(true);
