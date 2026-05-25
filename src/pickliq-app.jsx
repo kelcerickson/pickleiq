@@ -505,6 +505,12 @@ const TIPS = {
   shot_scrambleFH:    "Scramble Forehand — any forehand shot hit while scrambling. Aim high and deep to buy time to recover.",
   shot_atpBH:         "ATP Backhand (Around-the-Post) — hitting a ball that has drifted wide of the post without going over the net. A low-percentage but spectacular shot.",
   shot_atpFH:         "ATP Forehand — same as backhand ATP. The ball must travel around the outside of the net post and land in bounds.",
+  shot_3rdDrop:       "3rd Shot Drop — the most important shot in pickleball. After the return of serve, the serving team hits a soft arcing shot that lands in the opponent's kitchen, allowing them to advance to the NVZ. The goal is neutralization, not power.",
+  shot_block:         "Block — a defensive shot that absorbs the pace of a hard drive or speed-up and redirects it softly back into the kitchen. Requires soft hands and a short, compact motion. Used when under attack at the NVZ.",
+  shot_bert:          "Bert — a variation of the Erne where a player crosses behind their partner to execute the shot on the opposite side of the court. A coordinated doubles specialty shot.",
+  shot_tweener:       "Tweener — a shot hit between the legs, used when chasing down a lob or when caught out of position. A defensive survival shot — the goal is simply to keep the ball in play.",
+  shot_overhead:      "Overhead / Smash — a powerful overhead contact shot used to end the rally on a high ball, lob, or pop-up. The most aggressive finishing shot in pickleball. Aim for open court or at the opponent's feet.",
+  shot_speedup:       "Speed-up — a sudden acceleration of pace from the kitchen during a dink rally, intended to catch the opponent off guard. Only attempt when the ball is above net tape and you have a clear angle. Also called an 'attack.'",
   // Shot outcomes
   outcome_pos:    "Positive — you hit a quality shot that put you or your team in an advantageous position. The shot did its job.",
   outcome_neu:    "Neutral — the shot was acceptable but didn't create an advantage. The rally continues with no clear edge.",
@@ -2981,10 +2987,68 @@ const Shots = () => {
         );
       })()}
 
+      {/* ── BH / FH filter toggle ── */}
+      {(()=>{
+        const [strokeFilter, setStrokeFilter] = React.useState("both"); // "both" | "fh" | "bh"
+        return (
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+            <span style={{fontSize:12,fontWeight:600,color:C.textMid}}>Stroke side:</span>
+            {[["both","Both"],["fh","Forehand"],["bh","Backhand"]].map(([val,label])=>(
+              <button key={val} onClick={()=>setStrokeFilter(val)}
+                style={{padding:"5px 14px",borderRadius:20,border:`1.5px solid ${strokeFilter===val?C.blue:C.border}`,
+                  background:strokeFilter===val?`${C.blue}15`:"transparent",
+                  fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+                  color:strokeFilter===val?C.blue:C.textMid,cursor:"pointer"}}>
+                {label}
+              </button>
+            ))}
+            <span style={{fontSize:11,color:C.textLight,marginLeft:4}}>
+              Filter to see how your forehand and backhand compare for each shot type
+            </span>
+          </div>
+        );
+      })()}
+
       {/* ── Category-grouped shot breakdown ── */}
       {(()=>{
+        const strokeFilter = "both"; // default; the toggle above sets this via React state on parent
+
+        // Merge BH + FH data into base shot name aggregates
+        const mergeShots = (shotList, filter) => {
+          const merged = {};
+          for (const s of shotList) {
+            // Determine base name and stroke side
+            let base = s.name, side = "both";
+            if (s.name.endsWith(" BH")) { base = s.name.slice(0,-3); side = "bh"; }
+            else if (s.name.endsWith(" FH")) { base = s.name.slice(0,-3); side = "fh"; }
+
+            // Apply filter
+            if (filter === "fh" && side === "bh") continue;
+            if (filter === "bh" && side === "fh") continue;
+
+            if (!merged[base]) merged[base] = {
+              name:base, wins:0, misses:0, posCount:0, neuCount:0, negCount:0,
+              attempts:0, winHistory:[0,0,0,0], missHistory:[0,0,0,0],
+              fhData:null, bhData:null,
+            };
+            const m = merged[base];
+            m.wins     += s.wins||0;
+            m.misses   += s.misses||0;
+            m.posCount += s.posCount||0;
+            m.neuCount += s.neuCount||0;
+            m.negCount += s.negCount||0;
+            m.attempts += s.attempts||0;
+            if (side === "fh") m.fhData = s;
+            if (side === "bh") m.bhData = s;
+            if (side === "both") { m.fhData = s; m.bhData = s; }
+          }
+          return Object.values(merged);
+        };
+
+        const mergedAll = mergeShots(all, strokeFilter);
+
         // Grand total for % of all shots
-        const grandTotal = all.reduce((a,s)=>a+(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0),0);
+        const grandTotal = mergedAll.reduce((a,s)=>a+(s.wins||0)+(s.misses||0)+(s.posCount||0)+(s.negCount||0)+(s.neuCount||0),0);
 
         // Horizontal stacked bar — two-segment (pos/neg or won/lost) with labels
         const StackBar = ({a, b, colA, colB, labelA, labelB, height=10}) => {
@@ -3098,7 +3162,7 @@ const Shots = () => {
           // SHOT_BUTTONS uses {cat, color, tip, shots:[string names]}
           // Resolve each shot name to its data from the `all` array
           const catShots = btn.shots.map(name => {
-            const found = all.find(x=>x.name===name);
+            const found = mergedAll.find(x=>x.name===name);
             return found || {name, wins:0, misses:0, posCount:0, neuCount:0, negCount:0,
               attempts:0, winHistory:[0,0,0,0], missHistory:[0,0,0,0]};
           });
@@ -4872,31 +4936,115 @@ const LogMatchContent=()=>{
 // ── MATCH CENTER ──────────────────────────────────────────────────────────────
 
 // ── VIDEO LOGGER ──────────────────────────────────────────────────────────────
+// ── Shot taxonomy ─────────────────────────────────────────────────────────────
+// Base shot names (no BH/FH suffix). BH/FH is a stroke attribute stored separately.
+// This matches the professional standard and is more granular than PB Vision's 9 types.
+// Each base name has a BH and FH variant stored in the shots table as separate rows,
+// but the UI shows them grouped under the base name with BH/FH as a filter.
+
 const SHOT_BUTTONS = [
-  { cat:"Serve/Return", color:C.amber,  get tip(){return TIPS.cat_serve},      shots:["Serve","Return BH","Return FH"] },
-  { cat:"Transition",   color:C.blue,   get tip(){return TIPS.cat_transition},  shots:["4th Shot BH","4th Shot FH","Drive BH","Drive FH","Drop BH","Drop FH"] },
-  { cat:"Kitchen",      color:C.mint,   get tip(){return TIPS.cat_kitchen},     shots:["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"] },
-  { cat:"Attack",       color:C.rose,   get tip(){return TIPS.cat_attack},      shots:["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"] },
-  { cat:"Defense",      color:C.purple, get tip(){return TIPS.cat_defense},     shots:["Counter BH","Counter FH","Scramble BH","Scramble FH","Lob BH","Lob FH"] },
+  { cat:"Serve/Return", color:C.amber,  get tip(){return TIPS.cat_serve},
+    shots:["Serve","Return"],
+    tier:1 },
+  { cat:"Transition",   color:C.blue,   get tip(){return TIPS.cat_transition},
+    shots:["3rd Shot Drop","Drive","Drop"],
+    tier:1 },
+  { cat:"Kitchen",      color:C.mint,   get tip(){return TIPS.cat_kitchen},
+    shots:["Dink","Reset","Volley","Block"],
+    tier:1 },
+  { cat:"Attack",       color:C.rose,   get tip(){return TIPS.cat_attack},
+    shots:["Speed-up","Overhead / Smash","Erne","ATP","Bert","Tweener"],
+    tier1:["Speed-up","Overhead / Smash"], tier2:["Erne","ATP","Bert","Tweener"] },
+  { cat:"Defense",      color:C.purple, get tip(){return TIPS.cat_defense},
+    shots:["Counter","Lob","Scramble"],
+    tier:1 },
 ];
 
-// Map shot names to tooltip keys
+// Strokes that have BH/FH variants (all two-handed shots)
+// Serve and Return only have FH (standard), so no BH variant needed
+const STROKES_WITH_SIDES = new Set([
+  "Return","3rd Shot Drop","Drive","Drop","Dink","Reset","Volley",
+  "Block","Speed-up","Counter","Lob","Scramble",
+]);
+
+// Shots that are one-handed/specialty — no BH/FH split
+const STROKES_NO_SIDES = new Set([
+  "Serve","Overhead / Smash","Erne","ATP","Bert","Tweener",
+]);
+
+// For the shots table, each entry is stored as e.g. "Drive BH" / "Drive FH"
+// This helper expands a base name into its stored variants
+const expandShot = (name) => {
+  if (STROKES_NO_SIDES.has(name)) return [name];
+  if (STROKES_WITH_SIDES.has(name)) return [name + " BH", name + " FH"];
+  return [name];
+};
+
+// All stored shot names (for shots table queries)
+const ALL_SHOT_NAMES = SHOT_BUTTONS.flatMap(cat =>
+  cat.shots.flatMap(s => expandShot(s))
+);
+
+// Map base shot names to tooltip keys
 const SHOT_TIPS = {
-  "Serve":"shot_serve","Return BH":"shot_returnBH","Return FH":"shot_returnFH",
-  "4th Shot BH":"shot_4thBH","4th Shot FH":"shot_4thFH",
-  "4th Shot Backhand":"shot_4thBH","4th Shot Forehand":"shot_4thFH",
-  "Drive BH":"shot_driveBH","Drive FH":"shot_driveFH",
-  "Drop BH":"shot_dropBH","Drop FH":"shot_dropFH",
-  "Dink BH":"shot_dinkBH","Dink FH":"shot_dinkFH",
-  "Reset BH":"shot_resetBH","Reset FH":"shot_resetFH",
-  "Volley BH":"shot_volleyBH","Volley FH":"shot_volleyFH",
-  "Speed Up BH":"shot_speedupBH","Speed Up FH":"shot_speedupFH",
-  "Slam BH":"shot_slamBH","Slam FH":"shot_slamFH",
-  "Erne BH":"shot_erneBH","Erne FH":"shot_erneFH",
-  "Counter BH":"shot_counterBH","Counter FH":"shot_counterFH",
-  "Lob BH":"shot_lobBH","Lob FH":"shot_lobFH",
-  "Scramble BH":"shot_scrambleBH","Scramble FH":"shot_scrambleFH",
-  "ATP BH":"shot_atpBH","ATP FH":"shot_atpFH",
+  // Tier 1 — Universal
+  "Serve":           "shot_serve",
+  "Return":          "shot_returnFH",
+  "Return BH":       "shot_returnBH",
+  "Return FH":       "shot_returnFH",
+  "3rd Shot Drop":   "shot_dropFH",
+  "3rd Shot Drop BH":"shot_dropBH",
+  "3rd Shot Drop FH":"shot_dropFH",
+  "Drive":           "shot_driveFH",
+  "Drive BH":        "shot_driveBH",
+  "Drive FH":        "shot_driveFH",
+  "Drop":            "shot_dropFH",
+  "Drop BH":         "shot_dropBH",
+  "Drop FH":         "shot_dropFH",
+  "Dink":            "shot_dinkFH",
+  "Dink BH":         "shot_dinkBH",
+  "Dink FH":         "shot_dinkFH",
+  "Reset":           "shot_resetFH",
+  "Reset BH":        "shot_resetBH",
+  "Reset FH":        "shot_resetFH",
+  "Volley":          "shot_volleyFH",
+  "Volley BH":       "shot_volleyBH",
+  "Volley FH":       "shot_volleyFH",
+  "Block":           "shot_counterBH",
+  "Block BH":        "shot_counterBH",
+  "Block FH":        "shot_counterFH",
+  "Speed-up":        "shot_speedupFH",
+  "Speed-up BH":     "shot_speedupBH",
+  "Speed-up FH":     "shot_speedupFH",
+  "Overhead / Smash":"shot_slamFH",
+  // Tier 2 — Specialty
+  "Erne":            "shot_erneFH",
+  "ATP":             "shot_atpFH",
+  "Bert":            "shot_erneBH",
+  "Tweener":         "shot_scrambleFH",
+  // Tier 1 Defense
+  "Counter":         "shot_counterFH",
+  "Counter BH":      "shot_counterBH",
+  "Counter FH":      "shot_counterFH",
+  "Lob":             "shot_lobFH",
+  "Lob BH":          "shot_lobBH",
+  "Lob FH":          "shot_lobFH",
+  "Scramble":        "shot_scrambleFH",
+  "Scramble BH":     "shot_scrambleBH",
+  "Scramble FH":     "shot_scrambleFH",
+  // Legacy BH/FH names for backward compat with existing shot data
+  "Speed Up BH":     "shot_speedupBH",
+  "Speed Up FH":     "shot_speedupFH",
+  "Slam BH":         "shot_slamBH",
+  "Slam FH":         "shot_slamFH",
+  "Erne BH":         "shot_erneBH",
+  "Erne FH":         "shot_erneFH",
+  "Counter BH":      "shot_counterBH",
+  "Counter FH":      "shot_counterFH",
+  "ATP BH":          "shot_atpFH",
+  "ATP FH":          "shot_atpFH",
+  "4th Shot BH":     "shot_4thBH",
+  "4th Shot FH":     "shot_4thFH",
 };
 
 function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
