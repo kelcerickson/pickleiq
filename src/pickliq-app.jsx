@@ -7381,12 +7381,13 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
         // Create a match record first if we don't have one
         let mid = matchId;
         if (!mid) {
+          await ensureFreshToken();
           const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${getAuthToken()}`,
-              "apikey": SUPABASE_ANON_KEY,
+              "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+              "apikey": SUPABASE_KEY,
               "Prefer": "return=representation",
             },
             body: JSON.stringify({
