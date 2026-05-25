@@ -4989,7 +4989,6 @@ const SHOT_TIPS = {
   "Return":          "shot_returnFH",
   "Return BH":       "shot_returnBH",
   "Return FH":       "shot_returnFH",
-  "Drop":            "shot_drop",
   "Drive":           "shot_driveFH",
   "Drive BH":        "shot_driveBH",
   "Drive FH":        "shot_driveFH",
@@ -5020,10 +5019,6 @@ const SHOT_TIPS = {
   "ATP":             "shot_atpFH",
   "Bert":            "shot_erneBH",
   "Tweener":         "shot_scrambleFH",
-  // Tier 1 Defense
-  "Counter":         "shot_counterFH",
-  "Counter BH":      "shot_counterBH",
-  "Counter FH":      "shot_counterFH",
   "Lob":             "shot_lobFH",
   "Lob BH":          "shot_lobBH",
   "Lob FH":          "shot_lobFH",
