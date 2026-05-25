@@ -471,10 +471,9 @@ const TIPS = {
   dupr:       "Dynamic Universal Pickleball Rating — the industry-standard skill rating. Ranges from 2.0 (beginner) to 8.0 (professional). Enter yours manually from the DUPR app.",
   // Shot categories
   cat_serve:      "Serve/Return shots — the first two shots of every rally. Serve placement and return depth set the tone for the whole point.",
-  cat_transition: "Transition shots — shots hit from mid-court as you move from the baseline to the kitchen. The 3rd/4th shot drop or drive is the most important moment in pickleball.",
-  cat_kitchen:    "Kitchen shots — dinks, resets, and volleys hit at or near the Non-Volley Zone. The battle at the kitchen decides most rallies at competitive levels.",
-  cat_attack:     "Attack shots — aggressive shots intended to end the rally: speed-ups, slams, Ernes, and ATPs. Use these when the ball is above net height with a clear angle.",
-  cat_defense:    "Defense shots — counters, scrambles, and lobs used when you're under pressure. The goal is to survive and reset, not win the point outright.",
+  cat_transition: "Transition shots — the Drive and Drop, hit while moving from the baseline to the kitchen. The 3rd shot drop or drive is the most important moment in pickleball. Get these right and you arrive at the NVZ in control.",
+  cat_kitchen:    "Kitchen shots — Dinks, Volleys, Resets, and Blocks hit at or near the Non-Volley Zone. The battle at the kitchen decides most rallies at competitive levels. Patience and placement beat power here.",
+  cat_specialty:  "Specialty shots — defined by unique mechanics rather than court position. Includes offensive shots (Speed-up, Overhead), defensive shots (Counter, Lob, Scramble), and advanced techniques (Erne, ATP, Bert, Tweener). These shots happen anywhere on the court.",
   // Individual shots
   shot_serve:         "Serve — must land in the diagonal service box. Deep serves to the backhand corner are hardest to return aggressively.",
   shot_returnBH:      "Return Backhand — returning the opponent's serve with your backhand. Aim deep to prevent them from attacking on the 3rd shot.",
@@ -505,7 +504,7 @@ const TIPS = {
   shot_scrambleFH:    "Scramble Forehand — any forehand shot hit while scrambling. Aim high and deep to buy time to recover.",
   shot_atpBH:         "ATP Backhand (Around-the-Post) — hitting a ball that has drifted wide of the post without going over the net. A low-percentage but spectacular shot.",
   shot_atpFH:         "ATP Forehand — same as backhand ATP. The ball must travel around the outside of the net post and land in bounds.",
-  shot_3rdDrop:       "3rd Shot Drop — the most important shot in pickleball. After the return of serve, the serving team hits a soft arcing shot that lands in the opponent's kitchen, allowing them to advance to the NVZ. The goal is neutralization, not power.",
+  shot_drop:          "Drop — a soft arcing shot from the transition zone or baseline that lands in the opponent's kitchen. The 3rd shot drop is the most common version — hit after the return of serve to neutralize the rally and advance to the NVZ. The goal is softness and placement, not power.",
   shot_block:         "Block — a defensive shot that absorbs the pace of a hard drive or speed-up and redirects it softly back into the kitchen. Requires soft hands and a short, compact motion. Used when under attack at the NVZ.",
   shot_bert:          "Bert — a variation of the Erne where a player crosses behind their partner to execute the shot on the opposite side of the court. A coordinated doubles specialty shot.",
   shot_tweener:       "Tweener — a shot hit between the legs, used when chasing down a lob or when caught out of position. A defensive survival shot — the goal is simply to keep the ball in play.",
@@ -851,10 +850,10 @@ function computePlayerIdentity(shots, nvzArrival, errors) {
   const get = (name) => shots.find(s=>s.name===name) || {};
   const sum = (names, field) => names.reduce((a,n)=>a+(get(n)[field]||0), 0);
 
-  const kitchenNames = ["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH"];
-  const dropNames    = ["Drop BH","Drop FH","4th Shot Backhand","4th Shot Forehand","4th Shot BH","4th Shot FH"];
+  const kitchenNames = ["Dink BH","Dink FH","Reset BH","Reset FH","Volley BH","Volley FH","Block BH","Block FH"];
+  const dropNames    = ["Drop BH","Drop FH"];
   const driveNames   = ["Drive BH","Drive FH"];
-  const attackNames  = ["Speed Up BH","Speed Up FH","Slam BH","Slam FH","Erne BH","Erne FH","ATP BH","ATP FH"];
+  const attackNames  = ["Speed-up BH","Speed-up FH","Overhead / Smash","Counter BH","Counter FH","Erne","ATP","Bert"];
 
   const kitchenAtt = sum(kitchenNames, "attempts");
   const dropAtt    = sum(dropNames,    "attempts");
@@ -4937,33 +4936,52 @@ const LogMatchContent=()=>{
 
 // ── VIDEO LOGGER ──────────────────────────────────────────────────────────────
 // ── Shot taxonomy ─────────────────────────────────────────────────────────────
-// Base shot names (no BH/FH suffix). BH/FH is a stroke attribute stored separately.
-// This matches the professional standard and is more granular than PB Vision's 9 types.
-// Each base name has a BH and FH variant stored in the shots table as separate rows,
-// but the UI shows them grouped under the base name with BH/FH as a filter.
+// Organized by mechanics/technique, NOT by intent (offensive/defensive).
+// Intent (Offensive/Defensive/Neutral) and Court Zone are separate filter dimensions.
+// This avoids the position-vs-intent mixing problem.
+//
+// Categories:
+//   Serve/Return  — always hit from specific court positions
+//   Transition    — baseline-to-kitchen movement shots
+//   Kitchen       — NVZ shots (position-based)
+//   Specialty     — defined by unique mechanics, not position
 
 const SHOT_BUTTONS = [
   { cat:"Serve/Return", color:C.amber,  get tip(){return TIPS.cat_serve},
-    shots:["Serve","Return"],
-    tier:1 },
+    shots:["Serve","Return"] },
   { cat:"Transition",   color:C.blue,   get tip(){return TIPS.cat_transition},
-    shots:["3rd Shot Drop","Drive","Drop"],
-    tier:1 },
+    shots:["Drive","Drop"] },
   { cat:"Kitchen",      color:C.mint,   get tip(){return TIPS.cat_kitchen},
-    shots:["Dink","Reset","Volley","Block"],
-    tier:1 },
-  { cat:"Attack",       color:C.rose,   get tip(){return TIPS.cat_attack},
-    shots:["Speed-up","Overhead / Smash","Erne","ATP","Bert","Tweener"],
-    tier1:["Speed-up","Overhead / Smash"], tier2:["Erne","ATP","Bert","Tweener"] },
-  { cat:"Defense",      color:C.purple, get tip(){return TIPS.cat_defense},
-    shots:["Counter","Lob","Scramble"],
-    tier:1 },
+    shots:["Dink","Volley","Reset","Block"] },
+  { cat:"Specialty",    color:C.rose,   get tip(){return TIPS.cat_specialty},
+    shots:["Speed-up","Overhead / Smash","Counter","Lob","Erne","ATP","Bert","Tweener","Scramble"] },
 ];
+
+// Strokes that have BH/FH variants
+const STROKES_WITH_SIDES = new Set([
+  "Return","Drive","Drop","Dink","Volley","Reset","Block",
+  "Speed-up","Counter","Lob","Scramble",
+]);
+
+// Shots with no BH/FH split — unique mechanics or single-handed
+const STROKES_NO_SIDES = new Set([
+  "Serve","Overhead / Smash","Erne","ATP","Bert","Tweener",
+]);
+
+const expandShot = (name) => {
+  if (STROKES_NO_SIDES.has(name)) return [name];
+  if (STROKES_WITH_SIDES.has(name)) return [name + " BH", name + " FH"];
+  return [name];
+};
+
+const ALL_SHOT_NAMES = SHOT_BUTTONS.flatMap(cat =>
+  cat.shots.flatMap(s => expandShot(s))
+);
 
 // Strokes that have BH/FH variants (all two-handed shots)
 // Serve and Return only have FH (standard), so no BH variant needed
 const STROKES_WITH_SIDES = new Set([
-  "Return","3rd Shot Drop","Drive","Drop","Dink","Reset","Volley",
+  "Return","Drive","Drop","Dink","Reset","Volley",
   "Block","Speed-up","Counter","Lob","Scramble",
 ]);
 
@@ -4992,9 +5010,7 @@ const SHOT_TIPS = {
   "Return":          "shot_returnFH",
   "Return BH":       "shot_returnBH",
   "Return FH":       "shot_returnFH",
-  "3rd Shot Drop":   "shot_dropFH",
-  "3rd Shot Drop BH":"shot_dropBH",
-  "3rd Shot Drop FH":"shot_dropFH",
+  "Drop":            "shot_drop",
   "Drive":           "shot_driveFH",
   "Drive BH":        "shot_driveBH",
   "Drive FH":        "shot_driveFH",
@@ -5013,10 +5029,13 @@ const SHOT_TIPS = {
   "Block":           "shot_counterBH",
   "Block BH":        "shot_counterBH",
   "Block FH":        "shot_counterFH",
-  "Speed-up":        "shot_speedupFH",
+  "Speed-up":        "shot_speedup",
   "Speed-up BH":     "shot_speedupBH",
   "Speed-up FH":     "shot_speedupFH",
-  "Overhead / Smash":"shot_slamFH",
+  "Overhead / Smash":"shot_overhead",
+  "Counter":         "shot_counterFH",
+  "Counter BH":      "shot_counterBH",
+  "Counter FH":      "shot_counterFH",
   // Tier 2 — Specialty
   "Erne":            "shot_erneFH",
   "ATP":             "shot_atpFH",
@@ -5271,9 +5290,10 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
     "return backhand":"Return BH", "return bh":"Return BH", "return back hand":"Return BH",
     "return forehand":"Return FH", "return fh":"Return FH", "return fore hand":"Return FH",
     "return":        "Return FH",
-    "fourth shot backhand":"4th Shot Backhand","fourth backhand":"4th Shot Backhand","4th backhand":"4th Shot Backhand",
-    "fourth shot forehand":"4th Shot Forehand","fourth forehand":"4th Shot Forehand","4th forehand":"4th Shot Forehand",
-    "fourth shot":"4th Shot Forehand",
+    "fourth shot backhand":"Drop BH","fourth backhand":"Drop BH","4th backhand":"Drop BH",
+    "fourth shot forehand":"Drop FH","fourth forehand":"Drop FH","4th forehand":"Drop FH",
+    "fourth shot drop":"Drop BH","third shot drop":"Drop BH","3rd shot drop":"Drop BH",
+    "fourth shot":"Drop FH","third shot":"Drop FH",
     "drive backhand":"Drive BH","drive bh":"Drive BH","drive back hand":"Drive BH",
     "drive forehand":"Drive FH","drive fh":"Drive FH","drive fore hand":"Drive FH",
     "drive":         "Drive FH",
@@ -5289,12 +5309,14 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
     "volley backhand":"Volley BH","volley bh":"Volley BH",
     "volley forehand":"Volley FH","volley fh":"Volley FH",
     "volley":        "Volley BH",
-    "speed up backhand":"Speed Up BH","speed up bh":"Speed Up BH","speedup bh":"Speed Up BH",
-    "speed up forehand":"Speed Up FH","speed up fh":"Speed Up FH","speedup fh":"Speed Up FH",
-    "speed up":      "Speed Up FH","speedup":"Speed Up FH",
-    "slam backhand": "Slam BH","slam bh":"Slam BH",
-    "slam forehand": "Slam FH","slam fh":"Slam FH",
-    "slam":          "Slam FH",
+    "speed up backhand":"Speed-up BH","speed up bh":"Speed-up BH","speedup bh":"Speed-up BH",
+    "speed up forehand":"Speed-up FH","speed up fh":"Speed-up FH","speedup fh":"Speed-up FH",
+    "speed up":      "Speed-up FH","speedup":"Speed-up FH","attack backhand":"Speed-up BH",
+    "attack forehand":"Speed-up FH","attack":"Speed-up FH",
+    "slam backhand": "Overhead / Smash","slam bh":"Overhead / Smash",
+    "slam forehand": "Overhead / Smash","slam fh":"Overhead / Smash",
+    "slam":          "Overhead / Smash","overhead":"Overhead / Smash",
+    "smash":         "Overhead / Smash","overhead smash":"Overhead / Smash",
     "erne backhand": "Erne BH","erne bh":"Erne BH",
     "erne forehand": "Erne FH","erne fh":"Erne FH",
     "erne":          "Erne FH",
@@ -7157,7 +7179,7 @@ const METRIC_DRILLS = {
     icon:"🏃",
     color:C.mint,
     drills:[
-      { name:"3rd Shot Drop & Advance", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
+      { name:"Drop Shot & Advance", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
         description:"The single most important drill for improving NVZ arrival. Serve, your partner returns, you hit a drop and sprint to the kitchen. Repeat 25 times.",
         cues:["Don't watch where your drop lands — move!","Low to high contact on the drop","Commit to advancing — hesitation is fatal","Split step as you arrive at the kitchen line"] },
       { name:"Partner Race to the Kitchen", duration:"10 min", difficulty:"Beginner", focus:"Transition",
