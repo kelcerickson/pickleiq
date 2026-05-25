@@ -1084,7 +1084,7 @@ const Dashboard=({setPage})=>{
             <KPICard {...kpis[0]}/>
 
             {/* Player Identity */}
-            <div style={{background:C.cardBg, border:`2px solid ${meta?meta.color+"40":C.border}`,
+            <div style={{border:`2px solid ${meta?meta.color+"40":C.border}`,
               borderRadius:14, padding:"16px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.04)",
               background: meta ? `linear-gradient(135deg,${meta.color}08,${C.cardBg})` : C.cardBg}}>
               <div style={{fontSize:11,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Player Identity</div>
@@ -5039,8 +5039,6 @@ const SHOT_TIPS = {
   "Slam FH":         "shot_slamFH",
   "Erne BH":         "shot_erneBH",
   "Erne FH":         "shot_erneFH",
-  "Counter BH":      "shot_counterBH",
-  "Counter FH":      "shot_counterFH",
   "ATP BH":          "shot_atpFH",
   "ATP FH":          "shot_atpFH",
   "4th Shot BH":     "shot_4thBH",
