@@ -7211,6 +7211,414 @@ const PlayersContent = () => {
   );
 };
 
+// ── LOG MATCH GATEWAY ────────────────────────────────────────────────────────
+// Entry point for Log Match tab — user first chooses Manual or Automated
+function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
+  const [mode, setMode] = React.useState(
+    prefill ? "manual" : null  // if prefilled from claim, go straight to manual
+  );
+  const [automatedStep, setAutomatedStep] = React.useState("choose"); // choose|url|file|submitting|pending|correction
+  const [pendingShots, setPendingShots] = React.useState(null);
+  const [videoUrl, setVideoUrl] = React.useState("");
+  const [matchId, setMatchId] = React.useState(null);
+  const [urlStatus, setUrlStatus] = React.useState("idle"); // idle|submitting|success|error
+  const [urlMessage, setUrlMessage] = React.useState("");
+  const [showGuide, setShowGuide] = React.useState(false);
+
+  const isValidUrl = videoUrl.includes("playsightproduction") && videoUrl.endsWith(".mp4");
+  const uid = getCurrentUserId();
+
+  // ── Mode selection screen ─────────────────────────────────────────────────
+  if (!mode) {
+    return (
+      <div className="fade-up">
+        <div style={{maxWidth:600,margin:"0 auto",paddingTop:8}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",
+            marginBottom:6}}>How would you like to log this match?</div>
+          <div style={{fontSize:13,color:C.textMid,marginBottom:28}}>
+            Automated analysis uses your PlaySight video — no manual logging required.
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            {/* Automated */}
+            <button onClick={()=>setMode("automated")}
+              style={{background:`${C.blue}08`,border:`2px solid ${C.blue}30`,borderRadius:16,
+                padding:"28px 20px",cursor:"pointer",textAlign:"left",transition:"all 0.15s",
+                display:"flex",flexDirection:"column",gap:10}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.background=`${C.blue}12`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.blue}30`;e.currentTarget.style.background=`${C.blue}08`;}}>
+              <div style={{fontSize:32}}>🎬</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
+                Log Match — Automated
+              </div>
+              <div style={{fontSize:12,color:C.textMid,lineHeight:1.6}}>
+                Upload your PlaySight video URL. PB Vision AI analyzes every shot automatically.
+                Review and correct classifications, then save to PickleIntel.
+              </div>
+              <div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:6}}>
+                {["No manual logging","AI shot detection","~15–30 min"].map(tag=>(
+                  <span key={tag} style={{fontSize:10,fontWeight:700,background:`${C.blue}15`,
+                    color:C.blue,padding:"3px 8px",borderRadius:20}}>{tag}</span>
+                ))}
+              </div>
+            </button>
+
+            {/* Manual */}
+            <button onClick={()=>setMode("manual")}
+              style={{background:`${C.mint}08`,border:`2px solid ${C.mint}30`,borderRadius:16,
+                padding:"28px 20px",cursor:"pointer",textAlign:"left",transition:"all 0.15s",
+                display:"flex",flexDirection:"column",gap:10}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.background=`${C.mint}12`;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.mint}30`;e.currentTarget.style.background=`${C.mint}08`;}}>
+              <div style={{fontSize:32}}>✏️</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
+                Log Match — Manual
+              </div>
+              <div style={{fontSize:12,color:C.textMid,lineHeight:1.6}}>
+                Log shots during or after your match using the Shot Tracker, Rally Ender, or Voice Logger.
+              </div>
+              <div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:6}}>
+                {["Works anywhere","No video needed","Voice commands"].map(tag=>(
+                  <span key={tag} style={{fontSize:10,fontWeight:700,background:`${C.mint}15`,
+                    color:C.mint,padding:"3px 8px",borderRadius:20}}>{tag}</span>
+                ))}
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Manual mode — existing VideoLoggerContent ─────────────────────────────
+  if (mode === "manual") {
+    return (
+      <div>
+        <button onClick={()=>setMode(null)}
+          style={{marginBottom:16,padding:"6px 14px",borderRadius:8,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+            color:C.textMid,cursor:"pointer"}}>
+          ← Back
+        </button>
+        <VideoLoggerContent setPage={setPage} setTab={setTab}
+          prefill={prefill} onPrefillConsumed={onPrefillConsumed}/>
+      </div>
+    );
+  }
+
+  // ── Automated mode — choose URL or file ───────────────────────────────────
+  if (mode === "automated" && automatedStep === "choose") {
+    return (
+      <div className="fade-up">
+        <button onClick={()=>setMode(null)}
+          style={{marginBottom:20,padding:"6px 14px",borderRadius:8,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+            color:C.textMid,cursor:"pointer"}}>
+          ← Back
+        </button>
+        <div style={{maxWidth:560,margin:"0 auto"}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",
+            marginBottom:6}}>How do you have your video?</div>
+          <div style={{fontSize:13,color:C.textMid,marginBottom:24}}>
+            PlaySight users: use the URL option. Video file on your computer: use upload.
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {/* URL option */}
+            <button onClick={()=>setAutomatedStep("url")}
+              style={{background:C.cardBg,border:`1.5px solid ${C.border}`,borderRadius:14,
+                padding:"20px 22px",cursor:"pointer",textAlign:"left",transition:"all 0.15s",
+                display:"flex",alignItems:"center",gap:16}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+              <div style={{fontSize:28,flexShrink:0}}>🔗</div>
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
+                  letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
+                  Paste PlaySight Video URL
+                </div>
+                <div style={{fontSize:12,color:C.textMid}}>
+                  For PlaySight courts — get the CDN link from your session download
+                </div>
+              </div>
+              <div style={{marginLeft:"auto",fontSize:18,color:C.textLight}}>›</div>
+            </button>
+
+            {/* File upload option */}
+            <button onClick={()=>setAutomatedStep("file")}
+              style={{background:C.cardBg,border:`1.5px solid ${C.border}`,borderRadius:14,
+                padding:"20px 22px",cursor:"pointer",textAlign:"left",transition:"all 0.15s",
+                display:"flex",alignItems:"center",gap:16}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+              <div style={{fontSize:28,flexShrink:0}}>📁</div>
+              <div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
+                  letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
+                  Upload Video File
+                </div>
+                <div style={{fontSize:12,color:C.textMid}}>
+                  Upload an MP4 from your device — any pickleball court recording
+                </div>
+              </div>
+              <div style={{marginLeft:"auto",fontSize:18,color:C.textLight}}>›</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Automated: Paste URL flow ─────────────────────────────────────────────
+  if (mode === "automated" && automatedStep === "url") {
+    const submitUrl = async () => {
+      if (!isValidUrl) return;
+      setUrlStatus("submitting");
+      setUrlMessage("");
+      try {
+        // Create a match record first if we don't have one
+        let mid = matchId;
+        if (!mid) {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${getAuthToken()}`,
+              "apikey": SUPABASE_ANON_KEY,
+              "Prefer": "return=representation",
+            },
+            body: JSON.stringify({
+              user_id: uid,
+              date: new Date().toISOString().split("T")[0],
+              result: "W",
+              notes: "Created via automated video analysis",
+            }),
+          });
+          const data = await res.json();
+          mid = data[0]?.id;
+          if (!mid) throw new Error("Failed to create match record");
+          setMatchId(mid);
+        }
+
+        // Submit to PB Vision via our analyze endpoint
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videoUrl: videoUrl.trim(), matchId: mid, userId: uid }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          setUrlStatus("error");
+          setUrlMessage(data.error || "Something went wrong. Please try again.");
+          return;
+        }
+        setUrlStatus("success");
+        setAutomatedStep("pending");
+      } catch (err) {
+        setUrlStatus("error");
+        setUrlMessage(err.message || "Network error — please try again.");
+      }
+    };
+
+    return (
+      <div className="fade-up">
+        <button onClick={()=>setAutomatedStep("choose")}
+          style={{marginBottom:20,padding:"6px 14px",borderRadius:8,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+            color:C.textMid,cursor:"pointer"}}>
+          ← Back
+        </button>
+        <div style={{maxWidth:580,margin:"0 auto"}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",
+            marginBottom:6}}>Paste Your PlaySight Video URL</div>
+          <div style={{fontSize:13,color:C.textMid,marginBottom:20}}>
+            Get the CDN link from your PlaySight session download, then paste it below.
+          </div>
+
+          {/* How-to guide */}
+          <div style={{marginBottom:20,background:C.cardBg,border:`1px solid ${C.border}`,
+            borderRadius:12,overflow:"hidden"}}>
+            <div onClick={()=>setShowGuide(v=>!v)}
+              style={{padding:"12px 16px",display:"flex",alignItems:"center",
+                justifyContent:"space-between",cursor:"pointer",userSelect:"none"}}>
+              <span style={{fontSize:13,fontWeight:600,color:C.blue}}>
+                📋 How to get your PlaySight URL
+              </span>
+              <span style={{fontSize:11,color:C.textLight,
+                transform:showGuide?"rotate(180deg)":"rotate(0deg)",
+                transition:"transform 0.2s",display:"inline-block"}}>▼</span>
+            </div>
+            {showGuide && (
+              <div style={{borderTop:`1px solid ${C.border}`,padding:"0 16px 14px"}}>
+                {[
+                  "Go to my.playsight.com and find your session",
+                  "Click the Download button on your match video",
+                  "A new tab opens with the video player",
+                  "Click the three dots ⋮ in the bottom-right corner",
+                  "Select Download — the CDN URL appears in your browser address bar",
+                  "Copy that URL and paste it below",
+                ].map((step,i)=>(
+                  <div key={i} style={{display:"flex",gap:10,padding:"7px 0",
+                    borderBottom:i<5?`1px solid ${C.border}`:""}} >
+                    <div style={{width:22,height:22,borderRadius:"50%",background:`${C.blue}15`,
+                      color:C.blue,fontSize:11,fontWeight:700,flexShrink:0,
+                      display:"flex",alignItems:"center",justifyContent:"center"}}>{i+1}</div>
+                    <div style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>{step}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* URL input */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.textLight,
+              textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>
+              Video URL
+            </div>
+            <input
+              type="text"
+              value={videoUrl}
+              onChange={e=>{setVideoUrl(e.target.value);setUrlStatus("idle");setUrlMessage("");}}
+              placeholder="https://playsightproductionusw2.playsight.com/files/...mp4"
+              style={{width:"100%",background:"white",
+                border:`1.5px solid ${videoUrl.length>0?(isValidUrl?C.mint:C.amber):C.border}`,
+                borderRadius:10,padding:"12px 14px",fontSize:13,
+                fontFamily:"'Outfit'",color:C.text,boxSizing:"border-box"}}
+            />
+            {videoUrl.length>0 && !isValidUrl && (
+              <div style={{fontSize:11,color:C.amber,marginTop:5}}>
+                ⚠ URL must start with https://playsightproduction and end with .mp4
+              </div>
+            )}
+            {isValidUrl && (
+              <div style={{fontSize:11,color:C.mint,marginTop:5}}>
+                ✓ Valid PlaySight CDN URL detected
+              </div>
+            )}
+          </div>
+
+          {/* Submit */}
+          <button onClick={submitUrl}
+            disabled={!isValidUrl||urlStatus==="submitting"}
+            style={{width:"100%",padding:"14px",borderRadius:12,border:"none",
+              background:isValidUrl&&urlStatus!=="submitting"?C.pickle:C.border,
+              fontFamily:"'Outfit'",fontWeight:700,fontSize:15,
+              color:C.navy,cursor:(!isValidUrl||urlStatus==="submitting")?"not-allowed":"pointer",
+              transition:"all 0.15s"}}>
+            {urlStatus==="submitting" ? "Submitting to PB Vision…" : "🎬 Analyze This Match"}
+          </button>
+
+          {urlMessage && (
+            <div style={{marginTop:12,padding:"10px 14px",borderRadius:9,fontSize:12,lineHeight:1.6,
+              background:urlStatus==="error"?`${C.rose}10`:`${C.mint}10`,
+              color:urlStatus==="error"?C.rose:C.mint,
+              border:`1px solid ${urlStatus==="error"?`${C.rose}30`:`${C.mint}30`}`}}>
+              {urlMessage}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Automated: File upload flow ───────────────────────────────────────────
+  if (mode === "automated" && automatedStep === "file") {
+    return (
+      <div className="fade-up">
+        <button onClick={()=>setAutomatedStep("choose")}
+          style={{marginBottom:20,padding:"6px 14px",borderRadius:8,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+            color:C.textMid,cursor:"pointer"}}>
+          ← Back
+        </button>
+        <div style={{maxWidth:560,margin:"0 auto"}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.04em",
+            marginBottom:6}}>Upload Video File</div>
+          <div style={{fontSize:13,color:C.textMid,marginBottom:24}}>
+            Coming soon — direct file upload is in development. For now, use the PlaySight URL option if you play at The Flying Pickle or another PlaySight court.
+          </div>
+          <div style={{padding:"32px",background:`${C.blue}06`,border:`2px dashed ${C.blue}30`,
+            borderRadius:14,textAlign:"center"}}>
+            <div style={{fontSize:40,marginBottom:12}}>📁</div>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,letterSpacing:"0.04em",
+              marginBottom:6}}>File Upload Coming Soon</div>
+            <div style={{fontSize:12,color:C.textMid,lineHeight:1.6,maxWidth:360,margin:"0 auto"}}>
+              Support for direct MP4 upload from any device is on the roadmap.
+              In the meantime, PlaySight courts can use the URL option.
+            </div>
+            <button onClick={()=>setAutomatedStep("url")}
+              style={{marginTop:16,padding:"10px 24px",borderRadius:10,border:"none",
+                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
+                color:C.navy,cursor:"pointer"}}>
+              Use PlaySight URL Instead →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Automated: Analysis pending ───────────────────────────────────────────
+  if (mode === "automated" && automatedStep === "pending") {
+    return (
+      <div className="fade-up" style={{maxWidth:560,margin:"0 auto",paddingTop:8}}>
+        <div style={{textAlign:"center",padding:"40px 20px"}}>
+          <div style={{fontSize:48,marginBottom:16}}>⏳</div>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:C.navy,letterSpacing:"0.04em",
+            marginBottom:8}}>Analysis in Progress</div>
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.7,marginBottom:24}}>
+            Your video has been submitted to PB Vision for analysis.
+            This typically takes <strong>15–30 minutes</strong>.
+            You can close this page — your shot data will appear automatically
+            in the <strong>Shots</strong> page when ready.
+          </div>
+          <div style={{background:`${C.blue}08`,border:`1px solid ${C.blue}20`,
+            borderRadius:12,padding:"16px 20px",marginBottom:20,textAlign:"left"}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.textLight,
+              textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>What happens next</div>
+            {[
+              "PB Vision processes your video with AI (15–30 min)",
+              "Shot classifications are sent back to PickleIntel",
+              "You'll see a notification to review and correct any misclassifications",
+              "Confirmed shots are saved to your analytics",
+            ].map((step,i)=>(
+              <div key={i} style={{display:"flex",gap:10,padding:"5px 0",
+                fontSize:12,color:C.textMid}}>
+                <div style={{width:20,height:20,borderRadius:"50%",
+                  background:`${C.blue}15`,color:C.blue,
+                  fontSize:10,fontWeight:700,flexShrink:0,
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>{i+1}</div>
+                {step}
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+            <button onClick={()=>{setMode(null);setAutomatedStep("choose");setVideoUrl("");}}
+              style={{padding:"10px 24px",borderRadius:10,border:`1px solid ${C.border}`,
+                background:"transparent",fontFamily:"'Outfit'",fontWeight:600,
+                fontSize:13,color:C.textMid,cursor:"pointer"}}>
+              Log Another Match
+            </button>
+            <button onClick={()=>setTab("history")}
+              style={{padding:"10px 24px",borderRadius:10,border:"none",
+                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                fontSize:13,color:C.navy,cursor:"pointer"}}>
+              View Match History →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 const MatchCenter=({defaultTab="log", setPage})=>{
   const isMobile = useIsMobile();
   const resolveTab = (t) => (t==="video"||t==="log") ? "log" : t;
@@ -7249,8 +7657,8 @@ const MatchCenter=({defaultTab="log", setPage})=>{
         ))}
       </div>
 
-      {/* ── Tab: Log Match (unified) ── */}
-      {tab==="log"&&<VideoLoggerContent setPage={setPage} setTab={setTab} prefill={claimPrefill} onPrefillConsumed={()=>setClaimPrefill(null)}/>}
+      {/* ── Tab: Log Match ── */}
+      {tab==="log"&&<LogMatchGateway setPage={setPage} setTab={setTab} prefill={claimPrefill} onPrefillConsumed={()=>setClaimPrefill(null)}/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
