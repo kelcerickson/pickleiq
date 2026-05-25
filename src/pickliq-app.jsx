@@ -5043,6 +5043,291 @@ const SHOT_TIPS = {
   "4th Shot FH":     "shot_4thFH",
 };
 
+// ── AI VIDEO UPLOAD COMPONENT ────────────────────────────────────────────────
+function AIVideoUpload({ matchId, userId }) {
+  const [url,     setUrl]     = React.useState("");
+  const [status,  setStatus]  = React.useState("idle"); // idle|submitting|success|error
+  const [message, setMessage] = React.useState("");
+  const [showGuide, setShowGuide] = React.useState(false);
+
+  const isValid = url.includes("playsightproduction") && url.endsWith(".mp4");
+
+  const submit = async () => {
+    if (!isValid) return;
+    setStatus("submitting");
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: url.trim(), matchId, userId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setStatus("error");
+        setMessage(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+      setStatus("success");
+      setMessage("Video submitted! Analysis takes 15–30 minutes. Your shot data will appear automatically in the Shots page when ready.");
+      setUrl("");
+    } catch (err) {
+      setStatus("error");
+      setMessage("Network error — please check your connection and try again.");
+    }
+  };
+
+  return (
+    <div style={{background:`${C.blue}08`,border:`1.5px solid ${C.blue}25`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <div style={{fontSize:22}}>🎬</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
+            Analyze with AI
+          </div>
+          <div style={{fontSize:11,color:C.textMid,marginTop:2}}>
+            Paste your PlaySight CDN video URL — shots, NVZ data, and rally data will be populated automatically
+          </div>
+        </div>
+        <div style={{fontSize:10,fontWeight:700,background:`${C.mint}15`,color:C.mint,
+          padding:"2px 8px",borderRadius:20,flexShrink:0}}>BETA</div>
+      </div>
+
+      {/* How-to guide */}
+      <div style={{marginBottom:12,background:"white",border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden"}}>
+        <div onClick={()=>setShowGuide(v=>!v)}
+          style={{padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",
+            cursor:"pointer",userSelect:"none"}}>
+          <span style={{fontSize:12,fontWeight:600,color:C.blue}}>📋 How to get your PlaySight URL</span>
+          <span style={{fontSize:10,color:C.textLight,transform:showGuide?"rotate(180deg)":"rotate(0deg)",
+            transition:"transform 0.2s",display:"inline-block"}}>▼</span>
+        </div>
+        {showGuide && (
+          <div style={{padding:"0 12px 10px",borderTop:`1px solid ${C.border}`}}>
+            {[
+              "Open your session at my.playsight.com",
+              "Find your match and click the Download button",
+              "A new tab opens — click the three dots ⋮ bottom-right",
+              "Select Download — the raw video URL opens in your browser",
+              "Copy that URL from the address bar and paste it below",
+            ].map((step,i)=>(
+              <div key={i} style={{display:"flex",gap:8,padding:"5px 0",
+                borderBottom:i<4?`1px solid ${C.border}`:""}} >
+                <div style={{width:18,height:18,borderRadius:"50%",background:`${C.blue}15`,
+                  color:C.blue,fontSize:10,fontWeight:700,flexShrink:0,
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>{i+1}</div>
+                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>{step}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* URL input */}
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:10,fontWeight:700,color:C.textLight,textTransform:"uppercase",
+          letterSpacing:"0.07em",marginBottom:5}}>PlaySight Video URL</div>
+        <input
+          type="text"
+          value={url}
+          onChange={e=>{setUrl(e.target.value);setStatus("idle");setMessage("");}}
+          placeholder="https://playsightproduction...mp4"
+          style={{width:"100%",background:"white",
+            border:`1.5px solid ${url.length>0?(isValid?C.mint:C.amber):C.border}`,
+            borderRadius:9,padding:"10px 12px",fontSize:12,
+            fontFamily:"'Outfit'",color:C.text,boxSizing:"border-box"}}
+        />
+        {url.length>0 && !isValid && (
+          <div style={{fontSize:11,color:C.amber,marginTop:4}}>
+            ⚠ Must start with https://playsightproduction and end with .mp4
+          </div>
+        )}
+        {isValid && (
+          <div style={{fontSize:11,color:C.mint,marginTop:4}}>✓ Valid PlaySight URL</div>
+        )}
+      </div>
+
+      {/* Submit button */}
+      <button onClick={submit}
+        disabled={!isValid||status==="submitting"||status==="success"}
+        style={{width:"100%",padding:"11px",borderRadius:10,border:"none",
+          background:status==="success"?C.mint:status==="submitting"?C.border:isValid?C.pickle:C.border,
+          fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
+          color:status==="success"?"white":C.navy,
+          cursor:(!isValid||status==="submitting"||status==="success")?"not-allowed":"pointer"}}>
+        {status==="submitting"?"Submitting…":status==="success"?"✓ Submitted — analysis in progress":"🎬 Analyze This Match"}
+      </button>
+
+      {message && (
+        <div style={{marginTop:10,padding:"9px 12px",borderRadius:8,fontSize:11,lineHeight:1.6,
+          background:status==="error"?`${C.rose}10`:`${C.mint}10`,
+          color:status==="error"?C.rose:C.mint,
+          border:`1px solid ${status==="error"?`${C.rose}30`:`${C.mint}30`}`}}>
+          {message}
+        </div>
+      )}
+      <div style={{fontSize:10,color:C.textLight,marginTop:8,textAlign:"center"}}>
+        Powered by PB Vision AI · 15–30 min processing · Results appear automatically in Shots page
+      </div>
+    </div>
+  );
+}
+
+// ── SHOT CORRECTION SCREEN ────────────────────────────────────────────────────
+// Shows pending PBV shot data for user review/correction before saving to Supabase
+function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
+  const allBaseShots = SHOT_BUTTONS.flatMap(cat => cat.shots);
+  const [shots, setShots] = React.useState(
+    pendingShots.map((s,i) => ({ ...s, id: i, corrected: false }))
+  );
+  const [filter, setFilter] = React.useState("all"); // all|corrected|uncorrected
+
+  const updateShot = (id, newName) => {
+    setShots(prev => prev.map(s =>
+      s.id === id ? { ...s, name: newName, corrected: true } : s
+    ));
+  };
+
+  const grouped = React.useMemo(() => {
+    const g = {};
+    shots.forEach(s => {
+      const base = s.name.replace(/ BH$| FH$/, "");
+      if (!g[base]) g[base] = [];
+      g[base].push(s);
+    });
+    return g;
+  }, [shots]);
+
+  const correctedCount = shots.filter(s=>s.corrected).length;
+
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",
+      zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:C.cardBg,borderRadius:16,width:"100%",maxWidth:780,
+        maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+
+        {/* Header */}
+        <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em"}}>
+              Review Shot Classifications
+            </div>
+            <button onClick={onCancel}
+              style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.border}`,
+                background:"transparent",fontFamily:"'Outfit'",fontSize:12,
+                color:C.textMid,cursor:"pointer"}}>✕ Cancel</button>
+          </div>
+          <div style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>
+            PB Vision classified <strong>{shots.length} shots</strong> from your match.
+            Correct any misclassifications before saving — this ensures your analytics are accurate.
+            {correctedCount > 0 && <span style={{color:C.mint,fontWeight:600}}> · {correctedCount} corrected</span>}
+          </div>
+
+          {/* Filter tabs */}
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            {[["all","All Shots"],["corrections","Needs Review"],["corrected","Corrected"]].map(([val,label])=>(
+              <button key={val} onClick={()=>setFilter(val)}
+                style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${filter===val?C.blue:C.border}`,
+                  background:filter===val?`${C.blue}15`:"transparent",
+                  fontFamily:"'Outfit'",fontWeight:600,fontSize:11,
+                  color:filter===val?C.blue:C.textMid,cursor:"pointer"}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Shot list */}
+        <div style={{flex:1,overflowY:"auto",padding:"16px 24px"}}>
+          {Object.entries(grouped).map(([base, groupShots]) => {
+            const visible = groupShots.filter(s => {
+              if (filter === "corrected") return s.corrected;
+              if (filter === "corrections") return !s.corrected;
+              return true;
+            });
+            if (!visible.length) return null;
+            return (
+              <div key={base} style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.textLight,textTransform:"uppercase",
+                  letterSpacing:"0.07em",marginBottom:6}}>{base} ({groupShots.length})</div>
+                {visible.map(shot => (
+                  <div key={shot.id} style={{display:"flex",alignItems:"center",gap:10,
+                    padding:"8px 12px",marginBottom:4,borderRadius:9,
+                    background:shot.corrected?`${C.mint}08`:`${C.blue}05`,
+                    border:`1px solid ${shot.corrected?`${C.mint}30`:C.border}`}}>
+                    {/* Rally position badge */}
+                    <div style={{fontSize:10,color:C.textLight,minWidth:32,textAlign:"center",
+                      background:C.pageBg,borderRadius:6,padding:"2px 4px"}}>
+                      R{shot.rally+1}
+                    </div>
+                    {/* Original PBV classification */}
+                    <div style={{fontSize:11,color:C.textMid,minWidth:100}}>
+                      <span style={{fontSize:9,color:C.textLight,display:"block"}}>PBV said</span>
+                      {shot.pbvName || shot.name}
+                    </div>
+                    {/* Arrow */}
+                    <div style={{color:C.textLight,fontSize:14}}>→</div>
+                    {/* Correction dropdown */}
+                    <select
+                      value={shot.name}
+                      onChange={e => updateShot(shot.id, e.target.value)}
+                      style={{flex:1,padding:"6px 10px",borderRadius:8,
+                        border:`1.5px solid ${shot.corrected?C.mint:C.border}`,
+                        fontFamily:"'Outfit'",fontSize:12,color:C.text,
+                        background:"white",cursor:"pointer"}}>
+                      {SHOT_BUTTONS.map(cat => (
+                        <optgroup key={cat.cat} label={cat.cat}>
+                          {cat.shots.flatMap(s => expandShot(s)).map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    {/* Quality indicator */}
+                    <div style={{fontSize:10,fontWeight:700,minWidth:28,textAlign:"center",
+                      color:shot.quality>=0.65?C.mint:shot.quality>=0.35?C.textMid:C.rose}}>
+                      {shot.quality>=0.65?"pos":shot.quality>=0.35?"neu":"neg"}
+                    </div>
+                    {/* Corrected badge */}
+                    {shot.corrected && (
+                      <div style={{fontSize:9,color:C.mint,fontWeight:700,minWidth:20}}>✓</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"16px 24px",borderTop:`1px solid ${C.border}`,
+          display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{fontSize:11,color:C.textMid}}>
+            {correctedCount > 0
+              ? `${correctedCount} shot${correctedCount>1?"s":""} corrected · remaining will be saved as classified by PB Vision`
+              : "No corrections made · all shots will be saved as classified by PB Vision"}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={onCancel}
+              style={{padding:"10px 18px",borderRadius:10,border:`1px solid ${C.border}`,
+                background:"transparent",fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
+                color:C.textMid,cursor:"pointer"}}>
+              Discard
+            </button>
+            <button onClick={()=>onConfirm(shots)}
+              style={{padding:"10px 24px",borderRadius:10,border:"none",
+                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
+                color:C.navy,cursor:"pointer"}}>
+              ✓ Save {shots.length} Shots to PickleIntel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
   const isMobile = useIsMobile();
 
@@ -6017,7 +6302,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
         )}
       </Card>
 
-      {/* ── Step 3: Video / Manual ── */}
+      {/* ── Step 3: AI Video Analysis ── */}
       <Card style={{ padding: "14px 16px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 12 }}>
           <SLabel style={{ marginBottom:0 }}>Step 3 — {noVideo ? "Log Shots Manually" : "Add Video (Optional)"}</SLabel>
@@ -6031,6 +6316,20 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
             </button>
           )}
         </div>
+
+        {/* ── AI Analysis Upload Card ── */}
+        {savedMatchId && !noVideo && (
+          <AIVideoUpload
+            matchId={savedMatchId}
+            userId={getCurrentUserId()}
+          />
+        )}
+        {!savedMatchId && !noVideo && (
+          <div style={{padding:"10px 14px",background:`${C.amber}10`,border:`1px solid ${C.amber}30`,borderRadius:9,
+            fontSize:12,color:C.amber,marginBottom:12}}>
+            💡 Save your match info first (above), then the video upload will appear here.
+          </div>
+        )}
 
         {noVideo && !videoUrl ? (
           /* ── Manual mode: Shot Tracker + Rally Ender side by side, no video ── */
