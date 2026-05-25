@@ -4957,27 +4957,6 @@ const SHOT_BUTTONS = [
     shots:["Speed-up","Overhead / Smash","Counter","Lob","Erne","ATP","Bert","Tweener","Scramble"] },
 ];
 
-// Strokes that have BH/FH variants
-const STROKES_WITH_SIDES = new Set([
-  "Return","Drive","Drop","Dink","Volley","Reset","Block",
-  "Speed-up","Counter","Lob","Scramble",
-]);
-
-// Shots with no BH/FH split — unique mechanics or single-handed
-const STROKES_NO_SIDES = new Set([
-  "Serve","Overhead / Smash","Erne","ATP","Bert","Tweener",
-]);
-
-const expandShot = (name) => {
-  if (STROKES_NO_SIDES.has(name)) return [name];
-  if (STROKES_WITH_SIDES.has(name)) return [name + " BH", name + " FH"];
-  return [name];
-};
-
-const ALL_SHOT_NAMES = SHOT_BUTTONS.flatMap(cat =>
-  cat.shots.flatMap(s => expandShot(s))
-);
-
 // Strokes that have BH/FH variants (all two-handed shots)
 // Serve and Return only have FH (standard), so no BH variant needed
 const STROKES_WITH_SIDES = new Set([
