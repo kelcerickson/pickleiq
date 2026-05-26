@@ -5171,16 +5171,45 @@ function AIVideoUpload({ matchId, userId }) {
 // ── SHOT CORRECTION SCREEN ────────────────────────────────────────────────────
 // Shows pending PBV shot data for user review/correction before saving to Supabase
 function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
-  const allBaseShots = SHOT_BUTTONS.flatMap(cat => cat.shots);
-  const [shots, setShots] = React.useState(
-    pendingShots.map((s,i) => ({ ...s, id: i, corrected: false }))
-  );
-  const [filter, setFilter] = React.useState("all"); // all|corrected|uncorrected
+  // ── Step 1: Player selection ───────────────────────────────────────────────
+  // PBV assigns player_id 0-3. User must pick which one is them.
+  const playerIds = [...new Set(pendingShots.map(s => s.playerId).filter(id => id !== null && id !== undefined))].sort();
+  const [selectedPlayerId, setSelectedPlayerId] = React.useState(null);
 
-  const updateShot = (id, newName) => {
+  // ── Step 2: Shot correction ────────────────────────────────────────────────
+  const myShots = React.useMemo(() => {
+    if (selectedPlayerId === null) return [];
+    return pendingShots
+      .filter(s => s.playerId === selectedPlayerId)
+      .map((s, i) => ({
+        ...s,
+        id: i,
+        corrected: false,
+        // Use pre-computed qualityLabel from webhook (correctly handles 0 = error)
+        // Fallback: 0 = neg, <0.6 = neu, >=0.6 = pos
+        qualityLabel: s.qualityLabel || (s.quality === 0 ? "neg" : s.quality < 0.6 ? "neu" : "pos"),
+        qualityOverride: null, // null = use PBV quality, else "pos"|"neu"|"neg"
+        rallyEnderOverride: null, // null = use PBV is_final, else true|false
+      }));
+  }, [selectedPlayerId, pendingShots]);
+
+  const [shots, setShots] = React.useState([]);
+  React.useEffect(() => { setShots(myShots); }, [myShots]);
+
+  const [filter, setFilter] = React.useState("all");
+
+  const updateShot = (id, field, value) => {
     setShots(prev => prev.map(s =>
-      s.id === id ? { ...s, name: newName, corrected: true } : s
+      s.id === id ? { ...s, [field]: value, corrected: true } : s
     ));
+  };
+
+  // Format timestamp as mm:ss for display
+  const fmtTime = (sec) => {
+    if (sec === null || sec === undefined) return "—";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
   };
 
   const grouped = React.useMemo(() => {
@@ -5193,130 +5222,219 @@ function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
     return g;
   }, [shots]);
 
-  const correctedCount = shots.filter(s=>s.corrected).length;
+  const correctedCount = shots.filter(s => s.corrected).length;
 
+  // ── Player selection screen ────────────────────────────────────────────────
+  if (selectedPlayerId === null) {
+    const playerShotCounts = {};
+    playerIds.forEach(id => {
+      playerShotCounts[id] = pendingShots.filter(s => s.playerId === id).length;
+    });
+    return (
+      <div style={{position:"relative",zIndex:9999,background:C.pageBg,borderRadius:16,
+        width:"100%",maxWidth:560,margin:"40px auto",padding:"32px 28px",
+        border:`1px solid ${C.border}`}}>
+        <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:C.navy,letterSpacing:"0.04em",marginBottom:8}}>
+          Which player are you?
+        </div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:24,lineHeight:1.6}}>
+          PB Vision detected <strong>{playerIds.length} players</strong> in your match and tracked {pendingShots.length} total shots.
+          Select which player is you — only your shots will be saved to your analytics.
+          Your partner and opponents can claim their own shots later.
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {playerIds.map(id => (
+            <button key={id} onClick={() => setSelectedPlayerId(id)}
+              style={{background:C.cardBg,border:`2px solid ${C.blue}30`,borderRadius:14,
+                padding:"20px 16px",cursor:"pointer",textAlign:"left",transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.blue}30`;}}>
+              <div style={{fontSize:28,marginBottom:8}}>👤</div>
+              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em"}}>
+                Player {id + 1}
+              </div>
+              <div style={{fontSize:12,color:C.textMid,marginTop:4}}>
+                {playerShotCounts[id]} shots detected
+              </div>
+            </button>
+          ))}
+        </div>
+        <button onClick={onCancel}
+          style={{marginTop:20,width:"100%",padding:"10px",borderRadius:10,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:13,color:C.textMid,cursor:"pointer"}}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  // ── Shot correction screen ─────────────────────────────────────────────────
   return (
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",
-      zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{background:C.cardBg,borderRadius:16,width:"100%",maxWidth:780,
-        maxHeight:"90vh",overflow:"hidden",display:"flex",flexDirection:"column",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+    <div style={{background:C.cardBg,borderRadius:16,width:"100%",maxWidth:860,
+      margin:"0 auto",display:"flex",flexDirection:"column",
+      border:`1px solid ${C.border}`,overflow:"hidden"}}>
 
-        {/* Header */}
-        <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${C.border}`}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em"}}>
-              Review Shot Classifications
-            </div>
+      {/* Header */}
+      <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.04em"}}>
+            Review Your Shots — Player {selectedPlayerId + 1}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={() => setSelectedPlayerId(null)}
+              style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.border}`,
+                background:"transparent",fontFamily:"'Outfit'",fontSize:12,
+                color:C.textMid,cursor:"pointer"}}>← Change player</button>
             <button onClick={onCancel}
               style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.border}`,
                 background:"transparent",fontFamily:"'Outfit'",fontSize:12,
                 color:C.textMid,cursor:"pointer"}}>✕ Cancel</button>
           </div>
-          <div style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>
-            PB Vision classified <strong>{shots.length} shots</strong> from your match.
-            Correct any misclassifications before saving — this ensures your analytics are accurate.
-            {correctedCount > 0 && <span style={{color:C.mint,fontWeight:600}}> · {correctedCount} corrected</span>}
-          </div>
-
-          {/* Filter tabs */}
-          <div style={{display:"flex",gap:8,marginTop:12}}>
-            {[["all","All Shots"],["corrections","Needs Review"],["corrected","Corrected"]].map(([val,label])=>(
-              <button key={val} onClick={()=>setFilter(val)}
-                style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${filter===val?C.blue:C.border}`,
-                  background:filter===val?`${C.blue}15`:"transparent",
-                  fontFamily:"'Outfit'",fontWeight:600,fontSize:11,
-                  color:filter===val?C.blue:C.textMid,cursor:"pointer"}}>
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
+        <div style={{fontSize:12,color:C.textMid,lineHeight:1.5}}>
+          <strong>{shots.length} shots</strong> attributed to you.
+          Use the timestamp to find each shot in PB Vision's video player and verify the classification, quality, and whether it ended the rally.
+          {correctedCount > 0 && <span style={{color:C.mint,fontWeight:600}}> · {correctedCount} corrected</span>}
+        </div>
+        {/* Filter tabs */}
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          {[["all","All"],["corrected","Corrected"],["enders","Rally Enders"]].map(([val,label])=>(
+            <button key={val} onClick={()=>setFilter(val)}
+              style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${filter===val?C.blue:C.border}`,
+                background:filter===val?`${C.blue}15`:"transparent",
+                fontFamily:"'Outfit'",fontWeight:600,fontSize:11,
+                color:filter===val?C.blue:C.textMid,cursor:"pointer"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {/* Shot list */}
-        <div style={{flex:1,overflowY:"auto",padding:"16px 24px"}}>
-          {Object.entries(grouped).map(([base, groupShots]) => {
-            const visible = groupShots.filter(s => {
-              if (filter === "corrected") return s.corrected;
-              if (filter === "corrections") return !s.corrected;
-              return true;
-            });
-            if (!visible.length) return null;
+      {/* Column headers */}
+      <div style={{display:"grid",gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px",
+        gap:8,padding:"8px 16px",background:C.pageBg,
+        borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        {["Rally","Time","Shot type","Quality","Rally ender","",""].map((h,i)=>(
+          <div key={i} style={{fontSize:10,fontWeight:700,color:C.textLight,
+            textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</div>
+        ))}
+      </div>
+
+      {/* Shot list */}
+      <div style={{overflowY:"auto",maxHeight:"55vh",padding:"8px 16px"}}>
+        {(() => {
+          const visible = shots.filter(s => {
+            if (filter === "corrected") return s.corrected;
+            if (filter === "enders") return (s.rallyEnderOverride !== null ? s.rallyEnderOverride : s.isRallyEnder);
+            return true;
+          });
+          if (!visible.length) return (
+            <div style={{padding:"32px",textAlign:"center",color:C.textLight,fontSize:13}}>
+              No shots in this filter
+            </div>
+          );
+          return visible.map(shot => {
+            const effectiveQuality = shot.qualityOverride || shot.qualityLabel;
+            const effectiveEnder = shot.rallyEnderOverride !== null ? shot.rallyEnderOverride : shot.isRallyEnder;
+            const qColor = effectiveQuality === "pos" ? C.mint : effectiveQuality === "neu" ? C.textMid : C.rose;
             return (
-              <div key={base} style={{marginBottom:16}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.textLight,textTransform:"uppercase",
-                  letterSpacing:"0.07em",marginBottom:6}}>{base} ({groupShots.length})</div>
-                {visible.map(shot => (
-                  <div key={shot.id} style={{display:"flex",alignItems:"center",gap:10,
-                    padding:"8px 12px",marginBottom:4,borderRadius:9,
-                    background:shot.corrected?`${C.mint}08`:`${C.blue}05`,
-                    border:`1px solid ${shot.corrected?`${C.mint}30`:C.border}`}}>
-                    {/* Rally position badge */}
-                    <div style={{fontSize:10,color:C.textLight,minWidth:32,textAlign:"center",
-                      background:C.pageBg,borderRadius:6,padding:"2px 4px"}}>
-                      R{shot.rally+1}
-                    </div>
-                    {/* Original PBV classification */}
-                    <div style={{fontSize:11,color:C.textMid,minWidth:100}}>
-                      <span style={{fontSize:9,color:C.textLight,display:"block"}}>PBV said</span>
-                      {shot.pbvName || shot.name}
-                    </div>
-                    {/* Arrow */}
-                    <div style={{color:C.textLight,fontSize:14}}>→</div>
-                    {/* Correction dropdown */}
-                    <select
-                      value={shot.name}
-                      onChange={e => updateShot(shot.id, e.target.value)}
-                      style={{flex:1,padding:"6px 10px",borderRadius:8,
-                        border:`1.5px solid ${shot.corrected?C.mint:C.border}`,
-                        fontFamily:"'Outfit'",fontSize:12,color:C.text,
-                        background:"white",cursor:"pointer"}}>
-                      {SHOT_BUTTONS.map(cat => (
-                        <optgroup key={cat.cat} label={cat.cat}>
-                          {cat.shots.flatMap(s => expandShot(s)).map(name => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </optgroup>
+              <div key={shot.id} style={{display:"grid",
+                gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px",
+                gap:8,padding:"7px 0",alignItems:"center",
+                borderBottom:`1px solid ${C.border}`,
+                background:shot.corrected?`${C.mint}06`:"transparent"}}>
+
+                {/* Rally badge */}
+                <div style={{fontSize:10,color:C.textLight,textAlign:"center",
+                  background:C.pageBg,borderRadius:6,padding:"2px 4px",
+                  border:`1px solid ${C.border}`}}>R{shot.rally+1}</div>
+
+                {/* Timestamp */}
+                <div style={{fontSize:11,color:C.blue,fontFamily:"monospace",fontWeight:600}}>
+                  {fmtTime(shot.timestampSec)}
+                </div>
+
+                {/* Shot type dropdown */}
+                <select
+                  value={shot.name}
+                  onChange={e => updateShot(shot.id, "name", e.target.value)}
+                  style={{padding:"5px 8px",borderRadius:8,
+                    border:`1.5px solid ${shot.corrected?C.mint:C.border}`,
+                    fontFamily:"'Outfit'",fontSize:12,color:C.text,
+                    background:"white",cursor:"pointer",width:"100%"}}>
+                  {SHOT_BUTTONS.map(cat => (
+                    <optgroup key={cat.cat} label={cat.cat}>
+                      {cat.shots.flatMap(s => expandShot(s)).map(name => (
+                        <option key={name} value={name}>{name}</option>
                       ))}
-                    </select>
-                    {/* Quality indicator */}
-                    <div style={{fontSize:10,fontWeight:700,minWidth:28,textAlign:"center",
-                      color:shot.quality>=0.65?C.mint:shot.quality>=0.35?C.textMid:C.rose}}>
-                      {shot.quality>=0.65?"pos":shot.quality>=0.35?"neu":"neg"}
-                    </div>
-                    {/* Corrected badge */}
-                    {shot.corrected && (
-                      <div style={{fontSize:9,color:C.mint,fontWeight:700,minWidth:20}}>✓</div>
-                    )}
-                  </div>
-                ))}
+                    </optgroup>
+                  ))}
+                </select>
+
+                {/* Quality dropdown */}
+                <select
+                  value={shot.qualityOverride || shot.qualityLabel}
+                  onChange={e => updateShot(shot.id, "qualityOverride", e.target.value)}
+                  style={{padding:"5px 8px",borderRadius:8,
+                    border:`1.5px solid ${qColor}30`,
+                    fontFamily:"'Outfit'",fontSize:12,color:qColor,
+                    background:"white",cursor:"pointer",fontWeight:600}}>
+                  <option value="pos">Positive</option>
+                  <option value="neu">Neutral</option>
+                  <option value="neg">Negative</option>
+                </select>
+
+                {/* Rally ender toggle */}
+                <select
+                  value={effectiveEnder ? "yes" : "no"}
+                  onChange={e => updateShot(shot.id, "rallyEnderOverride", e.target.value === "yes")}
+                  style={{padding:"5px 8px",borderRadius:8,
+                    border:`1.5px solid ${effectiveEnder?C.rose+"50":C.border}`,
+                    fontFamily:"'Outfit'",fontSize:12,
+                    color:effectiveEnder?C.rose:C.textMid,
+                    background:"white",cursor:"pointer"}}>
+                  <option value="no">Not ender</option>
+                  <option value="yes">Rally ender</option>
+                </select>
+
+                {/* Fault badge */}
+                <div style={{fontSize:10,textAlign:"center",
+                  color:shot.hasFault?C.rose:C.textLight,fontWeight:shot.hasFault?700:400}}>
+                  {shot.hasFault ? "fault" : ""}
+                </div>
+
+                {/* Corrected indicator */}
+                <div style={{fontSize:11,color:C.mint,textAlign:"center"}}>
+                  {shot.corrected ? "✓" : ""}
+                </div>
               </div>
             );
-          })}
-        </div>
+          });
+        })()}
+      </div>
 
-        {/* Footer */}
-        <div style={{padding:"16px 24px",borderTop:`1px solid ${C.border}`,
-          display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-          <div style={{fontSize:11,color:C.textMid}}>
-            {correctedCount > 0
-              ? `${correctedCount} shot${correctedCount>1?"s":""} corrected · remaining will be saved as classified by PB Vision`
-              : "No corrections made · all shots will be saved as classified by PB Vision"}
-          </div>
-          <div style={{display:"flex",gap:10}}>
-            <button onClick={onCancel}
-              style={{padding:"10px 18px",borderRadius:10,border:`1px solid ${C.border}`,
-                background:"transparent",fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
-                color:C.textMid,cursor:"pointer"}}>
-              Discard
-            </button>
-            <button onClick={()=>onConfirm(shots)}
-              style={{padding:"10px 24px",borderRadius:10,border:"none",
-                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
-                color:C.navy,cursor:"pointer"}}>
-              ✓ Save {shots.length} Shots to PickleIntel
-            </button>
-          </div>
+      {/* Footer */}
+      <div style={{padding:"14px 16px",borderTop:`1px solid ${C.border}`,flexShrink:0,
+        display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style={{fontSize:11,color:C.textMid}}>
+          {correctedCount > 0
+            ? `${correctedCount} shot${correctedCount>1?"s":""} corrected`
+            : "Review shots above — use the timestamp to verify in PB Vision's player"}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onCancel}
+            style={{padding:"10px 18px",borderRadius:10,border:`1px solid ${C.border}`,
+              background:"transparent",fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
+              color:C.textMid,cursor:"pointer"}}>
+            Discard
+          </button>
+          <button onClick={()=>onConfirm(shots)}
+            style={{padding:"10px 24px",borderRadius:10,border:"none",
+              background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
+              color:C.navy,cursor:"pointer"}}>
+            ✓ Save {shots.length} Shots to PickleIntel
+          </button>
         </div>
       </div>
     </div>
@@ -7668,14 +7786,17 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   if (mode === "automated" && automatedStep === "correction" && pendingShots) {
     const handleConfirm = async (correctedShots) => {
       await ensureFreshToken();
-      // Aggregate shots into counts by name
+      // Aggregate shots into counts by name using effective quality
       const agg = {};
       correctedShots.forEach(shot => {
+        const effectiveQuality = shot.qualityOverride || shot.qualityLabel;
+        const effectiveEnder = shot.rallyEnderOverride !== null ? shot.rallyEnderOverride : shot.isRallyEnder;
         if (!agg[shot.name]) agg[shot.name] = { pos_count:0, neu_count:0, neg_count:0, attempts:0, wins:0, misses:0 };
         agg[shot.name].attempts += 1;
-        if (shot.quality >= 0.65) agg[shot.name].pos_count += 1;
-        else if (shot.quality >= 0.35) agg[shot.name].neu_count += 1;
+        if (effectiveQuality === "pos") agg[shot.name].pos_count += 1;
+        else if (effectiveQuality === "neu") agg[shot.name].neu_count += 1;
         else { agg[shot.name].neg_count += 1; agg[shot.name].misses += 1; }
+        if (effectiveEnder && effectiveQuality === "pos") agg[shot.name].wins += 1;
       });
 
       // Upsert each shot into the shots table
@@ -7739,11 +7860,13 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
     };
 
     return (
-      <ShotCorrectionScreen
-        pendingShots={pendingShots}
-        onConfirm={handleConfirm}
-        onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); }}
-      />
+      <div className="fade-up" style={{width:"100%",paddingTop:8}}>
+        <ShotCorrectionScreen
+          pendingShots={pendingShots}
+          onConfirm={handleConfirm}
+          onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); }}
+        />
+      </div>
     );
   }
 
