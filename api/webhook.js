@@ -1,7 +1,7 @@
 // api/webhook.js
-// Receives PB Vision's callback when video analysis completes.
-// Maps PB Vision shot data to PickleIntel's schema and saves to Supabase.
-// Updated to use final PickleIntel taxonomy (4 categories, no Attack/Defense split)
+// Receives PB Vision callback when video analysis is complete.
+// Saves raw PBV data to video_jobs.raw_pbv_data and sets status = 'needs_review'.
+// The app polls for needs_review jobs and shows ShotCorrectionScreen.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -11,223 +11,163 @@ export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
 
+  let payload;
   try {
-    const payload = req.body;
-    const matchId = payload.metadata?.matchId;
-    const userId  = payload.metadata?.userId;
+    payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  } catch (err) {
+    console.error("Webhook parse error:", err.message);
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
 
-    if (!matchId || !userId) {
-      console.error("Webhook missing matchId or userId", payload.metadata);
-      return res.status(400).json({ error: "Missing metadata" });
-    }
+  console.log("Webhook received. Keys:", Object.keys(payload || {}));
 
-    const players = payload.player_data || [];
-    const myPlayer = players[0] || {};
+  // PB Vision sends: { vid, from_url, insights, stats, cv, error, aiEngineVersion }
+  const { vid, from_url, insights, error: pbvError } = payload;
 
-    // ── PB Vision → PickleIntel shot taxonomy mapping ────────────────────────
-    // PBV types: drive, drop, dink, smash, lob, atp, erne, reset, speedup
-    // PickleIntel categories: Serve/Return | Transition | Kitchen | Specialty
-    const shotMap = {
-      // Transition
-      "drive-forehand":    "Drive FH",
-      "drive-backhand":    "Drive BH",
-      "drop-forehand":     "Drop FH",
-      "drop-backhand":     "Drop BH",
-      // Kitchen
-      "dink-forehand":     "Dink FH",
-      "dink-backhand":     "Dink BH",
-      "reset-forehand":    "Reset FH",
-      "reset-backhand":    "Reset BH",
-      "volley-forehand":   "Volley FH",
-      "volley-backhand":   "Volley BH",
-      // Specialty — offensive
-      "smash-forehand":    "Overhead / Smash",
-      "smash-backhand":    "Overhead / Smash",
-      "speedup-forehand":  "Speed-up FH",
-      "speedup-backhand":  "Speed-up BH",
-      "erne-forehand":     "Erne",
-      "erne-backhand":     "Erne",
-      "atp-forehand":      "ATP",
-      "atp-backhand":      "ATP",
-      // Specialty — defensive
-      "lob-forehand":      "Lob FH",
-      "lob-backhand":      "Lob BH",
-      "counter-forehand":  "Counter FH",
-      "counter-backhand":  "Counter BH",
-      // PBV sometimes uses volley-drive for transition volleys — map to Drive
-      "volley_drive-forehand": "Drive FH",
-      "volley_drive-backhand": "Drive BH",
-    };
-
-    const shotData  = {};
-    const rallyData = {};
-    let errors = 0;
-
-    const initShot = (name) => {
-      if (!shotData[name])  shotData[name]  = { pos: 0, neu: 0, neg: 0 };
-      if (!rallyData[name]) rallyData[name] = { won: 0, lost: 0 };
-    };
-
-    const rallies = payload.rallies || [];
-    for (const rally of rallies) {
-      if (rally.likely_bad) continue;
-
-      const shots = rally.shots || [];
-      for (let i = 0; i < shots.length; i++) {
-        const shot = shots[i];
-        if (shot.player_index !== 0) continue;
-
-        let shotName = null;
-
-        if (i === 0) {
-          // Serve — first shot of every rally
-          shotName = "Serve";
-        } else if (i === 1) {
-          // Return — second shot
-          const side = shot.stroke_side === "backhand" ? "BH" : "FH";
-          shotName = `Return ${side}`;
-        } else {
-          // All other shots — map by type + side
-          const key = `${shot.shot_type}-${shot.stroke_side}`;
-          shotName = shotMap[key] || null;
-
-          // Speed-up flag overrides base type
-          if (shot.is_speedup) {
-            const side = shot.stroke_side === "backhand" ? "BH" : "FH";
-            shotName = `Speed-up ${side}`;
-          }
-
-          // If unmapped, store as-is for correction screen to handle
-          if (!shotName && shot.shot_type) {
-            const side = shot.stroke_side === "backhand" ? "BH" : "FH";
-            shotName = `${shot.shot_type} ${side}`;
-          }
-        }
-
-        if (!shotName) continue;
-        initShot(shotName);
-
-        // Map PBV quality score (0-1) → pos/neu/neg
-        const quality = shot.execution_quality ?? shot.quality ?? null;
-        if (quality !== null) {
-          if (quality >= 0.65)      shotData[shotName].pos++;
-          else if (quality >= 0.35) shotData[shotName].neu++;
-          else                      shotData[shotName].neg++;
-        }
-
-        // Rally ender
-        const isLastShot = i === shots.length - 1;
-        if (isLastShot && shot.winner_type) {
-          if (shot.winner_type === "winner") rallyData[shotName].won++;
-          else if (shot.winner_type === "error" || shot.winner_type === "forced_error") {
-            rallyData[shotName].lost++;
-          }
-        }
-
-        // Unforced errors
-        if (shot.is_error && !shot.is_forced_error) errors++;
-      }
-    }
-
-    // ── NVZ metrics ──────────────────────────────────────────────────────────
-    const nvzArrival = Math.round((myPlayer.kitchen_arrival_percentage || 0) * 100);
-    const teamNvz    = Math.round((myPlayer.team_kitchen_arrival || 0) * 100);
-
-    const srShots  = ["Serve", "Return BH", "Return FH"];
-    const srNeuPos = srShots.reduce((a,n) => a + (shotData[n]?.pos||0) + (shotData[n]?.neu||0), 0);
-    const srTotal  = srShots.reduce((a,n) => a + (shotData[n]?.pos||0) + (shotData[n]?.neu||0) + (shotData[n]?.neg||0), 0);
-    const serveNeut = srTotal > 0 ? Math.round((srNeuPos / srTotal) * 100) : 0;
-
-    // ── Save to Supabase shots table (aggregate) ─────────────────────────────
-    for (const [name, d] of Object.entries(shotData)) {
-      const total = d.pos + d.neu + d.neg;
-      if (!total) continue;
-
-      const existingRes = await fetch(
-        `${supabaseUrl}/rest/v1/shots?name=eq.${encodeURIComponent(name)}&user_id=eq.${userId}&select=id,pos_count,neu_count,neg_count,attempts`,
-        { headers: { "Authorization": `Bearer ${supabaseKey}`, "apikey": supabaseKey } }
-      );
-      const existing = await existingRes.json();
-
-      if (existing.length > 0) {
-        const ex = existing[0];
-        await fetch(`${supabaseUrl}/rest/v1/shots?id=eq.${ex.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"return=minimal" },
-          body: JSON.stringify({
-            pos_count: (ex.pos_count||0) + d.pos,
-            neu_count: (ex.neu_count||0) + d.neu,
-            neg_count: (ex.neg_count||0) + d.neg,
-            attempts:  (ex.attempts||0)  + total,
-          }),
-        });
-      } else {
-        await fetch(`${supabaseUrl}/rest/v1/shots`, {
-          method: "POST",
-          headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"return=minimal" },
-          body: JSON.stringify({
-            name, user_id: userId,
-            pos_count: d.pos, neu_count: d.neu, neg_count: d.neg, attempts: total,
-            wins: rallyData[name]?.won||0, misses: rallyData[name]?.lost||0,
-          }),
-        });
-      }
-    }
-
-    // ── Update rally wins/misses ─────────────────────────────────────────────
-    for (const [name, r] of Object.entries(rallyData)) {
-      const total = r.won + r.lost;
-      if (!total) continue;
-      const existingRes = await fetch(
-        `${supabaseUrl}/rest/v1/shots?name=eq.${encodeURIComponent(name)}&user_id=eq.${userId}&select=id,wins,misses`,
-        { headers: { "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey } }
-      );
-      const existing = await existingRes.json();
-      if (existing.length > 0) {
-        const ex = existing[0];
-        await fetch(`${supabaseUrl}/rest/v1/shots?id=eq.${ex.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"return=minimal" },
-          body: JSON.stringify({ wins:(ex.wins||0)+r.won, misses:(ex.misses||0)+r.lost }),
-        });
-      }
-    }
-
-    // ── Save per-match shot data ──────────────────────────────────────────────
-    await fetch(`${supabaseUrl}/rest/v1/match_shots`, {
-      method: "POST",
-      headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({
-        match_id: matchId, user_id: userId,
-        shot_data: shotData, rally_data: rallyData,
-        nvz_arrived: nvzArrival, nvz_total: 100,
-        nvz_won: teamNvz, nvz_won_total: 100,
-        errors, serve_neut: serveNeut,
-      }),
-    });
-
-    // ── Update match record ───────────────────────────────────────────────────
-    await fetch(`${supabaseUrl}/rest/v1/matches?id=eq.${matchId}`, {
-      method: "PATCH",
-      headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"return=minimal" },
-      body: JSON.stringify({ nvz_arrival:nvzArrival, serve_neut:serveNeut, errors, pbv_analyzed:true }),
-    });
-
-    // ── Update video_jobs status ──────────────────────────────────────────────
-    const jobId = payload.id || payload.jobId || payload.videoId;
-    if (jobId) {
-      await fetch(`${supabaseUrl}/rest/v1/video_jobs?pbv_job_id=eq.${jobId}`, {
+  if (pbvError) {
+    console.error("PBV processing error:", pbvError);
+    // Find job by pbv_job_id and mark as error
+    if (vid) {
+      await fetch(`${supabaseUrl}/rest/v1/video_jobs?pbv_job_id=eq.${vid}`, {
         method: "PATCH",
-        headers: { "Content-Type":"application/json", "Authorization":`Bearer ${supabaseKey}`, "apikey":supabaseKey, "Prefer":"return=minimal" },
-        body: JSON.stringify({ status:"complete", completed_at:new Date().toISOString() }),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+          "apikey": supabaseKey,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({
+          status: "error",
+          error_message: pbvError.reason || "PB Vision processing failed",
+          completed_at: new Date().toISOString(),
+        }),
       });
     }
-
-    console.log(`Webhook processed: matchId=${matchId} shots=${Object.keys(shotData).length} errors=${errors}`);
-    return res.status(200).json({ success: true });
-
-  } catch (err) {
-    console.error("webhook.js error:", err);
-    return res.status(500).json({ error:"Internal server error", detail:err.message });
+    return res.status(200).json({ received: true });
   }
+
+  if (!insights) {
+    console.error("No insights in webhook payload");
+    return res.status(200).json({ received: true, warning: "No insights data" });
+  }
+
+  // ── Map PBV shot data to PickleIntel format ────────────────────────────────
+  // PBV shot types → PickleIntel base names
+  const shotMap = {
+    drive:   "Drive",
+    drop:    "Drop",
+    dink:    "Dink",
+    volley:  "Volley",
+    smash:   "Overhead / Smash",
+    lob:     "Lob",
+    atp:     "ATP",
+    erne:    "Erne",
+    reset:   "Reset",
+    speedup: "Speed-up",
+    speed_up:"Speed-up",
+    block:   "Block",
+    counter: "Counter",
+    serve:   "Serve",
+    return:  "Return",
+  };
+
+  // Strokes that have BH/FH split in PickleIntel
+  const STROKES_WITH_SIDES = new Set([
+    "Return","Drive","Drop","Dink","Reset","Volley",
+    "Block","Speed-up","Counter","Lob","Scramble",
+  ]);
+
+  // Extract shots from PBV insights
+  // PBV insights.rallies[] → each rally has shots[]
+  // Each shot has: type, player, quality (0-1), hand (backhand/forehand)
+  let rawShots = [];
+  try {
+    const rallies = insights?.rallies || insights?.points || [];
+    rallies.forEach((rally, rallyIndex) => {
+      const shots = rally.shots || rally.strokes || [];
+      shots.forEach((shot) => {
+        const pbvType = (shot.type || shot.shot_type || "").toLowerCase();
+        const baseName = shotMap[pbvType];
+        if (!baseName) return; // skip unknown types
+
+        // Determine BH/FH
+        let storedName = baseName;
+        if (STROKES_WITH_SIDES.has(baseName)) {
+          const hand = (shot.hand || shot.stroke_hand || "").toLowerCase();
+          if (hand.includes("back")) {
+            storedName = baseName + " BH";
+          } else {
+            storedName = baseName + " FH"; // default to FH
+          }
+        }
+
+        // Quality: PBV gives 0-1 score. Map to pos/neu/neg
+        const quality = shot.quality ?? shot.score ?? 0.5;
+
+        rawShots.push({
+          rally: rallyIndex,
+          pbvName: pbvType,       // original PBV classification (for display)
+          name: storedName,       // mapped PickleIntel name
+          quality: quality,
+          player: shot.player ?? shot.player_index ?? null,
+        });
+      });
+    });
+  } catch (err) {
+    console.error("Error parsing insights:", err.message);
+    console.log("Insights structure:", JSON.stringify(insights).slice(0, 500));
+  }
+
+  console.log(`Parsed ${rawShots.length} shots from PBV insights`);
+
+  // ── Find the video_jobs row by pbv_job_id ──────────────────────────────────
+  let jobRow = null;
+  try {
+    const jobRes = await fetch(
+      `${supabaseUrl}/rest/v1/video_jobs?pbv_job_id=eq.${encodeURIComponent(vid)}&select=id,match_id,user_id`,
+      {
+        headers: {
+          "Authorization": `Bearer ${supabaseKey}`,
+          "apikey": supabaseKey,
+        },
+      }
+    );
+    const jobs = await jobRes.json();
+    jobRow = jobs?.[0];
+    console.log("Found job row:", JSON.stringify(jobRow));
+  } catch (err) {
+    console.error("Error fetching job row:", err.message);
+  }
+
+  if (!jobRow) {
+    console.error("No video_jobs row found for vid:", vid);
+    // Still return 200 so PBV doesn't retry forever
+    return res.status(200).json({ received: true, warning: "Job row not found" });
+  }
+
+  // ── Save raw PBV data to video_jobs and set status = needs_review ──────────
+  try {
+    await fetch(
+      `${supabaseUrl}/rest/v1/video_jobs?id=eq.${jobRow.id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+          "apikey": supabaseKey,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({
+          status: "needs_review",
+          raw_pbv_data: rawShots,
+          completed_at: new Date().toISOString(),
+        }),
+      }
+    );
+    console.log("Job updated to needs_review with", rawShots.length, "shots");
+  } catch (err) {
+    console.error("Error updating job row:", err.message);
+  }
+
+  return res.status(200).json({ received: true, shots: rawShots.length });
 }
