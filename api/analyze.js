@@ -4,7 +4,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { videoUrl, matchId, userId, userEmail, partnerEmail } = req.body;
+  const { videoUrl, matchId, userId, userEmail } = req.body;
 
   if (!videoUrl || !videoUrl.startsWith("https://")) {
     return res.status(400).json({ error: "Invalid video URL" });
@@ -24,25 +24,32 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "PB Vision API key not configured" });
   }
 
-  // ── Step 1: Submit to PB Vision ────────────────────────────────────────────
-  // Correct endpoint and auth header per PB Vision partner SDK docs:
-  // https://github.com/pbv-public/partner-sdk-nodejs
-  // Header: x-api-key (NOT Authorization: Bearer)
-  // Endpoint: https://api-2o2klzx4pa-uc.a.run.app/partner/add_video_by_url
-  // Body: { url, userEmails, metadata }
+  // ── Step 1: Submit video URL to PB Vision ─────────────────────────────────
+  // Docs: https://github.com/pbv-public/partner-sdk-nodejs
+  // - Header: x-api-key (not Bearer)
+  // - Body: { url, userEmails, name }
+  // - We embed matchId + userId in the video name so the webhook can retrieve them
+  // - Webhook URL is registered separately (one-time) via /partner/webhook/set
   let pbvData;
   try {
+    const videoName = `PI_${matchId}_${userId}`;
+    const pbvBody = {
+      url: videoUrl,
+      name: videoName,
+    };
+    if (userEmail) {
+      pbvBody.userEmails = [userEmail];
+    }
+
+    console.log("Submitting to PBV:", JSON.stringify(pbvBody));
+
     const pbvResponse = await fetch("https://api-2o2klzx4pa-uc.a.run.app/partner/add_video_by_url", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
       },
-      body: JSON.stringify({
-        url: videoUrl,
-        userEmails: [userEmail].filter(Boolean),
-        metadata: { matchId, userId },
-      }),
+      body: JSON.stringify(pbvBody),
     });
 
     const responseText = await pbvResponse.text();
@@ -73,7 +80,7 @@ export default async function handler(req, res) {
   }
 
   // ── Step 2: Save job to Supabase ───────────────────────────────────────────
-  const jobId = pbvData?.id || pbvData?.jobId || pbvData?.videoId || pbvData?.game_id;
+  const jobId = pbvData?.vid || pbvData?.id || pbvData?.jobId || pbvData?.videoId || pbvData?.game_id;
   console.log("PBV job created:", jobId, JSON.stringify(pbvData));
 
   try {
