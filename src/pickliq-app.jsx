@@ -7223,7 +7223,31 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   const isValidUrl = videoUrl.includes("playsightproduction") && videoUrl.endsWith(".mp4");
   const uid = getCurrentUserId();
 
-  // ── Poll video_jobs for needs_review status ──────────────────────────────
+  // ── On mount: check if user was sent here from the global banner ──────────
+  React.useEffect(() => {
+    const reviewMatchId = sessionStorage.getItem("pi_review_match_id");
+    if (!reviewMatchId) return;
+    sessionStorage.removeItem("pi_review_match_id");
+    // Fetch the pending job and jump straight to correction screen
+    (async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${reviewMatchId}&user_id=eq.${uid}&status=eq.needs_review&select=id,raw_pbv_data`,
+          { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
+        );
+        const jobs = await res.json();
+        const job = jobs?.[0];
+        if (job?.raw_pbv_data?.length > 0) {
+          setMatchId(reviewMatchId);
+          setPendingShots(job.raw_pbv_data);
+          setMode("automated");
+          setAutomatedStep("correction");
+        }
+      } catch (err) {
+        console.error("Review redirect error:", err.message);
+      }
+    })();
+  }, [uid]);
   React.useEffect(() => {
     if (automatedStep !== "pending" || !matchId) return;
     const interval = setInterval(async () => {
@@ -9022,6 +9046,7 @@ export default function App(){
   const [showHelp,setShowHelp] = useState(false);
   const [authUser, setAuthUser] = useState(null);   // null = not logged in
   const [authLoading, setAuthLoading] = useState(true); // checking stored session
+  const [pendingReviewJob, setPendingReviewJob] = useState(null); // global needs_review banner
 
   // On mount: try to restore session from localStorage
   useEffect(()=>{
@@ -9057,7 +9082,36 @@ export default function App(){
     sb.signOut();
     setAuthUser(null);
     setPage("dashboard");
+    setPendingReviewJob(null);
   };
+
+  // ── Global poll for needs_review video jobs ──────────────────────────────
+  // Runs every 30 seconds while logged in, regardless of which page is active.
+  // Shows a banner when PB Vision finishes — even if user navigated away.
+  useEffect(() => {
+    if (!authUser) return;
+    const checkForReview = async () => {
+      const uid = getCurrentUserId();
+      if (!uid) return;
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/video_jobs?user_id=eq.${uid}&status=eq.needs_review&select=id,match_id,raw_pbv_data,created_at&limit=1`,
+          { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
+        );
+        const jobs = await res.json();
+        if (jobs?.[0]?.raw_pbv_data?.length > 0) {
+          setPendingReviewJob(jobs[0]);
+        } else {
+          setPendingReviewJob(null);
+        }
+      } catch (err) {
+        console.error("Global review poll error:", err.message);
+      }
+    };
+    checkForReview(); // check immediately on login
+    const interval = setInterval(checkForReview, 30000);
+    return () => clearInterval(interval);
+  }, [authUser]);
 
   // Loading state while checking session
   if (authLoading) return (
@@ -9086,6 +9140,45 @@ export default function App(){
       {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
       <div style={{minHeight:"100vh",background:C.pageBg,display:"flex",flexDirection:"column",overflowX:"hidden",width:"100%"}}>
         <TopNav page={page} setPage={setPage} onSignOut={handleSignOut} authUser={authUser}/>
+
+        {/* ── Global: Analysis Ready Banner ── */}
+        {pendingReviewJob && (
+          <div style={{
+            background: `linear-gradient(90deg, ${C.mint}18, ${C.mint}10)`,
+            borderBottom: `2px solid ${C.mint}`,
+            padding: "12px 24px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>✅</span>
+              <div>
+                <div style={{ fontFamily: "'Outfit'", fontWeight: 700, fontSize: 14, color: C.navy }}>
+                  Your match analysis is ready!
+                </div>
+                <div style={{ fontSize: 12, color: C.textMid }}>
+                  PB Vision has finished analyzing your video. Review and correct shot classifications before they're saved.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setPage("matches");
+                // Store pending job so LogMatchGateway can pick it up on mount
+                if (pendingReviewJob?.match_id) {
+                  sessionStorage.setItem("pi_review_match_id", pendingReviewJob.match_id);
+                }
+              }}
+              style={{
+                background: C.mint, border: "none", borderRadius: 10,
+                padding: "10px 20px", fontFamily: "'Outfit'", fontWeight: 700,
+                fontSize: 13, color: C.navy, cursor: "pointer", whiteSpace: "nowrap",
+              }}>
+              Review Shots →
+            </button>
+          </div>
+        )}
+
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
