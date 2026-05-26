@@ -16,8 +16,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const apiKey     = process.env.PBV_API_KEY;
-  const webhookUrl = process.env.PBV_WEBHOOK_URL || "https://getpickleintel.com/api/webhook";
+  const apiKey      = process.env.PBV_API_KEY;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
 
@@ -26,18 +25,22 @@ export default async function handler(req, res) {
   }
 
   // ── Step 1: Submit to PB Vision ────────────────────────────────────────────
+  // Correct endpoint and auth header per PB Vision partner SDK docs:
+  // https://github.com/pbv-public/partner-sdk-nodejs
+  // Header: x-api-key (NOT Authorization: Bearer)
+  // Endpoint: https://api-2o2klzx4pa-uc.a.run.app/partner/add_video_by_url
+  // Body: { url, userEmails, metadata }
   let pbvData;
   try {
-    const pbvResponse = await fetch("https://app.pb.vision/api/partner/v1/videos", {
+    const pbvResponse = await fetch("https://api-2o2klzx4pa-uc.a.run.app/partner/add_video_by_url", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
       },
       body: JSON.stringify({
-        videoUrl,
-        userEmails: [userEmail, partnerEmail].filter(Boolean),
-        webhookUrl,
+        url: videoUrl,
+        userEmails: [userEmail].filter(Boolean),
         metadata: { matchId, userId },
       }),
     });
@@ -92,7 +95,6 @@ export default async function handler(req, res) {
       }),
     });
   } catch (err) {
-    // Don't fail the whole request if Supabase logging fails
     console.error("Supabase log error:", err.message);
   }
 
