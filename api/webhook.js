@@ -20,6 +20,15 @@ export default async function handler(req, res) {
   }
 
   console.log("Webhook received. Keys:", Object.keys(payload || {}));
+  if (payload?.insights) {
+    const rallies = payload.insights?.rallies || payload.insights?.points || [];
+    if (rallies.length > 0) {
+      console.log("FIRST RALLY STRUCTURE:", JSON.stringify(rallies[0]).slice(0, 1000));
+      const shots = rallies[0]?.shots || rallies[0]?.strokes || [];
+      if (shots.length > 0) { console.log("FIRST SHOT STRUCTURE:", JSON.stringify(shots[0])); }
+    }
+    console.log("INSIGHTS TOP-LEVEL KEYS:", Object.keys(payload.insights));
+  }
 
   // PB Vision sends: { vid, from_url, insights, stats, cv, error, aiEngineVersion }
   const { vid, from_url, insights, error: pbvError } = payload;
