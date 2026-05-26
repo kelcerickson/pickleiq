@@ -19,36 +19,38 @@ export default async function handler(req, res) {
   const apiKey      = process.env.PBV_API_KEY;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
+  const webhookUrl  = "https://getpickleintel.com/api/webhook";
 
   if (!apiKey || apiKey === "pending") {
     return res.status(500).json({ error: "PB Vision API key not configured" });
   }
 
-  // ── Step 1: Submit video URL to PB Vision ─────────────────────────────────
-  // Docs: https://github.com/pbv-public/partner-sdk-nodejs
-  // - Header: x-api-key (not Bearer)
-  // - Body: { url, userEmails, name }
-  // - We embed matchId + userId in the video name so the webhook can retrieve them
-  // - Webhook URL is registered separately (one-time) via /partner/webhook/set
+  // ── Step 1: Register webhook (every time, idempotent) ─────────────────────
+  // PB Vision stores one webhook URL per API key. Re-registering is safe.
+  try {
+    const whRes = await fetch("https://api-2o2klzx4pa-uc.a.run.app/partner/webhook/set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify({ url: webhookUrl }),
+    });
+    console.log("Webhook registration status:", whRes.status);
+  } catch (err) {
+    console.error("Webhook registration error (non-fatal):", err.message);
+    // Don't fail — proceed with video submission anyway
+  }
+
+  // ── Step 2: Submit video URL to PB Vision ─────────────────────────────────
   let pbvData;
   try {
     const videoName = `PI_${matchId}_${userId}`;
-    const pbvBody = {
-      url: videoUrl,
-      name: videoName,
-    };
-    if (userEmail) {
-      pbvBody.userEmails = [userEmail];
-    }
+    const pbvBody = { url: videoUrl, name: videoName };
+    if (userEmail) pbvBody.userEmails = [userEmail];
 
     console.log("Submitting to PBV:", JSON.stringify(pbvBody));
 
     const pbvResponse = await fetch("https://api-2o2klzx4pa-uc.a.run.app/partner/add_video_by_url", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-      },
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify(pbvBody),
     });
 
@@ -79,7 +81,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── Step 2: Save job to Supabase ───────────────────────────────────────────
+  // ── Step 3: Save job to Supabase ───────────────────────────────────────────
   const jobId = pbvData?.vid || pbvData?.id || pbvData?.jobId || pbvData?.videoId || pbvData?.game_id;
   console.log("PBV job created:", jobId, JSON.stringify(pbvData));
 
