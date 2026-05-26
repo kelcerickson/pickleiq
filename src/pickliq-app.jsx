@@ -7223,6 +7223,34 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   const isValidUrl = videoUrl.includes("playsightproduction") && videoUrl.endsWith(".mp4");
   const uid = getCurrentUserId();
 
+  // ── Poll video_jobs for needs_review status ──────────────────────────────
+  React.useEffect(() => {
+    if (automatedStep !== "pending" || !matchId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${matchId}&user_id=eq.${uid}&select=id,status,raw_pbv_data`,
+          { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
+        );
+        const jobs = await res.json();
+        const job = jobs?.[0];
+        if (job?.status === "needs_review" && job?.raw_pbv_data?.length > 0) {
+          clearInterval(interval);
+          setPendingShots(job.raw_pbv_data);
+          setAutomatedStep("correction");
+        } else if (job?.status === "error") {
+          clearInterval(interval);
+          setUrlStatus("error");
+          setUrlMessage("PB Vision reported an error processing this video.");
+          setAutomatedStep("url");
+        }
+      } catch (err) {
+        console.error("Polling error:", err.message);
+      }
+    }, 15000); // poll every 15 seconds
+    return () => clearInterval(interval);
+  }, [automatedStep, matchId, uid]);
+
   // ── Mode selection screen ─────────────────────────────────────────────────
   if (!mode) {
     return (
@@ -7609,6 +7637,89 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // ── Automated: Shot correction screen ────────────────────────────────────
+  if (mode === "automated" && automatedStep === "correction" && pendingShots) {
+    const handleConfirm = async (correctedShots) => {
+      await ensureFreshToken();
+      // Aggregate shots into counts by name
+      const agg = {};
+      correctedShots.forEach(shot => {
+        if (!agg[shot.name]) agg[shot.name] = { pos_count:0, neu_count:0, neg_count:0, attempts:0, wins:0, misses:0 };
+        agg[shot.name].attempts += 1;
+        if (shot.quality >= 0.65) agg[shot.name].pos_count += 1;
+        else if (shot.quality >= 0.35) agg[shot.name].neu_count += 1;
+        else { agg[shot.name].neg_count += 1; agg[shot.name].misses += 1; }
+      });
+
+      // Upsert each shot into the shots table
+      for (const [name, counts] of Object.entries(agg)) {
+        try {
+          const checkRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/shots?user_id=eq.${uid}&name=eq.${encodeURIComponent(name)}&select=id,pos_count,neu_count,neg_count,attempts,wins,misses`,
+            { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
+          );
+          const existing = await checkRes.json();
+          if (existing?.[0]) {
+            await fetch(`${SUPABASE_URL}/rest/v1/shots?id=eq.${existing[0].id}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+                "apikey": SUPABASE_KEY,
+                "Prefer": "return=minimal",
+              },
+              body: JSON.stringify({
+                pos_count: (existing[0].pos_count || 0) + counts.pos_count,
+                neu_count: (existing[0].neu_count || 0) + counts.neu_count,
+                neg_count: (existing[0].neg_count || 0) + counts.neg_count,
+                attempts:  (existing[0].attempts  || 0) + counts.attempts,
+                wins:      (existing[0].wins       || 0) + counts.wins,
+                misses:    (existing[0].misses     || 0) + counts.misses,
+              }),
+            });
+          } else {
+            await fetch(`${SUPABASE_URL}/rest/v1/shots`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+                "apikey": SUPABASE_KEY,
+                "Prefer": "return=minimal",
+              },
+              body: JSON.stringify({ user_id: uid, name, category: name.replace(/ BH$| FH$/,""), ...counts }),
+            });
+          }
+        } catch (err) {
+          console.error("Error saving shot:", name, err.message);
+        }
+      }
+
+      // Mark video_jobs as complete
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${matchId}&user_id=eq.${uid}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+            "apikey": SUPABASE_KEY,
+            "Prefer": "return=minimal",
+          },
+          body: JSON.stringify({ status: "complete" }),
+        });
+      } catch(err) { console.error("Error marking job complete:", err.message); }
+
+      setPage("shots");
+    };
+
+    return (
+      <ShotCorrectionScreen
+        pendingShots={pendingShots}
+        onConfirm={handleConfirm}
+        onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); }}
+      />
     );
   }
 
