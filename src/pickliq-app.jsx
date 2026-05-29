@@ -5170,7 +5170,17 @@ function AIVideoUpload({ matchId, userId }) {
 
 // ── SHOT CORRECTION SCREEN ────────────────────────────────────────────────────
 // Shows pending PBV shot data for user review/correction before saving to Supabase
-function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
+function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
+  const videoRef = React.useRef(null);
+
+  // Jump video to timestamp in seconds when user clicks a timestamp
+  const seekTo = (sec) => {
+    if (videoRef.current && sec !== null && sec !== undefined) {
+      videoRef.current.currentTime = Math.max(0, sec - 2); // 2 sec before shot
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
   // ── Step 1: Player selection ───────────────────────────────────────────────
   // PBV assigns player_id 0-3. User must pick which one is them.
   const playerIds = [...new Set(pendingShots.map(s => s.playerId).filter(id => id !== null && id !== undefined))].sort();
@@ -5230,50 +5240,95 @@ function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
     playerIds.forEach(id => {
       playerShotCounts[id] = pendingShots.filter(s => s.playerId === id).length;
     });
+    const playerFirstShot = {};
+    playerIds.forEach(id => {
+      const first = pendingShots.filter(s => s.playerId === id)
+        .sort((a,b) => (a.timestampSec||0)-(b.timestampSec||0))[0];
+      playerFirstShot[id] = first;
+    });
     return (
-      <div style={{position:"relative",zIndex:9999,background:C.pageBg,borderRadius:16,
-        width:"100%",maxWidth:560,margin:"40px auto",padding:"32px 28px",
-        border:`1px solid ${C.border}`}}>
-        <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:C.navy,letterSpacing:"0.04em",marginBottom:8}}>
-          Which player are you?
-        </div>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:24,lineHeight:1.6}}>
-          PB Vision detected <strong>{playerIds.length} players</strong> in your match and tracked {pendingShots.length} total shots.
-          Select which player is you — only your shots will be saved to your analytics.
-          Your partner and opponents can claim their own shots later.
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {playerIds.map(id => (
-            <button key={id} onClick={() => setSelectedPlayerId(id)}
-              style={{background:C.cardBg,border:`2px solid ${C.blue}30`,borderRadius:14,
-                padding:"20px 16px",cursor:"pointer",textAlign:"left",transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.blue}30`;}}>
-              <div style={{fontSize:28,marginBottom:8}}>👤</div>
-              <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em"}}>
-                Player {id + 1}
+      <div style={{width:"100%",display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+        {videoUrl && (
+          <div style={{flex:"0 0 min(55%, 560px)",borderRadius:12,overflow:"hidden",
+            background:"#000",border:`1px solid ${C.border}`,
+            position:"sticky",top:16,alignSelf:"flex-start"}}>
+            <video ref={videoRef} src={videoUrl} controls
+              style={{width:"100%",display:"block",maxHeight:"360px",objectFit:"contain"}}
+              preload="metadata" />
+            <div style={{padding:"8px 12px",background:C.pageBg,borderTop:`1px solid ${C.border}`}}>
+              <div style={{fontSize:11,color:C.textMid}}>
+                Click a timestamp below to jump to that player's first shot and identify yourself.
               </div>
-              <div style={{fontSize:12,color:C.textMid,marginTop:4}}>
-                {playerShotCounts[id]} shots detected
-              </div>
-            </button>
-          ))}
+            </div>
+          </div>
+        )}
+        <div style={{flex:1,minWidth:280,background:C.pageBg,borderRadius:16,
+          padding:"24px 20px",border:`1px solid ${C.border}`}}>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,
+            letterSpacing:"0.04em",marginBottom:6}}>Which player are you?</div>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:20,lineHeight:1.6}}>
+            PB Vision detected <strong>{playerIds.length} players</strong> and tracked {pendingShots.length} total shots.
+            {videoUrl ? " Click each player's timestamp to find yourself in the video." : " Select which player is you."}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {playerIds.map(id => {
+              const first = playerFirstShot[id];
+              const sec = first?.timestampSec;
+              const ts = sec != null ? `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}` : null;
+              return (
+                <div key={id} style={{display:"flex",alignItems:"center",gap:10,
+                  background:C.cardBg,border:`1.5px solid ${C.blue}20`,
+                  borderRadius:12,padding:"12px 14px"}}>
+                  {videoUrl && ts && (
+                    <button onClick={() => seekTo(sec)}
+                      style={{flexShrink:0,padding:"6px 10px",borderRadius:8,
+                        border:`1px solid ${C.blue}40`,background:`${C.blue}10`,
+                        fontFamily:"monospace",fontSize:12,color:C.blue,
+                        cursor:"pointer",fontWeight:700}}>▶ {ts}</button>
+                  )}
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
+                      letterSpacing:"0.04em"}}>Player {id + 1}</div>
+                    <div style={{fontSize:11,color:C.textMid}}>
+                      {playerShotCounts[id]} shots · first: {first?.name || "—"}{ts ? ` at ${ts}` : ""}
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedPlayerId(id)}
+                    style={{flexShrink:0,padding:"8px 14px",borderRadius:9,border:"none",
+                      background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                      fontSize:12,color:C.navy,cursor:"pointer"}}>This is me</button>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={onCancel}
+            style={{marginTop:16,width:"100%",padding:"10px",borderRadius:10,
+              border:`1px solid ${C.border}`,background:"transparent",
+              fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
+              color:C.textMid,cursor:"pointer"}}>Cancel</button>
         </div>
-        <button onClick={onCancel}
-          style={{marginTop:20,width:"100%",padding:"10px",borderRadius:10,
-            border:`1px solid ${C.border}`,background:"transparent",
-            fontFamily:"'Outfit'",fontWeight:600,fontSize:13,color:C.textMid,cursor:"pointer"}}>
-          Cancel
-        </button>
       </div>
     );
   }
 
-  // ── Shot correction screen ─────────────────────────────────────────────────
+  // ── Shot correction screen — split layout with video ──────────────────────
   return (
-    <div style={{background:C.cardBg,borderRadius:16,width:"100%",maxWidth:860,
-      margin:"0 auto",display:"flex",flexDirection:"column",
-      border:`1px solid ${C.border}`,overflow:"hidden"}}>
+    <div style={{width:"100%",display:"flex",gap:16,alignItems:"flex-start"}}>
+      {videoUrl && (
+        <div style={{flex:"0 0 40%",borderRadius:12,overflow:"hidden",background:"#000",
+          border:`1px solid ${C.border}`,position:"sticky",top:16,alignSelf:"flex-start"}}>
+          <video ref={videoRef} src={videoUrl} controls
+            style={{width:"100%",display:"block",maxHeight:"300px",objectFit:"contain"}}
+            preload="metadata" />
+          <div style={{padding:"8px 12px",background:C.pageBg,borderTop:`1px solid ${C.border}`}}>
+            <div style={{fontSize:11,color:C.textMid}}>
+              Click a <span style={{color:C.blue,fontWeight:700}}>blue timestamp</span> to jump to that shot.
+            </div>
+          </div>
+        </div>
+      )}
+      <div style={{flex:1,background:C.cardBg,borderRadius:16,
+        border:`1px solid ${C.border}`,overflow:"hidden",minWidth:0}}>
 
       {/* Header */}
       <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
@@ -5437,7 +5492,8 @@ function ShotCorrectionScreen({ pendingShots, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>{/* end right panel */}
+    </div>{/* end split-screen wrapper */}
   );
 }
 
@@ -7332,6 +7388,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   );
   const [automatedStep, setAutomatedStep] = React.useState("choose"); // choose|url|file|submitting|pending|correction
   const [pendingShots, setPendingShots] = React.useState(null);
+  const [pendingVideoUrl, setPendingVideoUrl] = React.useState(null);
   const [videoUrl, setVideoUrl] = React.useState("");
   const [matchId, setMatchId] = React.useState(null);
   const [urlStatus, setUrlStatus] = React.useState("idle"); // idle|submitting|success|error
@@ -7350,7 +7407,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
     (async () => {
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${reviewMatchId}&user_id=eq.${uid}&status=eq.needs_review&select=id,raw_pbv_data`,
+          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${reviewMatchId}&user_id=eq.${uid}&status=eq.needs_review&select=id,raw_pbv_data,video_url`,
           { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
         );
         const jobs = await res.json();
@@ -7358,6 +7415,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
         if (job?.raw_pbv_data?.length > 0) {
           setMatchId(reviewMatchId);
           setPendingShots(job.raw_pbv_data);
+          setPendingVideoUrl(job.video_url || null);
           setMode("automated");
           setAutomatedStep("correction");
         }
@@ -7371,7 +7429,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${matchId}&user_id=eq.${uid}&select=id,status,raw_pbv_data`,
+          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${matchId}&user_id=eq.${uid}&select=id,status,raw_pbv_data,video_url`,
           { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
         );
         const jobs = await res.json();
@@ -7379,6 +7437,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
         if (job?.status === "needs_review" && job?.raw_pbv_data?.length > 0) {
           clearInterval(interval);
           setPendingShots(job.raw_pbv_data);
+          setPendingVideoUrl(job.video_url || null);
           setAutomatedStep("correction");
         } else if (job?.status === "error") {
           clearInterval(interval);
@@ -7786,6 +7845,19 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   if (mode === "automated" && automatedStep === "correction" && pendingShots) {
     const handleConfirm = async (correctedShots) => {
       await ensureFreshToken();
+
+      // Helper: get category color and tip for a shot name
+      const getShotMeta = (shotName) => {
+        const baseName = shotName.replace(/ BH$| FH$/, "");
+        const cat = SHOT_BUTTONS.find(c => c.shots.includes(baseName));
+        return {
+          category: baseName,
+          color: cat?.color || null,
+          tip: SHOT_TIPS[shotName] ? TIPS[SHOT_TIPS[shotName]] || null : null,
+          icon: null, // icon not used in automated flow
+        };
+      };
+
       // Aggregate shots into counts by name using effective quality
       const agg = {};
       correctedShots.forEach(shot => {
@@ -7802,6 +7874,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
       // Upsert each shot into the shots table
       for (const [name, counts] of Object.entries(agg)) {
         try {
+          const meta = getShotMeta(name);
           const checkRes = await fetch(
             `${SUPABASE_URL}/rest/v1/shots?user_id=eq.${uid}&name=eq.${encodeURIComponent(name)}&select=id,pos_count,neu_count,neg_count,attempts,wins,misses`,
             { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
@@ -7834,7 +7907,14 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
                 "apikey": SUPABASE_KEY,
                 "Prefer": "return=minimal",
               },
-              body: JSON.stringify({ user_id: uid, name, category: name.replace(/ BH$| FH$/,""), ...counts }),
+              body: JSON.stringify({
+                user_id: uid,
+                name,
+                category: meta.category,
+                color: meta.color,
+                tip: meta.tip,
+                ...counts
+              }),
             });
           }
         } catch (err) {
@@ -7863,8 +7943,9 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
       <div className="fade-up" style={{width:"100%",paddingTop:8}}>
         <ShotCorrectionScreen
           pendingShots={pendingShots}
+          videoUrl={pendingVideoUrl}
           onConfirm={handleConfirm}
-          onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); }}
+          onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); setPendingVideoUrl(null); }}
         />
       </div>
     );
