@@ -759,7 +759,7 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
           marginLeft:isMobile?2:12,
           justifyContent:isMobile?"space-between":"flex-start"}}>
           {[...NAV, ...(authUser?.id===ADMIN_USER_ID?[ADMIN_NAV]:[])].map(n=>{
-            const a=page===n.id || (n.id==="matches" && page==="matches:partners");
+            const a=page===n.id || (n.id==="matches" && page==="matches:partners") || (n.id==="matches" && page==="matches_review");
             return(
               <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id==="matches"?"matches":n.id)} style={{
                 background:a?C.pickle:"transparent",
@@ -9367,11 +9367,10 @@ export default function App(){
             </div>
             <button
               onClick={() => {
-                setPage("matches");
-                // Store pending job so LogMatchGateway can pick it up on mount
                 if (pendingReviewJob?.match_id) {
                   sessionStorage.setItem("pi_review_match_id", pendingReviewJob.match_id);
                 }
+                setPage("matches_review"); // special page key that forces log tab
               }}
               style={{
                 background: C.mint, border: "none", borderRadius: 10,
@@ -9387,6 +9386,7 @@ export default function App(){
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
           {page==="matches"  &&<MatchCenter defaultTab="log" setPage={setPage}/>}
+          {page==="matches_review"&&<MatchCenter defaultTab="log" setPage={setPage}/>}
           {page==="matches:partners"&&<MatchCenter defaultTab="partners" setPage={setPage}/>}
           {page==="drills"   &&<Drills setPage={setPage}/>}
           {page==="admin"    &&getCurrentUserId()===ADMIN_USER_ID&&<Admin/>}
