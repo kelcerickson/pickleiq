@@ -97,8 +97,10 @@ export default async function handler(req, res) {
           ? Object.values(shot.errors.faults).some(v => v === true)
           : false;
 
-        // Player position when shot was hit
-        const playerPos = shot.player_positions?.[shot.player_id] ?? null;
+        // All 4 player positions at moment of shot (for click-to-identify UI)
+        // PBV sends player_positions as array of {x,y} for all 4 players
+        const allPlayerPositions = shot.player_positions ?? null;
+        const playerPos = allPlayerPositions?.[shot.player_id] ?? null;
 
         // Ball trajectory
         const traj = shot.resulting_ball_movement?.trajectory ?? null;
@@ -128,6 +130,7 @@ export default async function handler(req, res) {
           hasFault: hasFault,
           strokeSide: shot.stroke_side || null,
           playerPosition: playerPos,
+          allPlayerPositions: allPlayerPositions, // all 4 positions for click-to-identify
           shotStart: shotStart,
           shotEnd: shotEnd,
           ballSpeed: ballSpeed,
