@@ -5186,7 +5186,7 @@ function captureVideoFrame(videoUrl, timestampSec, callback) {
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
       canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-      callback(canvas, null);
+      callback(canvas.toDataURL("image/jpeg", 0.85), null);
     } catch(e) { callback(null, e); }
     video.src = "";
   });
@@ -5194,218 +5194,175 @@ function captureVideoFrame(videoUrl, timestampSec, callback) {
   video.load();
 }
 
-// PBV court coordinate system:
-// x = 0 at left edge, increases right. Court width = ~20ft (doubles)
-// y = 0 at near baseline, increases toward far baseline. Court length = 44ft
-// Camera is elevated above/behind near baseline looking toward far baseline
-// Approximate pixel mapping for PlaySight overhead camera:
-function courtToCanvas(courtX, courtY, canvasW, canvasH) {
-  // Court bounds (feet): x: 0-20, y: 0-44
-  // Map to canvas percentage — calibrated for PlaySight overhead angle
-  const xPct = courtX / 20;        // 0-1 left to right
-  const yPct = 1 - (courtY / 44);  // 0-1 far to near (inverted — near baseline at bottom)
-  return {
-    px: xPct * canvasW,
-    py: yPct * canvasH,
-  };
+// Map near/far + left/right answer to a player_id
+// Uses actual position data if available, falls back to convention
+function getPlayerIdFromQuadrant(playerIds, pendingShots, side, position) {
+  const isNear = side === "near";
+  const isLeft = position === "left";
+
+  // Try to use actual allPlayerPositions from shot data
+  const firstShot = pendingShots.find(s => s.allPlayerPositions && s.allPlayerPositions.length >= 2);
+  if (firstShot && firstShot.allPlayerPositions) {
+    const positions = firstShot.allPlayerPositions;
+    const withPos = playerIds
+      .map(id => ({ id, x: positions[id]?.x ?? null, y: positions[id]?.y ?? null }))
+      .filter(p => p.x !== null && p.y !== null);
+
+    if (withPos.length >= 2) {
+      const midY = withPos.reduce((s, p) => s + p.y, 0) / withPos.length;
+      const midX = withPos.reduce((s, p) => s + p.x, 0) / withPos.length;
+      const match = withPos.find(p =>
+        (isNear ? p.y < midY : p.y >= midY) &&
+        (isLeft ? p.x < midX : p.x >= midX)
+      );
+      if (match) return match.id;
+    }
+  }
+
+  // Fallback convention: 0=near-left, 1=near-right, 2=far-left, 3=far-right
+  if (isNear && isLeft)  return playerIds.find(id => id === 0) ?? playerIds[0];
+  if (isNear && !isLeft) return playerIds.find(id => id === 1) ?? playerIds[Math.min(1, playerIds.length-1)];
+  if (!isNear && isLeft) return playerIds.find(id => id === 2) ?? playerIds[Math.min(2, playerIds.length-1)];
+  return playerIds.find(id => id === 3) ?? playerIds[playerIds.length - 1];
 }
 
-// Player identification screen — show a video frame and let user click on themselves
+// Player identification — two-step near/far then left/right
 function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
-  const canvasRef = React.useRef(null);
-  const [frameLoaded, setFrameLoaded] = React.useState(false);
-  const [frameError, setFrameError] = React.useState(false);
-  const [hoveredPlayer, setHoveredPlayer] = React.useState(null);
-  const [canvasSize, setCanvasSize] = React.useState({ w: 0, h: 0 });
+  const [frameImg, setFrameImg] = React.useState(null);
+  const [frameLoading, setFrameLoading] = React.useState(true);
+  const [step, setStep] = React.useState("side"); // "side" | "position"
+  const [selectedSide, setSelectedSide] = React.useState(null);
 
-  // Use the earliest shot that has allPlayerPositions
-  const firstShotWithPositions = React.useMemo(() => {
-    return pendingShots
-      .filter(s => s.allPlayerPositions && s.allPlayerPositions.length >= playerIds.length)
-      .sort((a, b) => (a.timestampSec || 0) - (b.timestampSec || 0))[0] || null;
-  }, [pendingShots, playerIds]);
+  const frameTimestamp = playerFirstShot[playerIds[0]]?.timestampSec ?? 10;
 
-  const frameTimestamp = firstShotWithPositions?.timestampSec ?? playerFirstShot[playerIds[0]]?.timestampSec ?? 10;
-
-  // Colors for each player dot
-  const playerColors = ["#378ADD", "#E24B4A", "#1D9E75", "#F5A623"];
-
-  // Load video frame into canvas
   React.useEffect(() => {
-    if (!videoUrl || !canvasRef.current) return;
-    captureVideoFrame(videoUrl, frameTimestamp, (canvas, err) => {
-      if (err || !canvas) { setFrameError(true); return; }
-      const el = canvasRef.current;
-      if (!el) return;
-      el.width = canvas.width;
-      el.height = canvas.height;
-      el.getContext("2d").drawImage(canvas, 0, 0);
-      setCanvasSize({ w: canvas.width, h: canvas.height });
-      setFrameLoaded(true);
+    if (!videoUrl) { setFrameLoading(false); return; }
+    captureVideoFrame(videoUrl, frameTimestamp, (dataUrl, err) => {
+      if (dataUrl) setFrameImg(dataUrl);
+      setFrameLoading(false);
     });
   }, [videoUrl, frameTimestamp]);
 
-  // Draw player dots on canvas overlay
-  const dotPositions = React.useMemo(() => {
-    if (!firstShotWithPositions?.allPlayerPositions || canvasSize.w === 0) return [];
-    return playerIds.map(id => {
-      const pos = firstShotWithPositions.allPlayerPositions[id];
-      if (!pos) return null;
-      const { px, py } = courtToCanvas(pos.x, pos.y, canvasSize.w, canvasSize.h);
-      return { id, px, py, x: pos.x, y: pos.y };
-    }).filter(Boolean);
-  }, [firstShotWithPositions, canvasSize, playerIds]);
-
-  // Handle click on the canvas image
-  const handleImageClick = (e) => {
-    if (!dotPositions.length) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const scaleX = canvasSize.w / rect.width;
-    const scaleY = canvasSize.h / rect.height;
-    const clickX = (e.clientX - rect.left) * scaleX;
-    const clickY = (e.clientY - rect.top) * scaleY;
-
-    // Find closest dot
-    let closest = null;
-    let minDist = Infinity;
-    dotPositions.forEach(dot => {
-      const dist = Math.sqrt((dot.px - clickX) ** 2 + (dot.py - clickY) ** 2);
-      if (dist < minDist) { minDist = dist; closest = dot; }
-    });
-    // Only select if within 80px of a dot
-    if (closest && minDist < 80) onSelect(closest.id);
-  };
-
-  const fmtTs = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
+  const fmtTs = (sec) => String(Math.floor(sec/60)) + ":" + String(sec%60).padStart(2,"0");
 
   return (
-    <div style={{width:"100%",maxWidth:900,margin:"0 auto",padding:"8px 0"}}>
-      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,
-        letterSpacing:"0.04em",marginBottom:6}}>
+    <div style={{width:"100%",maxWidth:860,margin:"0 auto",padding:"8px 0"}}>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.04em",marginBottom:4}}>
         Which player are you?
       </div>
-      <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>
-        {dotPositions.length > 0
-          ? <>PB Vision detected <strong>{playerIds.length} players</strong>. Click on yourself in the frame below — each colored dot shows where a player was standing at the first shot.</>
-          : <>PB Vision detected <strong>{playerIds.length} players</strong> and tracked <strong>{pendingShots.length} shots</strong>. Select which player is you.</>
-        }
+      <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
+        PB Vision tracked <strong>{pendingShots.length} shots</strong> across <strong>{playerIds.length} players</strong>.
+        Answer two quick questions to identify yourself in the match.
       </div>
 
-      {/* Video frame with clickable dots */}
+      {/* Video frame with orientation labels */}
       {videoUrl && (
-        <div style={{position:"relative",borderRadius:12,overflow:"hidden",
-          border:`1px solid ${C.border}`,marginBottom:16,
-          background:"#000",cursor:dotPositions.length?"crosshair":"default"}}
-          onClick={handleImageClick}>
-
-          {/* Canvas — video frame */}
-          <canvas ref={canvasRef}
-            style={{width:"100%",display:"block",
-              opacity: frameLoaded ? 1 : 0, transition:"opacity 0.3s"}} />
-
-          {/* Loading state */}
-          {!frameLoaded && !frameError && (
-            <div style={{position:"absolute",inset:0,display:"flex",
-              alignItems:"center",justifyContent:"center",
-              background:"#111",aspectRatio:"16/9"}}>
-              <div style={{color:"#666",fontSize:13}}>Loading match frame...</div>
+        <div style={{borderRadius:12,overflow:"hidden",border:"1px solid " + C.border,
+          marginBottom:20,background:"#000",position:"relative"}}>
+          {frameLoading && (
+            <div style={{aspectRatio:"16/9",display:"flex",alignItems:"center",
+              justifyContent:"center",color:"#666",fontSize:13}}>
+              Loading match frame...
             </div>
           )}
-
-          {/* Error state — fall back to timestamp display */}
-          {frameError && (
-            <div style={{background:"#111",aspectRatio:"16/9",display:"flex",
-              alignItems:"center",justifyContent:"center"}}>
-              <div style={{color:"#666",fontSize:12,textAlign:"center"}}>
-                <div style={{fontSize:32,marginBottom:8}}>🎬</div>
-                Video preview not available — select your player below
+          {frameImg && (
+            <img src={frameImg} alt="Match frame" style={{width:"100%",display:"block"}} />
+          )}
+          {frameImg && (
+            <>
+              <div style={{position:"absolute",bottom:10,left:"50%",transform:"translateX(-50%)",
+                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"3px 12px",
+                color:"white",fontSize:11,fontWeight:700,pointerEvents:"none",whiteSpace:"nowrap"}}>
+                ← NEAR SIDE (closer to camera) →
               </div>
-            </div>
+              <div style={{position:"absolute",top:10,left:"50%",transform:"translateX(-50%)",
+                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"3px 12px",
+                color:"white",fontSize:11,fontWeight:700,pointerEvents:"none",whiteSpace:"nowrap"}}>
+                ← FAR SIDE (further from camera) →
+              </div>
+              <div style={{position:"absolute",top:10,right:10,
+                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"2px 8px",
+                fontSize:11,color:"white",fontFamily:"monospace"}}>
+                {fmtTs(frameTimestamp)}
+              </div>
+            </>
           )}
+        </div>
+      )}
 
-          {/* Player dots overlay */}
-          {frameLoaded && dotPositions.map(dot => (
-            <div key={dot.id}
-              onMouseEnter={() => setHoveredPlayer(dot.id)}
-              onMouseLeave={() => setHoveredPlayer(null)}
-              onClick={(e) => { e.stopPropagation(); onSelect(dot.id); }}
-              style={{
-                position:"absolute",
-                left:`${(dot.px / canvasSize.w) * 100}%`,
-                top:`${(dot.py / canvasSize.h) * 100}%`,
-                transform:"translate(-50%, -50%)",
-                width: hoveredPlayer === dot.id ? 36 : 28,
-                height: hoveredPlayer === dot.id ? 36 : 28,
-                borderRadius:"50%",
-                background: playerColors[dot.id % playerColors.length],
-                border:"3px solid white",
-                boxShadow:"0 2px 8px rgba(0,0,0,0.5)",
-                cursor:"pointer",
-                transition:"all 0.15s",
-                display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:11,fontWeight:700,color:"white",
-                zIndex:10,
-              }}>
-              {dot.id + 1}
-            </div>
-          ))}
-
-          {/* Hovered player label */}
-          {hoveredPlayer !== null && (
-            <div style={{position:"absolute",bottom:12,left:"50%",
-              transform:"translateX(-50%)",
-              background:"rgba(0,0,0,0.8)",borderRadius:8,
-              padding:"6px 14px",color:"white",fontSize:13,fontWeight:600,
-              pointerEvents:"none",whiteSpace:"nowrap"}}>
-              Player {hoveredPlayer + 1} — {playerShotCounts[hoveredPlayer]} shots · click to select
-            </div>
-          )}
-
-          {/* Timestamp badge */}
-          <div style={{position:"absolute",top:10,right:10,
-            background:"rgba(0,0,0,0.7)",borderRadius:6,
-            padding:"3px 8px",fontSize:11,color:"white",fontFamily:"monospace"}}>
-            {fmtTs(frameTimestamp)}
+      {/* Step 1: Near or Far */}
+      {step === "side" && (
+        <div>
+          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:12}}>
+            Step 1 of 2 — Were you on the near side or far side?
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            {[
+              {key:"near",label:"Near side",desc:"Bottom of the screen, closer to the camera",emoji:"⬇️"},
+              {key:"far", label:"Far side", desc:"Top of the screen, further from the camera",emoji:"⬆️"},
+            ].map(opt => (
+              React.createElement("button", {
+                key: opt.key,
+                onClick: () => { setSelectedSide(opt.key); setStep("position"); },
+                style: {padding:"20px 16px",borderRadius:14,border:"2px solid " + C.blue + "30",
+                  background:C.cardBg,cursor:"pointer",textAlign:"left",transition:"all 0.15s"},
+                onMouseEnter: e => e.currentTarget.style.borderColor = C.blue,
+                onMouseLeave: e => e.currentTarget.style.borderColor = C.blue + "30",
+              },
+                React.createElement("div", {style:{fontSize:28,marginBottom:8}}, opt.emoji),
+                React.createElement("div", {style:{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,
+                  letterSpacing:"0.04em",marginBottom:4}}, opt.label),
+                React.createElement("div", {style:{fontSize:12,color:C.textMid,lineHeight:1.4}}, opt.desc)
+              )
+            ))}
           </div>
         </div>
       )}
 
-      {/* Fallback: button list if no dots or no video */}
-      {(!dotPositions.length || !videoUrl) && (
-        <div style={{display:"grid",
-          gridTemplateColumns:`repeat(${Math.min(playerIds.length, 2)}, 1fr)`,
-          gap:12,marginBottom:16}}>
-          {playerIds.map(id => (
-            <button key={id} onClick={() => onSelect(id)}
-              style={{padding:"16px",borderRadius:12,
-                border:`2px solid ${playerColors[id % playerColors.length]}40`,
-                background:C.cardBg,cursor:"pointer",textAlign:"left"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                <div style={{width:24,height:24,borderRadius:"50%",
-                  background:playerColors[id % playerColors.length],
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  fontSize:11,fontWeight:700,color:"white",flexShrink:0}}>
-                  {id + 1}
-                </div>
-                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
-                  letterSpacing:"0.04em"}}>Player {id + 1}</div>
-              </div>
-              <div style={{fontSize:11,color:C.textMid,marginBottom:10}}>
-                {playerShotCounts[id]} shots tracked
-                {playerFirstShot[id]?.timestampSec != null &&
-                  ` · first shot at ${fmtTs(playerFirstShot[id].timestampSec)}`}
-              </div>
-              <div style={{fontSize:12,fontWeight:700,color:playerColors[id % playerColors.length]}}>
-                This is me →
-              </div>
-            </button>
-          ))}
+      {/* Step 2: Left or Right */}
+      {step === "position" && (
+        <div>
+          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
+            Step 2 of 2 — Were you on the left or right side?
+          </div>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:12}}>
+            Left and right as shown in the video frame above.
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            {[
+              {key:"left", label:"Left side", emoji:"⬅️"},
+              {key:"right",label:"Right side",emoji:"➡️"},
+            ].map(opt => (
+              React.createElement("button", {
+                key: opt.key,
+                onClick: () => {
+                  const pid = getPlayerIdFromQuadrant(playerIds, pendingShots, selectedSide, opt.key);
+                  onSelect(pid);
+                },
+                style: {padding:"24px 16px",borderRadius:14,border:"2px solid " + C.mint + "30",
+                  background:C.cardBg,cursor:"pointer",textAlign:"center",transition:"all 0.15s"},
+                onMouseEnter: e => e.currentTarget.style.borderColor = C.mint,
+                onMouseLeave: e => e.currentTarget.style.borderColor = C.mint + "30",
+              },
+                React.createElement("div", {style:{fontSize:36,marginBottom:8}}, opt.emoji),
+                React.createElement("div", {style:{fontFamily:"'Bebas Neue'",fontSize:22,
+                  color:C.navy,letterSpacing:"0.04em"}}, opt.label)
+              )
+            ))}
+          </div>
+          <button onClick={() => setStep("side")}
+            style={{width:"100%",padding:"8px",borderRadius:10,
+              border:"1px solid " + C.border,background:"transparent",
+              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+              color:C.textMid,cursor:"pointer",marginBottom:8}}>
+            ← Back
+          </button>
         </div>
       )}
 
       <button onClick={onCancel}
         style={{width:"100%",padding:"10px",borderRadius:10,
-          border:`1px solid ${C.border}`,background:"transparent",
+          border:"1px solid " + C.border,background:"transparent",
           fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
           color:C.textMid,cursor:"pointer"}}>
         Cancel
