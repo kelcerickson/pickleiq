@@ -5582,8 +5582,8 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
-    </div>{/* end right panel */}
-    </div>{/* end split-screen wrapper */}
+    </div>
+    </div>
   );
 }
 
