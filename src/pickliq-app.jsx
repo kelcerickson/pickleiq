@@ -5170,134 +5170,236 @@ function AIVideoUpload({ matchId, userId }) {
 
 // ── SHOT CORRECTION SCREEN ────────────────────────────────────────────────────
 // Captures a video frame at a given timestamp using canvas
-function VideoThumbnail({ videoUrl, timestampSec, label, shotCount, onSelect }) {
-  const videoRef = React.useRef(null);
+// Captures a single video frame at a given timestamp using canvas
+function captureVideoFrame(videoUrl, timestampSec, callback) {
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.preload = "metadata";
+  video.muted = true;
+  video.src = videoUrl;
+  video.addEventListener("loadedmetadata", () => {
+    video.currentTime = Math.max(0, timestampSec - 0.5);
+  });
+  video.addEventListener("seeked", () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      callback(canvas, null);
+    } catch(e) { callback(null, e); }
+    video.src = "";
+  });
+  video.addEventListener("error", () => { callback(null, new Error("video error")); video.src = ""; });
+  video.load();
+}
+
+// PBV court coordinate system:
+// x = 0 at left edge, increases right. Court width = ~20ft (doubles)
+// y = 0 at near baseline, increases toward far baseline. Court length = 44ft
+// Camera is elevated above/behind near baseline looking toward far baseline
+// Approximate pixel mapping for PlaySight overhead camera:
+function courtToCanvas(courtX, courtY, canvasW, canvasH) {
+  // Court bounds (feet): x: 0-20, y: 0-44
+  // Map to canvas percentage — calibrated for PlaySight overhead angle
+  const xPct = courtX / 20;        // 0-1 left to right
+  const yPct = 1 - (courtY / 44);  // 0-1 far to near (inverted — near baseline at bottom)
+  return {
+    px: xPct * canvasW,
+    py: yPct * canvasH,
+  };
+}
+
+// Player identification screen — show a video frame and let user click on themselves
+function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
   const canvasRef = React.useRef(null);
-  const [thumbnail, setThumbnail] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState(false);
+  const [frameLoaded, setFrameLoaded] = React.useState(false);
+  const [frameError, setFrameError] = React.useState(false);
+  const [hoveredPlayer, setHoveredPlayer] = React.useState(null);
+  const [canvasSize, setCanvasSize] = React.useState({ w: 0, h: 0 });
 
+  // Use the earliest shot that has allPlayerPositions
+  const firstShotWithPositions = React.useMemo(() => {
+    return pendingShots
+      .filter(s => s.allPlayerPositions && s.allPlayerPositions.length >= playerIds.length)
+      .sort((a, b) => (a.timestampSec || 0) - (b.timestampSec || 0))[0] || null;
+  }, [pendingShots, playerIds]);
+
+  const frameTimestamp = firstShotWithPositions?.timestampSec ?? playerFirstShot[playerIds[0]]?.timestampSec ?? 10;
+
+  // Colors for each player dot
+  const playerColors = ["#378ADD", "#E24B4A", "#1D9E75", "#F5A623"];
+
+  // Load video frame into canvas
   React.useEffect(() => {
-    if (!videoUrl || timestampSec == null) { setLoading(false); setError(true); return; }
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
-    video.preload = "metadata";
-    video.muted = true;
-    video.src = videoUrl;
-
-    const capture = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = 320;
-        canvas.height = 180;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, 320, 180);
-        setThumbnail(canvas.toDataURL("image/jpeg", 0.8));
-        setLoading(false);
-      } catch(e) {
-        setError(true);
-        setLoading(false);
-      }
-    };
-
-    video.addEventListener("loadedmetadata", () => {
-      video.currentTime = Math.max(0, timestampSec - 1);
+    if (!videoUrl || !canvasRef.current) return;
+    captureVideoFrame(videoUrl, frameTimestamp, (canvas, err) => {
+      if (err || !canvas) { setFrameError(true); return; }
+      const el = canvasRef.current;
+      if (!el) return;
+      el.width = canvas.width;
+      el.height = canvas.height;
+      el.getContext("2d").drawImage(canvas, 0, 0);
+      setCanvasSize({ w: canvas.width, h: canvas.height });
+      setFrameLoaded(true);
     });
-    video.addEventListener("seeked", capture);
-    video.addEventListener("error", () => { setError(true); setLoading(false); });
+  }, [videoUrl, frameTimestamp]);
 
-    video.load();
-    return () => { video.src = ""; };
-  }, [videoUrl, timestampSec]);
+  // Draw player dots on canvas overlay
+  const dotPositions = React.useMemo(() => {
+    if (!firstShotWithPositions?.allPlayerPositions || canvasSize.w === 0) return [];
+    return playerIds.map(id => {
+      const pos = firstShotWithPositions.allPlayerPositions[id];
+      if (!pos) return null;
+      const { px, py } = courtToCanvas(pos.x, pos.y, canvasSize.w, canvasSize.h);
+      return { id, px, py, x: pos.x, y: pos.y };
+    }).filter(Boolean);
+  }, [firstShotWithPositions, canvasSize, playerIds]);
+
+  // Handle click on the canvas image
+  const handleImageClick = (e) => {
+    if (!dotPositions.length) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scaleX = canvasSize.w / rect.width;
+    const scaleY = canvasSize.h / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+
+    // Find closest dot
+    let closest = null;
+    let minDist = Infinity;
+    dotPositions.forEach(dot => {
+      const dist = Math.sqrt((dot.px - clickX) ** 2 + (dot.py - clickY) ** 2);
+      if (dist < minDist) { minDist = dist; closest = dot; }
+    });
+    // Only select if within 80px of a dot
+    if (closest && minDist < 80) onSelect(closest.id);
+  };
 
   const fmtTs = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
 
-  return (
-    <div style={{display:"flex",flexDirection:"column",borderRadius:14,overflow:"hidden",
-      border:`2px solid ${C.border}`,background:C.cardBg,cursor:"pointer",
-      transition:"border-color 0.15s"}}
-      onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
-      onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-
-      {/* Thumbnail area */}
-      <div style={{width:"100%",aspectRatio:"16/9",background:"#111",
-        position:"relative",overflow:"hidden",display:"flex",
-        alignItems:"center",justifyContent:"center"}}>
-        {loading && (
-          <div style={{color:"#666",fontSize:12}}>Loading frame...</div>
-        )}
-        {error && !loading && (
-          <div style={{color:"#666",fontSize:11,textAlign:"center",padding:8}}>
-            <div style={{fontSize:24,marginBottom:4}}>🎬</div>
-            <div>Jump to {fmtTs(timestampSec)}</div>
-          </div>
-        )}
-        {thumbnail && (
-          <img src={thumbnail} alt={label}
-            style={{width:"100%",height:"100%",objectFit:"cover"}} />
-        )}
-        {/* Timestamp badge */}
-        {timestampSec != null && (
-          <div style={{position:"absolute",bottom:6,right:8,
-            background:"rgba(0,0,0,0.75)",borderRadius:6,
-            padding:"2px 7px",fontSize:11,color:"#fff",fontFamily:"monospace"}}>
-            {fmtTs(timestampSec)}
-          </div>
-        )}
-      </div>
-
-      {/* Player info + select button */}
-      <div style={{padding:"12px 14px"}}>
-        <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
-          letterSpacing:"0.04em",marginBottom:2}}>{label}</div>
-        <div style={{fontSize:11,color:C.textMid,marginBottom:10}}>
-          {shotCount} shots tracked
-        </div>
-        <button onClick={onSelect}
-          style={{width:"100%",padding:"9px",borderRadius:9,border:"none",
-            background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
-            fontSize:13,color:C.navy,cursor:"pointer"}}>
-          This is me ✓
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Player identification screen — shows video thumbnails for each player
-function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
   return (
     <div style={{width:"100%",maxWidth:900,margin:"0 auto",padding:"8px 0"}}>
       <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,
         letterSpacing:"0.04em",marginBottom:6}}>
         Which player are you?
       </div>
-      <div style={{fontSize:13,color:C.textMid,marginBottom:24,lineHeight:1.6}}>
-        PB Vision detected <strong>{playerIds.length} players</strong> and tracked <strong>{pendingShots.length} shots</strong>.
-        Each card shows a frame from your match at that player's first shot.
-        Find yourself and click <strong>"This is me"</strong> — only your shots will be saved.
+      <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>
+        {dotPositions.length > 0
+          ? <>PB Vision detected <strong>{playerIds.length} players</strong>. Click on yourself in the frame below — each colored dot shows where a player was standing at the first shot.</>
+          : <>PB Vision detected <strong>{playerIds.length} players</strong> and tracked <strong>{pendingShots.length} shots</strong>. Select which player is you.</>
+        }
       </div>
 
-      {/* Thumbnail grid */}
-      <div style={{display:"grid",
-        gridTemplateColumns:`repeat(${Math.min(playerIds.length, 2)}, 1fr)`,
-        gap:16,marginBottom:20}}>
-        {playerIds.map(id => (
-          <VideoThumbnail
-            key={id}
-            videoUrl={videoUrl}
-            timestampSec={playerFirstShot[id]?.timestampSec ?? null}
-            label={`Player ${id + 1}`}
-            shotCount={playerShotCounts[id]}
-            onSelect={() => onSelect(id)}
-          />
-        ))}
-      </div>
+      {/* Video frame with clickable dots */}
+      {videoUrl && (
+        <div style={{position:"relative",borderRadius:12,overflow:"hidden",
+          border:`1px solid ${C.border}`,marginBottom:16,
+          background:"#000",cursor:dotPositions.length?"crosshair":"default"}}
+          onClick={handleImageClick}>
 
-      {!videoUrl && (
-        <div style={{padding:"12px 16px",background:`${C.amber}15`,borderRadius:10,
-          border:`1px solid ${C.amber}40`,fontSize:12,color:C.textMid,marginBottom:16}}>
-          ⚠️ Video not available for preview. Check timestamps in PB Vision's player to identify yourself.
+          {/* Canvas — video frame */}
+          <canvas ref={canvasRef}
+            style={{width:"100%",display:"block",
+              opacity: frameLoaded ? 1 : 0, transition:"opacity 0.3s"}} />
+
+          {/* Loading state */}
+          {!frameLoaded && !frameError && (
+            <div style={{position:"absolute",inset:0,display:"flex",
+              alignItems:"center",justifyContent:"center",
+              background:"#111",aspectRatio:"16/9"}}>
+              <div style={{color:"#666",fontSize:13}}>Loading match frame...</div>
+            </div>
+          )}
+
+          {/* Error state — fall back to timestamp display */}
+          {frameError && (
+            <div style={{background:"#111",aspectRatio:"16/9",display:"flex",
+              alignItems:"center",justifyContent:"center"}}>
+              <div style={{color:"#666",fontSize:12,textAlign:"center"}}>
+                <div style={{fontSize:32,marginBottom:8}}>🎬</div>
+                Video preview not available — select your player below
+              </div>
+            </div>
+          )}
+
+          {/* Player dots overlay */}
+          {frameLoaded && dotPositions.map(dot => (
+            <div key={dot.id}
+              onMouseEnter={() => setHoveredPlayer(dot.id)}
+              onMouseLeave={() => setHoveredPlayer(null)}
+              onClick={(e) => { e.stopPropagation(); onSelect(dot.id); }}
+              style={{
+                position:"absolute",
+                left:`${(dot.px / canvasSize.w) * 100}%`,
+                top:`${(dot.py / canvasSize.h) * 100}%`,
+                transform:"translate(-50%, -50%)",
+                width: hoveredPlayer === dot.id ? 36 : 28,
+                height: hoveredPlayer === dot.id ? 36 : 28,
+                borderRadius:"50%",
+                background: playerColors[dot.id % playerColors.length],
+                border:"3px solid white",
+                boxShadow:"0 2px 8px rgba(0,0,0,0.5)",
+                cursor:"pointer",
+                transition:"all 0.15s",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:11,fontWeight:700,color:"white",
+                zIndex:10,
+              }}>
+              {dot.id + 1}
+            </div>
+          ))}
+
+          {/* Hovered player label */}
+          {hoveredPlayer !== null && (
+            <div style={{position:"absolute",bottom:12,left:"50%",
+              transform:"translateX(-50%)",
+              background:"rgba(0,0,0,0.8)",borderRadius:8,
+              padding:"6px 14px",color:"white",fontSize:13,fontWeight:600,
+              pointerEvents:"none",whiteSpace:"nowrap"}}>
+              Player {hoveredPlayer + 1} — {playerShotCounts[hoveredPlayer]} shots · click to select
+            </div>
+          )}
+
+          {/* Timestamp badge */}
+          <div style={{position:"absolute",top:10,right:10,
+            background:"rgba(0,0,0,0.7)",borderRadius:6,
+            padding:"3px 8px",fontSize:11,color:"white",fontFamily:"monospace"}}>
+            {fmtTs(frameTimestamp)}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback: button list if no dots or no video */}
+      {(!dotPositions.length || !videoUrl) && (
+        <div style={{display:"grid",
+          gridTemplateColumns:`repeat(${Math.min(playerIds.length, 2)}, 1fr)`,
+          gap:12,marginBottom:16}}>
+          {playerIds.map(id => (
+            <button key={id} onClick={() => onSelect(id)}
+              style={{padding:"16px",borderRadius:12,
+                border:`2px solid ${playerColors[id % playerColors.length]}40`,
+                background:C.cardBg,cursor:"pointer",textAlign:"left"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                <div style={{width:24,height:24,borderRadius:"50%",
+                  background:playerColors[id % playerColors.length],
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:11,fontWeight:700,color:"white",flexShrink:0}}>
+                  {id + 1}
+                </div>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
+                  letterSpacing:"0.04em"}}>Player {id + 1}</div>
+              </div>
+              <div style={{fontSize:11,color:C.textMid,marginBottom:10}}>
+                {playerShotCounts[id]} shots tracked
+                {playerFirstShot[id]?.timestampSec != null &&
+                  ` · first shot at ${fmtTs(playerFirstShot[id].timestampSec)}`}
+              </div>
+              <div style={{fontSize:12,fontWeight:700,color:playerColors[id % playerColors.length]}}>
+                This is me →
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
