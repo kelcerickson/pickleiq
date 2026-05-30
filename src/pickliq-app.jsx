@@ -7402,8 +7402,8 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   React.useEffect(() => {
     const reviewMatchId = sessionStorage.getItem("pi_review_match_id");
     if (!reviewMatchId) return;
-    sessionStorage.removeItem("pi_review_match_id");
-    // Fetch the pending job and jump straight to correction screen
+    if (!uid) return; // don't remove from sessionStorage until uid is ready
+    sessionStorage.removeItem("pi_review_match_id"); // only remove once we can actually use it
     (async () => {
       try {
         const res = await fetch(
@@ -7412,6 +7412,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
         );
         const jobs = await res.json();
         const job = jobs?.[0];
+        console.log("Review redirect — job found:", !!job, "video_url:", job?.video_url?.slice(0,50), "shots:", job?.raw_pbv_data?.length);
         if (job?.raw_pbv_data?.length > 0) {
           setMatchId(reviewMatchId);
           setPendingShots(job.raw_pbv_data);
@@ -7423,7 +7424,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
         console.error("Review redirect error:", err.message);
       }
     })();
-  }, [uid]);
+  }, [uid]); // re-runs when uid becomes available after auth loads
   React.useEffect(() => {
     if (automatedStep !== "pending" || !matchId) return;
     const interval = setInterval(async () => {
