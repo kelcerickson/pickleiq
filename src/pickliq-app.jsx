@@ -7382,7 +7382,7 @@ const PlayersContent = () => {
 
 // ── LOG MATCH GATEWAY ────────────────────────────────────────────────────────
 // Entry point for Log Match tab — user first chooses Manual or Automated
-function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
+function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingReviewJob=null, onReviewConsumed=null }) {
   const [mode, setMode] = React.useState(
     prefill ? "manual" : null  // if prefilled from claim, go straight to manual
   );
@@ -7400,31 +7400,15 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
 
   // ── On mount: check if user was sent here from the global banner ──────────
   React.useEffect(() => {
-    const reviewMatchId = sessionStorage.getItem("pi_review_match_id");
-    if (!reviewMatchId) return;
-    if (!uid) return; // don't remove from sessionStorage until uid is ready
-    sessionStorage.removeItem("pi_review_match_id"); // only remove once we can actually use it
-    (async () => {
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${reviewMatchId}&user_id=eq.${uid}&status=eq.needs_review&select=id,raw_pbv_data,video_url`,
-          { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
-        );
-        const jobs = await res.json();
-        const job = jobs?.[0];
-        console.log("Review redirect — job found:", !!job, "video_url:", job?.video_url?.slice(0,50), "shots:", job?.raw_pbv_data?.length);
-        if (job?.raw_pbv_data?.length > 0) {
-          setMatchId(reviewMatchId);
-          setPendingShots(job.raw_pbv_data);
-          setPendingVideoUrl(job.video_url || null);
-          setMode("automated");
-          setAutomatedStep("correction");
-        }
-      } catch (err) {
-        console.error("Review redirect error:", err.message);
-      }
-    })();
-  }, [uid]); // re-runs when uid becomes available after auth loads
+    if (!pendingReviewJob?.raw_pbv_data?.length) return;
+    console.log("LogMatchGateway: consuming pendingReviewJob, video_url:", pendingReviewJob.video_url?.slice(0,50));
+    setMatchId(pendingReviewJob.match_id);
+    setPendingShots(pendingReviewJob.raw_pbv_data);
+    setPendingVideoUrl(pendingReviewJob.video_url || null);
+    setMode("automated");
+    setAutomatedStep("correction");
+    if (onReviewConsumed) onReviewConsumed();
+  }, [pendingReviewJob]);
   React.useEffect(() => {
     if (automatedStep !== "pending" || !matchId) return;
     const interval = setInterval(async () => {
@@ -7955,7 +7939,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed }) {
   return null;
 }
 
-const MatchCenter=({defaultTab="log", setPage})=>{
+const MatchCenter=({defaultTab="log", setPage, pendingReviewJob=null, onReviewConsumed=null})=>{
   const isMobile = useIsMobile();
   const resolveTab = (t) => (t==="video"||t==="log") ? "log" : t;
   const [tab,setTab]=useState(resolveTab(defaultTab));
@@ -7994,7 +7978,7 @@ const MatchCenter=({defaultTab="log", setPage})=>{
       </div>
 
       {/* ── Tab: Log Match ── */}
-      {tab==="log"&&<LogMatchGateway setPage={setPage} setTab={setTab} prefill={claimPrefill} onPrefillConsumed={()=>setClaimPrefill(null)}/>}
+      {tab==="log"&&<LogMatchGateway setPage={setPage} setTab={setTab} prefill={claimPrefill} onPrefillConsumed={()=>setClaimPrefill(null)} pendingReviewJob={pendingReviewJob} onReviewConsumed={onReviewConsumed}/>}
 
       {/* ── Tab: Partners ── */}
       {tab==="partners"&&<PartnersContent/>}
@@ -9300,12 +9284,12 @@ export default function App(){
       if (!uid) return;
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/video_jobs?user_id=eq.${uid}&status=eq.needs_review&select=id,match_id,raw_pbv_data,created_at&limit=1`,
+          `${SUPABASE_URL}/rest/v1/video_jobs?user_id=eq.${uid}&status=eq.needs_review&select=id,match_id,raw_pbv_data,video_url,created_at&limit=1`,
           { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
         );
         const jobs = await res.json();
         if (jobs?.[0]?.raw_pbv_data?.length > 0) {
-          setPendingReviewJob(jobs[0]);
+          setPendingReviewJob(jobs[0]); // now includes video_url
         } else {
           setPendingReviewJob(null);
         }
@@ -9368,10 +9352,7 @@ export default function App(){
             </div>
             <button
               onClick={() => {
-                if (pendingReviewJob?.match_id) {
-                  sessionStorage.setItem("pi_review_match_id", pendingReviewJob.match_id);
-                }
-                setPage("matches_review"); // special page key that forces log tab
+                setPage("matches_review");
               }}
               style={{
                 background: C.mint, border: "none", borderRadius: 10,
@@ -9386,9 +9367,9 @@ export default function App(){
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
-          {page==="matches"  &&<MatchCenter defaultTab="log" setPage={setPage}/>}
-          {page==="matches_review"&&<MatchCenter defaultTab="log" setPage={setPage}/>}
-          {page==="matches:partners"&&<MatchCenter defaultTab="partners" setPage={setPage}/>}
+          {page==="matches"  &&<MatchCenter defaultTab="log" setPage={setPage} pendingReviewJob={null}/>}
+          {page==="matches_review"&&<MatchCenter defaultTab="log" setPage={setPage} pendingReviewJob={pendingReviewJob} onReviewConsumed={()=>setPendingReviewJob(null)}/>}
+          {page==="matches:partners"&&<MatchCenter defaultTab="partners" setPage={setPage} pendingReviewJob={null}/>}
           {page==="drills"   &&<Drills setPage={setPage}/>}
           {page==="admin"    &&getCurrentUserId()===ADMIN_USER_ID&&<Admin/>}
           {page==="coach"    &&<Coach/>}
