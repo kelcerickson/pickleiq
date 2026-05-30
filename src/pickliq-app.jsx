@@ -5169,6 +5169,149 @@ function AIVideoUpload({ matchId, userId }) {
 }
 
 // ── SHOT CORRECTION SCREEN ────────────────────────────────────────────────────
+// Captures a video frame at a given timestamp using canvas
+function VideoThumbnail({ videoUrl, timestampSec, label, shotCount, onSelect }) {
+  const videoRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
+  const [thumbnail, setThumbnail] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!videoUrl || timestampSec == null) { setLoading(false); setError(true); return; }
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.preload = "metadata";
+    video.muted = true;
+    video.src = videoUrl;
+
+    const capture = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, 320, 180);
+        setThumbnail(canvas.toDataURL("image/jpeg", 0.8));
+        setLoading(false);
+      } catch(e) {
+        setError(true);
+        setLoading(false);
+      }
+    };
+
+    video.addEventListener("loadedmetadata", () => {
+      video.currentTime = Math.max(0, timestampSec - 1);
+    });
+    video.addEventListener("seeked", capture);
+    video.addEventListener("error", () => { setError(true); setLoading(false); });
+
+    video.load();
+    return () => { video.src = ""; };
+  }, [videoUrl, timestampSec]);
+
+  const fmtTs = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",borderRadius:14,overflow:"hidden",
+      border:`2px solid ${C.border}`,background:C.cardBg,cursor:"pointer",
+      transition:"border-color 0.15s"}}
+      onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
+      onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+
+      {/* Thumbnail area */}
+      <div style={{width:"100%",aspectRatio:"16/9",background:"#111",
+        position:"relative",overflow:"hidden",display:"flex",
+        alignItems:"center",justifyContent:"center"}}>
+        {loading && (
+          <div style={{color:"#666",fontSize:12}}>Loading frame...</div>
+        )}
+        {error && !loading && (
+          <div style={{color:"#666",fontSize:11,textAlign:"center",padding:8}}>
+            <div style={{fontSize:24,marginBottom:4}}>🎬</div>
+            <div>Jump to {fmtTs(timestampSec)}</div>
+          </div>
+        )}
+        {thumbnail && (
+          <img src={thumbnail} alt={label}
+            style={{width:"100%",height:"100%",objectFit:"cover"}} />
+        )}
+        {/* Timestamp badge */}
+        {timestampSec != null && (
+          <div style={{position:"absolute",bottom:6,right:8,
+            background:"rgba(0,0,0,0.75)",borderRadius:6,
+            padding:"2px 7px",fontSize:11,color:"#fff",fontFamily:"monospace"}}>
+            {fmtTs(timestampSec)}
+          </div>
+        )}
+      </div>
+
+      {/* Player info + select button */}
+      <div style={{padding:"12px 14px"}}>
+        <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
+          letterSpacing:"0.04em",marginBottom:2}}>{label}</div>
+        <div style={{fontSize:11,color:C.textMid,marginBottom:10}}>
+          {shotCount} shots tracked
+        </div>
+        <button onClick={onSelect}
+          style={{width:"100%",padding:"9px",borderRadius:9,border:"none",
+            background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+            fontSize:13,color:C.navy,cursor:"pointer"}}>
+          This is me ✓
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Player identification screen — shows video thumbnails for each player
+function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
+  return (
+    <div style={{width:"100%",maxWidth:900,margin:"0 auto",padding:"8px 0"}}>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,
+        letterSpacing:"0.04em",marginBottom:6}}>
+        Which player are you?
+      </div>
+      <div style={{fontSize:13,color:C.textMid,marginBottom:24,lineHeight:1.6}}>
+        PB Vision detected <strong>{playerIds.length} players</strong> and tracked <strong>{pendingShots.length} shots</strong>.
+        Each card shows a frame from your match at that player's first shot.
+        Find yourself and click <strong>"This is me"</strong> — only your shots will be saved.
+      </div>
+
+      {/* Thumbnail grid */}
+      <div style={{display:"grid",
+        gridTemplateColumns:`repeat(${Math.min(playerIds.length, 2)}, 1fr)`,
+        gap:16,marginBottom:20}}>
+        {playerIds.map(id => (
+          <VideoThumbnail
+            key={id}
+            videoUrl={videoUrl}
+            timestampSec={playerFirstShot[id]?.timestampSec ?? null}
+            label={`Player ${id + 1}`}
+            shotCount={playerShotCounts[id]}
+            onSelect={() => onSelect(id)}
+          />
+        ))}
+      </div>
+
+      {!videoUrl && (
+        <div style={{padding:"12px 16px",background:`${C.amber}15`,borderRadius:10,
+          border:`1px solid ${C.amber}40`,fontSize:12,color:C.textMid,marginBottom:16}}>
+          ⚠️ Video not available for preview. Check timestamps in PB Vision's player to identify yourself.
+        </div>
+      )}
+
+      <button onClick={onCancel}
+        style={{width:"100%",padding:"10px",borderRadius:10,
+          border:`1px solid ${C.border}`,background:"transparent",
+          fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
+          color:C.textMid,cursor:"pointer"}}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 // Shows pending PBV shot data for user review/correction before saving to Supabase
 function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
   const videoRef = React.useRef(null);
@@ -5246,69 +5389,16 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
         .sort((a,b) => (a.timestampSec||0)-(b.timestampSec||0))[0];
       playerFirstShot[id] = first;
     });
-    return (
-      <div style={{width:"100%",display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
-        {videoUrl && (
-          <div style={{flex:"0 0 min(55%, 560px)",borderRadius:12,overflow:"hidden",
-            background:"#000",border:`1px solid ${C.border}`,
-            position:"sticky",top:16,alignSelf:"flex-start"}}>
-            <video ref={videoRef} src={videoUrl} controls
-              style={{width:"100%",display:"block",maxHeight:"360px",objectFit:"contain"}}
-              preload="metadata" />
-            <div style={{padding:"8px 12px",background:C.pageBg,borderTop:`1px solid ${C.border}`}}>
-              <div style={{fontSize:11,color:C.textMid}}>
-                Click a timestamp below to jump to that player's first shot and identify yourself.
-              </div>
-            </div>
-          </div>
-        )}
-        <div style={{flex:1,minWidth:280,background:C.pageBg,borderRadius:16,
-          padding:"24px 20px",border:`1px solid ${C.border}`}}>
-          <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,
-            letterSpacing:"0.04em",marginBottom:6}}>Which player are you?</div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:20,lineHeight:1.6}}>
-            PB Vision detected <strong>{playerIds.length} players</strong> and tracked {pendingShots.length} total shots.
-            {videoUrl ? " Click each player's timestamp to find yourself in the video." : " Select which player is you."}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {playerIds.map(id => {
-              const first = playerFirstShot[id];
-              const sec = first?.timestampSec;
-              const ts = sec != null ? `${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}` : null;
-              return (
-                <div key={id} style={{display:"flex",alignItems:"center",gap:10,
-                  background:C.cardBg,border:`1.5px solid ${C.blue}20`,
-                  borderRadius:12,padding:"12px 14px"}}>
-                  {videoUrl && ts && (
-                    <button onClick={() => seekTo(sec)}
-                      style={{flexShrink:0,padding:"6px 10px",borderRadius:8,
-                        border:`1px solid ${C.blue}40`,background:`${C.blue}10`,
-                        fontFamily:"monospace",fontSize:12,color:C.blue,
-                        cursor:"pointer",fontWeight:700}}>▶ {ts}</button>
-                  )}
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
-                      letterSpacing:"0.04em"}}>Player {id + 1}</div>
-                    <div style={{fontSize:11,color:C.textMid}}>
-                      {playerShotCounts[id]} shots · first: {first?.name || "—"}{ts ? ` at ${ts}` : ""}
-                    </div>
-                  </div>
-                  <button onClick={() => setSelectedPlayerId(id)}
-                    style={{flexShrink:0,padding:"8px 14px",borderRadius:9,border:"none",
-                      background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
-                      fontSize:12,color:C.navy,cursor:"pointer"}}>This is me</button>
-                </div>
-              );
-            })}
-          </div>
-          <button onClick={onCancel}
-            style={{marginTop:16,width:"100%",padding:"10px",borderRadius:10,
-              border:`1px solid ${C.border}`,background:"transparent",
-              fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
-              color:C.textMid,cursor:"pointer"}}>Cancel</button>
-        </div>
-      </div>
-    );
+
+    return <PlayerIdentificationScreen
+      playerIds={playerIds}
+      playerFirstShot={playerFirstShot}
+      playerShotCounts={playerShotCounts}
+      videoUrl={videoUrl}
+      pendingShots={pendingShots}
+      onSelect={(id) => setSelectedPlayerId(id)}
+      onCancel={onCancel}
+    />;
   }
 
   // ── Shot correction screen — split layout with video ──────────────────────
