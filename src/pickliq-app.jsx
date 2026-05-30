@@ -5554,8 +5554,12 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
                   background:C.pageBg,borderRadius:6,padding:"2px 4px",
                   border:`1px solid ${C.border}`}}>R{shot.rally+1}</div>
 
-                {/* Timestamp */}
-                <div style={{fontSize:11,color:C.blue,fontFamily:"monospace",fontWeight:600}}>
+                {/* Timestamp — click to jump video */}
+                <div
+                  onClick={() => seekTo(shot.timestampSec)}
+                  style={{fontSize:11,color:C.blue,fontFamily:"monospace",fontWeight:600,
+                    cursor:"pointer",textDecoration:"underline",
+                    textUnderlineOffset:2}}>
                   {fmtTime(shot.timestampSec)}
                 </div>
 
