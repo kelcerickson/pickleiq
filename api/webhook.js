@@ -73,9 +73,26 @@ export default async function handler(req, res) {
     rallies.forEach((rally, rallyIndex) => {
       const shots = rally.shots || [];
       shots.forEach((shot) => {
-        // Determine shot type — overhead vertical_type overrides stroke_type
+        // Determine shot type
+        // PBV schema: stroke_type = "forehand"/"backhand" (stroke mechanic, NOT shot name)
+        // Shot name may be in: tags, shot_type, type, or derived from vertical_type
         let pbvType = (shot.stroke_type || "").toLowerCase();
         if ((shot.vertical_type || "").toLowerCase() === "overhead") pbvType = "overhead";
+
+        // Log the full shot fields on first few shots to identify correct field name
+        if (rawShots.length < 3) {
+          console.log("SHOT FIELDS:", JSON.stringify(Object.keys(shot)));
+          console.log("SHOT SAMPLE:", JSON.stringify({
+            stroke_type: shot.stroke_type,
+            vertical_type: shot.vertical_type,
+            shot_type: shot.shot_type,
+            type: shot.type,
+            tags: shot.tags,
+            shot_class: shot.shot_class,
+            classification: shot.classification,
+            label: shot.label,
+          }));
+        }
         const baseName = pbvType === "overhead" ? "Overhead / Smash" : (shotTypeMap[pbvType] || null);
         if (!baseName) { console.log("Unknown shot type:", pbvType); return; }
 
