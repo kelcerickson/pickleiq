@@ -64,6 +64,12 @@ export default async function handler(req, res) {
   let rawShots = [];
   try {
     const rallies = insights?.rallies || [];
+    console.log(`PBV sent ${rallies.length} rallies`);
+    if (rallies.length > 0) {
+      const totalShotsInRallies = rallies.reduce((sum, r) => sum + (r.shots?.length || 0), 0);
+      console.log(`Total shots across all rallies: ${totalShotsInRallies}`);
+      console.log(`First rally shot count: ${rallies[0]?.shots?.length || 0}`);
+    }
     rallies.forEach((rally, rallyIndex) => {
       const shots = rally.shots || [];
       shots.forEach((shot) => {
