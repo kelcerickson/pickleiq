@@ -42,23 +42,59 @@ export default async function handler(req, res) {
   ]);
 
   const shotTypeMap = {
-    drive:    "Drive",
-    drop:     "Drop",
-    dink:     "Dink",
-    volley:   "Volley",
-    reset:    "Reset",
-    lob:      "Lob",
-    atp:      "ATP",
-    erne:     "Erne",
-    speedup:  "Speed-up",
-    speed_up: "Speed-up",
-    serve:    "Serve",
-    return:   "Return",
-    block:    "Block",
-    counter:  "Counter",
-    scramble: "Scramble",
-    bert:     "Bert",
-    tweener:  "Tweener",
+    // Single-word formats
+    "drive":        "Drive",
+    "drop":         "Drop",
+    "dink":         "Dink",
+    "volley":       "Volley",
+    "reset":        "Reset",
+    "lob":          "Lob",
+    "atp":          "ATP",
+    "erne":         "Erne",
+    "speedup":      "Speed-up",
+    "speed_up":     "Speed-up",
+    "speed-up":     "Speed-up",
+    "serve":        "Serve",
+    "return":       "Return",
+    "block":        "Block",
+    "counter":      "Counter",
+    "scramble":     "Scramble",
+    "bert":         "Bert",
+    "tweener":      "Tweener",
+    "smash":        "Overhead / Smash",
+    // Combined shot-side formats (what PBV actually sends)
+    "drive-forehand":   "Drive FH",
+    "drive-backhand":   "Drive BH",
+    "drop-forehand":    "Drop FH",
+    "drop-backhand":    "Drop BH",
+    "dink-forehand":    "Dink FH",
+    "dink-backhand":    "Dink BH",
+    "volley-forehand":  "Volley FH",
+    "volley-backhand":  "Volley BH",
+    "reset-forehand":   "Reset FH",
+    "reset-backhand":   "Reset BH",
+    "lob-forehand":     "Lob FH",
+    "lob-backhand":     "Lob BH",
+    "return-forehand":  "Return FH",
+    "return-backhand":  "Return BH",
+    "block-forehand":   "Block FH",
+    "block-backhand":   "Block BH",
+    "counter-forehand": "Counter FH",
+    "counter-backhand": "Counter BH",
+    "speed-up-forehand":"Speed-up FH",
+    "speed-up-backhand":"Speed-up BH",
+    "speedup-forehand": "Speed-up FH",
+    "speedup-backhand": "Speed-up BH",
+    "scramble-forehand":"Scramble FH",
+    "scramble-backhand":"Scramble BH",
+    "atp-forehand":     "ATP",
+    "atp-backhand":     "ATP",
+    "erne-forehand":    "Erne",
+    "erne-backhand":    "Erne",
+    "serve-forehand":   "Serve",
+    "serve-backhand":   "Serve",
+    "smash-forehand":   "Overhead / Smash",
+    "smash-backhand":   "Overhead / Smash",
   };
 
   let rawShots = [];
@@ -93,14 +129,16 @@ export default async function handler(req, res) {
             label: shot.label,
           }));
         }
-        const baseName = pbvType === "overhead" ? "Overhead / Smash" : (shotTypeMap[pbvType] || null);
-        if (!baseName) { console.log("Unknown shot type:", pbvType); return; }
+        const mappedName = pbvType === "overhead" ? "Overhead / Smash" : (shotTypeMap[pbvType] || null);
+        if (!mappedName) { console.log("Unknown shot type:", pbvType); return; }
 
-        // BH/FH split
-        let storedName = baseName;
-        if (STROKES_WITH_SIDES.has(baseName)) {
+        // If mappedName already ends in BH/FH (from combined format), use directly
+        // Otherwise apply BH/FH split from stroke_side
+        const alreadyHasSide = mappedName.endsWith(" BH") || mappedName.endsWith(" FH");
+        let storedName = mappedName;
+        if (!alreadyHasSide && STROKES_WITH_SIDES.has(mappedName)) {
           const side = (shot.stroke_side || "").toLowerCase();
-          storedName = baseName + (side === "backhand" ? " BH" : " FH");
+          storedName = mappedName + (side === "backhand" ? " BH" : " FH");
         }
 
         // Quality mapping — CONFIRMED from data:
