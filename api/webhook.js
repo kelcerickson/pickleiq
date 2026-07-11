@@ -36,121 +36,100 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true, warning: "No insights data" });
   }
 
+  // ── Shot type extraction from PBV tags field ───────────────────────────────
+  // PBV stores shot classification in tags as keys like:
+  //   "type;dink", "type;drive", "type;drop", "type;smash", "type;serve;type;FASTBALL"
+  // stroke_type = "forehand" | "backhand" (stroke mechanic only, NOT shot name)
+  // vertical_type = "dig" | "neutral" | "overhead" (overhead = smash)
+  // is_volleyed = true → volley
+  // Empty tags + high speed (>45mph) → Drive
+  // Empty tags + lower speed → Drop (3rd shot context)
+
   const STROKES_WITH_SIDES = new Set([
     "Return","Drive","Drop","Dink","Reset","Volley",
     "Block","Speed-up","Counter","Lob","Scramble",
   ]);
 
-  const shotTypeMap = {
-    // Single-word formats
-    "drive":        "Drive",
-    "drop":         "Drop",
-    "dink":         "Dink",
-    "volley":       "Volley",
-    "reset":        "Reset",
-    "lob":          "Lob",
-    "atp":          "ATP",
-    "erne":         "Erne",
-    "speedup":      "Speed-up",
-    "speed_up":     "Speed-up",
-    "speed-up":     "Speed-up",
-    "serve":        "Serve",
-    "return":       "Return",
-    "block":        "Block",
-    "counter":      "Counter",
-    "scramble":     "Scramble",
-    "bert":         "Bert",
-    "tweener":      "Tweener",
-    "smash":        "Overhead / Smash",
-    // Combined shot-side formats (what PBV actually sends)
-    "drive-forehand":   "Drive FH",
-    "drive-backhand":   "Drive BH",
-    "drop-forehand":    "Drop FH",
-    "drop-backhand":    "Drop BH",
-    "dink-forehand":    "Dink FH",
-    "dink-backhand":    "Dink BH",
-    "volley-forehand":  "Volley FH",
-    "volley-backhand":  "Volley BH",
-    "reset-forehand":   "Reset FH",
-    "reset-backhand":   "Reset BH",
-    "lob-forehand":     "Lob FH",
-    "lob-backhand":     "Lob BH",
-    "return-forehand":  "Return FH",
-    "return-backhand":  "Return BH",
-    "block-forehand":   "Block FH",
-    "block-backhand":   "Block BH",
-    "counter-forehand": "Counter FH",
-    "counter-backhand": "Counter BH",
-    "speed-up-forehand":"Speed-up FH",
-    "speed-up-backhand":"Speed-up BH",
-    "speedup-forehand": "Speed-up FH",
-    "speedup-backhand": "Speed-up BH",
-    "scramble-forehand":"Scramble FH",
-    "scramble-backhand":"Scramble BH",
-    "atp-forehand":     "ATP",
-    "atp-backhand":     "ATP",
-    "erne-forehand":    "Erne",
-    "erne-backhand":    "Erne",
-    "serve-forehand":   "Serve",
-    "serve-backhand":   "Serve",
-    "smash-forehand":   "Overhead / Smash",
-    "smash-backhand":   "Overhead / Smash",
-  };
+  // Extract base shot name from PBV tags
+  function getShotNameFromTags(tags, verticalType, isVollied, speed) {
+    if (!tags || Object.keys(tags).length === 0) {
+      // No tag — infer from context
+      if ((verticalType || "").toLowerCase() === "overhead") return "Overhead / Smash";
+      if (isVollied) return "Volley";
+      if ((speed || 0) >= 45) return "Drive"; // fast untagged shot = drive
+      return "Drop"; // slower untagged = drop/reset
+    }
 
+    // Find the type tag key
+    const tagKey = Object.keys(tags).find(k => k.startsWith("type;"));
+    if (!tagKey) return null;
+
+    // Parse: "type;dink" → "dink", "type;serve;type;FASTBALL" → "serve"
+    const parts = tagKey.split(";");
+    const shotType = parts[1]?.toLowerCase();
+
+    switch (shotType) {
+      case "dink":    return "Dink";
+      case "drive":   return "Drive";
+      case "drop":    return "Drop";
+      case "smash":   return "Overhead / Smash";
+      case "serve":   return "Serve";
+      case "return":  return "Return";
+      case "lob":     return "Lob";
+      case "atp":     return "ATP";
+      case "erne":    return "Erne";
+      case "reset":   return "Reset";
+      case "volley":  return "Volley";
+      case "speedup":
+      case "speed-up":
+      case "speed_up": return "Speed-up";
+      case "block":   return "Block";
+      case "counter": return "Counter";
+      case "bert":    return "Bert";
+      case "tweener": return "Tweener";
+      case "scramble": return "Scramble";
+      default:
+        console.log("Unknown tag shot type:", shotType, "full key:", tagKey);
+        return null;
+    }
+  }
+
+  // ── Parse all shots from all rallies ──────────────────────────────────────
   let rawShots = [];
   try {
     const rallies = insights?.rallies || [];
     console.log(`PBV sent ${rallies.length} rallies`);
-    if (rallies.length > 0) {
-      const totalShotsInRallies = rallies.reduce((sum, r) => sum + (r.shots?.length || 0), 0);
-      console.log(`Total shots across all rallies: ${totalShotsInRallies}`);
-      console.log(`First rally shot count: ${rallies[0]?.shots?.length || 0}`);
-    }
+    const totalShotsInRallies = rallies.reduce((sum, r) => sum + (r.shots?.length || 0), 0);
+    console.log(`Total shots across all rallies: ${totalShotsInRallies}`);
+
     rallies.forEach((rally, rallyIndex) => {
       const shots = rally.shots || [];
       shots.forEach((shot) => {
-        // Determine shot type
-        // PBV schema: stroke_type = "forehand"/"backhand" (stroke mechanic, NOT shot name)
-        // Shot name may be in: tags, shot_type, type, or derived from vertical_type
-        let pbvType = (shot.stroke_type || "").toLowerCase();
-        if ((shot.vertical_type || "").toLowerCase() === "overhead") pbvType = "overhead";
+        const rbm = shot.resulting_ball_movement || {};
+        const traj = rbm.trajectory || {};
 
-        // Log the full shot fields on first few shots to identify correct field name
-        if (rawShots.length < 3) {
-          console.log("SHOT FIELDS:", JSON.stringify(Object.keys(shot)));
-          console.log("SHOT SAMPLE:", JSON.stringify({
-            stroke_type: shot.stroke_type,
-            vertical_type: shot.vertical_type,
-            shot_type: shot.shot_type,
-            type: shot.type,
-            tags: shot.tags,
-            shot_class: shot.shot_class,
-            classification: shot.classification,
-            label: shot.label,
-          }));
-        }
-        const mappedName = pbvType === "overhead" ? "Overhead / Smash" : (shotTypeMap[pbvType] || null);
-        if (!mappedName) { console.log("Unknown shot type:", pbvType); return; }
+        // Get shot name from tags
+        const baseName = getShotNameFromTags(
+          shot.tags,
+          shot.vertical_type,
+          rbm.is_volleyed,
+          rbm.speed
+        );
+        if (!baseName) { console.log("Skipping shot — no base name"); return; }
 
-        // If mappedName already ends in BH/FH (from combined format), use directly
-        // Otherwise apply BH/FH split from stroke_side
-        const alreadyHasSide = mappedName.endsWith(" BH") || mappedName.endsWith(" FH");
-        let storedName = mappedName;
-        if (!alreadyHasSide && STROKES_WITH_SIDES.has(mappedName)) {
-          const side = (shot.stroke_side || "").toLowerCase();
-          storedName = mappedName + (side === "backhand" ? " BH" : " FH");
+        // Apply BH/FH from stroke_type (forehand/backhand)
+        let storedName = baseName;
+        if (STROKES_WITH_SIDES.has(baseName)) {
+          const side = (shot.stroke_type || "").toLowerCase();
+          storedName = baseName + (side === "backhand" ? " BH" : " FH");
         }
 
-        // Quality mapping — CONFIRMED from data:
-        // 0 exactly = error/fault (ball hit net, out, etc.)
-        // 0.01–0.59  = neutral (below average execution)
-        // 0.60–1.0   = positive (good execution)
+        // Quality
         const qualityRaw = shot.quality?.overall ?? 0;
         const qualityLabel = qualityRaw === 0 ? "neg" : qualityRaw < 0.6 ? "neu" : "pos";
 
         // Timestamp
-        const timestampMs = shot.start_ms ?? null;
-        const timestampSec = timestampMs !== null ? Math.round(timestampMs / 1000) : null;
+        const timestampSec = shot.start_ms != null ? Math.round(shot.start_ms / 1000) : null;
 
         // Rally ender and fault
         const isRallyEnder = shot.is_final === true;
@@ -158,43 +137,30 @@ export default async function handler(req, res) {
           ? Object.values(shot.errors.faults).some(v => v === true)
           : false;
 
-        // All 4 player positions at moment of shot (for click-to-identify UI)
-        // PBV sends player_positions as array of {x,y} for all 4 players
+        // Positions
         const allPlayerPositions = shot.player_positions ?? null;
         const playerPos = allPlayerPositions?.[shot.player_id] ?? null;
 
-        // Ball trajectory
-        const traj = shot.resulting_ball_movement?.trajectory ?? null;
-        const shotStart = traj?.start ? {
-          zone: traj.start.zone ?? null,
-          x: traj.start.location?.x ?? null,
-          y: traj.start.location?.y ?? null,
-        } : null;
-        const shotEnd = traj?.end ? {
-          zone: traj.end.zone ?? null,
-          x: traj.end.location?.x ?? null,
-          y: traj.end.location?.y ?? null,
-        } : null;
-
-        // Ball speed mph
-        const ballSpeed = shot.resulting_ball_movement?.speed ?? null;
+        // Trajectory
+        const shotStart = traj.start ? { zone: traj.start.zone ?? null, x: traj.start.location?.x ?? null, y: traj.start.location?.y ?? null } : null;
+        const shotEnd   = traj.end   ? { zone: traj.end.zone   ?? null, x: traj.end.location?.x   ?? null, y: traj.end.location?.y   ?? null } : null;
 
         rawShots.push({
           rally: rallyIndex,
           playerId: shot.player_id ?? null,
-          pbvType: pbvType,
+          pbvType: Object.keys(shot.tags || {}).find(k => k.startsWith("type;")) || shot.vertical_type || "unknown",
           name: storedName,
           quality: qualityRaw,
-          qualityLabel: qualityLabel,
-          isRallyEnder: isRallyEnder,
-          timestampSec: timestampSec,
-          hasFault: hasFault,
-          strokeSide: shot.stroke_side || null,
+          qualityLabel,
+          isRallyEnder,
+          timestampSec,
+          hasFault,
+          strokeSide: shot.stroke_type || null,
           playerPosition: playerPos,
-          allPlayerPositions: allPlayerPositions, // all 4 positions for click-to-identify
-          shotStart: shotStart,
-          shotEnd: shotEnd,
-          ballSpeed: ballSpeed,
+          allPlayerPositions,
+          shotStart,
+          shotEnd,
+          ballSpeed: rbm.speed ?? null,
         });
       });
     });
@@ -204,7 +170,7 @@ export default async function handler(req, res) {
 
   console.log(`Parsed ${rawShots.length} shots from PBV insights`);
 
-  // Find video_jobs row
+  // ── Find video_jobs row ───────────────────────────────────────────────────
   let jobRow = null;
   try {
     const jobRes = await fetch(
@@ -223,7 +189,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true, warning: "Job row not found" });
   }
 
-  // Save to video_jobs with needs_review status
+  // ── Save to video_jobs with needs_review status ───────────────────────────
   try {
     await fetch(`${supabaseUrl}/rest/v1/video_jobs?id=eq.${jobRow.id}`, {
       method: "PATCH",
