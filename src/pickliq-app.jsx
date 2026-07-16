@@ -5397,11 +5397,10 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
         ...s,
         id: i,
         corrected: false,
-        // Use pre-computed qualityLabel from webhook (correctly handles 0 = error)
-        // Fallback: 0 = neg, <0.6 = neu, >=0.6 = pos
+        _originalName: s.name, // store original PBV-mapped name for correction logging
         qualityLabel: s.qualityLabel || (s.quality === 0 ? "neg" : s.quality < 0.6 ? "neu" : "pos"),
-        qualityOverride: null, // null = use PBV quality, else "pos"|"neu"|"neg"
-        rallyEnderOverride: null, // null = use PBV is_final, else true|false
+        qualityOverride: null,
+        rallyEnderOverride: null,
       }));
   }, [selectedPlayerId, pendingShots]);
 
@@ -8066,7 +8065,37 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
         }
       }
 
-      // Mark video_jobs as complete
+      // ── Log shot corrections to shot_corrections table ────────────────────
+      // Record every shot where the user changed type, quality, or rally ender
+      const corrections = correctedShots
+        .filter(shot => shot.corrected)
+        .map(shot => ({
+          user_id: uid,
+          match_id: matchId,
+          pbv_classification: shot._originalName || shot.name,
+          corrected_classification: shot.name,
+          quality_changed: shot.qualityOverride !== null,
+          rally_ender_changed: shot.rallyEnderOverride !== null,
+          created_at: new Date().toISOString(),
+        }));
+
+      if (corrections.length > 0) {
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/shot_corrections`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+              "apikey": SUPABASE_KEY,
+              "Prefer": "return=minimal",
+            },
+            body: JSON.stringify(corrections),
+          });
+          console.log(`Logged ${corrections.length} shot corrections`);
+        } catch (err) {
+          console.error("Error logging corrections:", err.message);
+        }
+      }
       try {
         await fetch(`${SUPABASE_URL}/rest/v1/video_jobs?match_id=eq.${matchId}&user_id=eq.${uid}`, {
           method: "PATCH",
