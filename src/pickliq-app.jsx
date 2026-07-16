@@ -5406,7 +5406,13 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
   }, [selectedPlayerId, pendingShots]);
 
   const [shots, setShots] = React.useState([]);
-  React.useEffect(() => { setShots(myShots); }, [myShots]);
+  const shotsInitialized = React.useRef(false);
+  React.useEffect(() => {
+    if (myShots.length > 0 && !shotsInitialized.current) {
+      setShots(myShots);
+      shotsInitialized.current = true;
+    }
+  }, [myShots]);
 
   const [filter, setFilter] = React.useState("all");
 
