@@ -5397,6 +5397,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
         ...s,
         id: i,
         corrected: false,
+        notMine: false,  // user can mark shot as misattributed by PBV
         _originalName: s.name, // store original PBV-mapped name for correction logging
         qualityLabel: s.qualityLabel || (s.quality === 0 ? "neg" : s.quality < 0.6 ? "neu" : "pos"),
         qualityOverride: null,
@@ -5508,7 +5509,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
         </div>
         {/* Filter tabs */}
         <div style={{display:"flex",gap:8,marginTop:12}}>
-          {[["all","All"],["corrected","Corrected"],["enders","Rally Enders"]].map(([val,label])=>(
+          {[["all","All"],["corrected","Corrected"],["enders","Rally Enders"],["notmine","Not Mine"]].map(([val,label])=>(
             <button key={val} onClick={()=>setFilter(val)}
               style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${filter===val?C.blue:C.border}`,
                 background:filter===val?`${C.blue}15`:"transparent",
@@ -5521,10 +5522,10 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
       </div>
 
       {/* Column headers */}
-      <div style={{display:"grid",gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px",
+      <div style={{display:"grid",gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px 80px",
         gap:8,padding:"8px 16px",background:C.pageBg,
         borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {["Rally","Time","Shot type","Quality","Rally ender","",""].map((h,i)=>(
+        {["Rally","Time","Shot type","Quality","Rally ender","","",""].map((h,i)=>(
           <div key={i} style={{fontSize:10,fontWeight:700,color:C.textLight,
             textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</div>
         ))}
@@ -5534,9 +5535,10 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
       <div style={{overflowY:"auto",maxHeight:"55vh",padding:"8px 16px"}}>
         {(() => {
           const visible = shots.filter(s => {
-            if (filter === "corrected") return s.corrected;
-            if (filter === "enders") return (s.rallyEnderOverride !== null ? s.rallyEnderOverride : s.isRallyEnder);
-            return true;
+            if (filter === "corrected") return s.corrected && !s.notMine;
+            if (filter === "enders") return (s.rallyEnderOverride !== null ? s.rallyEnderOverride : s.isRallyEnder) && !s.notMine;
+            if (filter === "notmine") return s.notMine;
+            return true; // "all" shows everything including not-mine (dimmed)
           });
           if (!visible.length) return (
             <div style={{padding:"32px",textAlign:"center",color:C.textLight,fontSize:13}}>
@@ -5549,10 +5551,11 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
             const qColor = effectiveQuality === "pos" ? C.mint : effectiveQuality === "neu" ? C.textMid : C.rose;
             return (
               <div key={shot.id} style={{display:"grid",
-                gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px",
+                gridTemplateColumns:"48px 52px 1fr 90px 90px 72px 28px 80px",
                 gap:8,padding:"7px 0",alignItems:"center",
                 borderBottom:`1px solid ${C.border}`,
-                background:shot.corrected?`${C.mint}06`:"transparent"}}>
+                opacity: shot.notMine ? 0.4 : 1,
+                background: shot.notMine ? `${C.rose}06` : shot.corrected ? `${C.mint}06` : "transparent"}}>
 
                 {/* Rally badge */}
                 <div style={{fontSize:10,color:C.textLight,textAlign:"center",
@@ -5619,8 +5622,22 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
 
                 {/* Corrected indicator */}
                 <div style={{fontSize:11,color:C.mint,textAlign:"center"}}>
-                  {shot.corrected ? "✓" : ""}
+                  {shot.corrected && !shot.notMine ? "✓" : ""}
                 </div>
+
+                {/* Not my shot button */}
+                <button
+                  onClick={() => updateShot(shot.id, "notMine", !shot.notMine)}
+                  style={{
+                    padding:"3px 6px",borderRadius:6,
+                    border:`1px solid ${shot.notMine ? C.rose : C.border}`,
+                    background: shot.notMine ? `${C.rose}15` : "transparent",
+                    fontFamily:"'Outfit'",fontSize:10,fontWeight:600,
+                    color: shot.notMine ? C.rose : C.textLight,
+                    cursor:"pointer",whiteSpace:"nowrap",
+                  }}>
+                  {shot.notMine ? "✕ not mine" : "not mine"}
+                </button>
               </div>
             );
           });
@@ -5631,6 +5648,11 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
       <div style={{padding:"14px 16px",borderTop:`1px solid ${C.border}`,flexShrink:0,
         display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
         <div style={{fontSize:11,color:C.textMid}}>
+          {shots.filter(s=>s.notMine).length > 0 && (
+            <span style={{color:C.rose,fontWeight:600,marginRight:8}}>
+              {shots.filter(s=>s.notMine).length} marked "not mine" · excluded from save
+            </span>
+          )}
           {correctedCount > 0
             ? `${correctedCount} shot${correctedCount>1?"s":""} corrected`
             : "Review shots above — use the timestamp to verify in PB Vision's player"}
@@ -5646,7 +5668,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
             style={{padding:"10px 24px",borderRadius:10,border:"none",
               background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
               color:C.navy,cursor:"pointer"}}>
-            ✓ Save {shots.length} Shots to PickleIntel
+            ✓ Save {shots.filter(s=>!s.notMine).length} Shots to PickleIntel
           </button>
         </div>
       </div>
@@ -8002,8 +8024,9 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
       };
 
       // Aggregate shots into counts by name using effective quality
+      // Exclude shots marked as "not mine" (PBV misattribution)
       const agg = {};
-      correctedShots.forEach(shot => {
+      correctedShots.filter(s => !s.notMine).forEach(shot => {
         const effectiveQuality = shot.qualityOverride || shot.qualityLabel;
         const effectiveEnder = shot.rallyEnderOverride !== null ? shot.rallyEnderOverride : shot.isRallyEnder;
         if (!agg[shot.name]) agg[shot.name] = { pos_count:0, neu_count:0, neg_count:0, attempts:0, wins:0, misses:0 };
@@ -8066,14 +8089,14 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
       }
 
       // ── Log shot corrections to shot_corrections table ────────────────────
-      // Record every shot where the user changed type, quality, or rally ender
+      // Record every shot where the user changed type, quality, rally ender, or marked not-mine
       const corrections = correctedShots
-        .filter(shot => shot.corrected)
+        .filter(shot => shot.corrected || shot.notMine)
         .map(shot => ({
           user_id: uid,
           match_id: matchId,
           pbv_classification: shot._originalName || shot.name,
-          corrected_classification: shot.name,
+          corrected_classification: shot.notMine ? "NOT_MY_SHOT" : shot.name,
           quality_changed: shot.qualityOverride !== null,
           rally_ender_changed: shot.rallyEnderOverride !== null,
           created_at: new Date().toISOString(),
