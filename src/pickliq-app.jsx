@@ -5230,8 +5230,10 @@ function getPlayerIdFromQuadrant(playerIds, pendingShots, side, position) {
 function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
   const [frameImg, setFrameImg] = React.useState(null);
   const [frameLoading, setFrameLoading] = React.useState(true);
-  const [step, setStep] = React.useState("side"); // "side" | "position"
+  const [step, setStep] = React.useState("side"); // "side" | "position" | "confirm"
   const [selectedSide, setSelectedSide] = React.useState(null);
+  const [suggestedPlayerId, setSuggestedPlayerId] = React.useState(null);
+  const [thumbnails, setThumbnails] = React.useState({}); // playerId -> dataUrl
 
   const frameTimestamp = playerFirstShot[playerIds[0]]?.timestampSec ?? 10;
 
@@ -5243,7 +5245,25 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
     });
   }, [videoUrl, frameTimestamp]);
 
+  // When we reach confirm step, capture thumbnails for all players
+  React.useEffect(() => {
+    if (step !== "confirm" || !videoUrl) return;
+    playerIds.forEach(id => {
+      const ts = playerFirstShot[id]?.timestampSec;
+      if (ts == null) return;
+      captureVideoFrame(videoUrl, ts, (dataUrl) => {
+        if (dataUrl) setThumbnails(prev => ({ ...prev, [id]: dataUrl }));
+      });
+    });
+  }, [step]);
+
   const fmtTs = (sec) => String(Math.floor(sec/60)) + ":" + String(sec%60).padStart(2,"0");
+
+  const handlePositionSelect = (position) => {
+    const pid = getPlayerIdFromQuadrant(playerIds, pendingShots, selectedSide, position);
+    setSuggestedPlayerId(pid);
+    setStep("confirm");
+  };
 
   return (
     <div style={{width:"100%",maxWidth:860,margin:"0 auto",padding:"8px 0"}}>
@@ -5335,10 +5355,7 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
             ].map(opt => (
               React.createElement("button", {
                 key: opt.key,
-                onClick: () => {
-                  const pid = getPlayerIdFromQuadrant(playerIds, pendingShots, selectedSide, opt.key);
-                  onSelect(pid);
-                },
+                onClick: () => handlePositionSelect(opt.key),
                 style: {padding:"24px 16px",borderRadius:14,border:"2px solid " + C.mint + "30",
                   background:C.cardBg,cursor:"pointer",textAlign:"center",transition:"all 0.15s"},
                 onMouseEnter: e => e.currentTarget.style.borderColor = C.mint,
@@ -5357,6 +5374,103 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
               color:C.textMid,cursor:"pointer",marginBottom:8}}>
             ← Back
           </button>
+        </div>
+      )}
+
+      {/* Step 3: Confirm */}
+      {step === "confirm" && suggestedPlayerId !== null && (
+        <div>
+          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
+            Step 3 of 3 — Is this you?
+          </div>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
+            Based on your answers, we think you're <strong>Player {suggestedPlayerId + 1}</strong> with <strong>{playerShotCounts[suggestedPlayerId]} shots</strong>.
+            Here's a frame from their first shot — does that look like you?
+          </div>
+
+          {/* Suggested player thumbnail */}
+          <div style={{borderRadius:12,overflow:"hidden",border:`2px solid ${C.mint}`,
+            marginBottom:16,background:"#000",position:"relative",maxWidth:480}}>
+            {thumbnails[suggestedPlayerId] ? (
+              <img src={thumbnails[suggestedPlayerId]} alt="Your first shot"
+                style={{width:"100%",display:"block"}} />
+            ) : (
+              <div style={{aspectRatio:"16/9",display:"flex",alignItems:"center",
+                justifyContent:"center",color:"#666",fontSize:13}}>
+                Loading frame...
+              </div>
+            )}
+            <div style={{position:"absolute",bottom:8,left:"50%",transform:"translateX(-50%)",
+              background:"rgba(0,0,0,0.75)",borderRadius:6,padding:"3px 10px",
+              color:"white",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+              Player {suggestedPlayerId + 1} · first shot at {fmtTs(playerFirstShot[suggestedPlayerId]?.timestampSec ?? 0)}
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            <button onClick={() => onSelect(suggestedPlayerId)}
+              style={{padding:"16px",borderRadius:12,border:"none",
+                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                fontSize:14,color:C.navy,cursor:"pointer"}}>
+              ✓ Yes, that's me
+            </button>
+            <button onClick={() => setStep("allplayers")}
+              style={{padding:"16px",borderRadius:12,
+                border:`1.5px solid ${C.border}`,background:C.cardBg,
+                fontFamily:"'Outfit'",fontWeight:600,
+                fontSize:14,color:C.textMid,cursor:"pointer"}}>
+              ✕ No, pick a different player
+            </button>
+          </div>
+          <button onClick={() => { setStep("side"); setSelectedSide(null); setSuggestedPlayerId(null); }}
+            style={{width:"100%",padding:"8px",borderRadius:10,
+              border:`1px solid ${C.border}`,background:"transparent",
+              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
+              color:C.textMid,cursor:"pointer"}}>
+            ← Start over
+          </button>
+        </div>
+      )}
+
+      {/* Step 4: Manual player pick if confirmation failed */}
+      {step === "allplayers" && (
+        <div>
+          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
+            Pick your player
+          </div>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:16}}>
+            Select the player whose shots match yours. Check the timestamps against the video above.
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            {playerIds.map(id => (
+              <button key={id} onClick={() => onSelect(id)}
+                style={{padding:"16px 12px",borderRadius:12,
+                  border:`1.5px solid ${C.blue}20`,background:C.cardBg,
+                  cursor:"pointer",textAlign:"left"}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",
+                    background:["#378ADD","#E24B4A","#1D9E75","#F5A623"][id%4],
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:11,fontWeight:700,color:"white",flexShrink:0}}>
+                    {id+1}
+                  </div>
+                  <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
+                    letterSpacing:"0.04em"}}>Player {id+1}</div>
+                </div>
+                {thumbnails[id] ? (
+                  <img src={thumbnails[id]} alt={`Player ${id+1}`}
+                    style={{width:"100%",borderRadius:8,display:"block",marginBottom:6}} />
+                ) : (
+                  <div style={{background:"#111",borderRadius:8,aspectRatio:"16/9",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    marginBottom:6,color:"#666",fontSize:11}}>Loading...</div>
+                )}
+                <div style={{fontSize:11,color:C.textMid}}>
+                  {playerShotCounts[id]} shots · first at {fmtTs(playerFirstShot[id]?.timestampSec ?? 0)}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
