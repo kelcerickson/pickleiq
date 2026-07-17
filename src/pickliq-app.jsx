@@ -8310,7 +8310,6 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
         onDone={() => setPage("shots")}
       />;
     }
-    };
 
     return (
       <div className="fade-up" style={{width:"100%",paddingTop:8}}>
