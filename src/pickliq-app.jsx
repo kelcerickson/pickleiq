@@ -5245,17 +5245,15 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
     });
   }, [videoUrl, frameTimestamp]);
 
-  // When we reach confirm step, capture thumbnails for all players
+  // When we reach confirm step, capture a single thumbnail for the suggested player
   React.useEffect(() => {
-    if (step !== "confirm" || !videoUrl) return;
-    playerIds.forEach(id => {
-      const ts = playerFirstShot[id]?.timestampSec;
-      if (ts == null) return;
-      captureVideoFrame(videoUrl, ts, (dataUrl) => {
-        if (dataUrl) setThumbnails(prev => ({ ...prev, [id]: dataUrl }));
-      });
+    if (step !== "confirm" || !videoUrl || suggestedPlayerId === null) return;
+    const ts = playerFirstShot[suggestedPlayerId]?.timestampSec;
+    if (ts == null) return;
+    captureVideoFrame(videoUrl, ts, (dataUrl) => {
+      if (dataUrl) setThumbnails(prev => ({ ...prev, [suggestedPlayerId]: dataUrl }));
     });
-  }, [step]);
+  }, [step, suggestedPlayerId]);
 
   const fmtTs = (sec) => String(Math.floor(sec/60)) + ":" + String(sec%60).padStart(2,"0");
 
@@ -5438,38 +5436,58 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
           <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
             Pick your player
           </div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:16}}>
-            Select the player whose shots match yours. Check the timestamps against the video above.
+          <div style={{fontSize:12,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
+            Click a <span style={{color:C.blue,fontWeight:700}}>blue timestamp</span> to jump to that player's first shot in the video above and see who it is. Then click <strong>"This is me"</strong>.
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-            {playerIds.map(id => (
-              <button key={id} onClick={() => onSelect(id)}
-                style={{padding:"16px 12px",borderRadius:12,
-                  border:`1.5px solid ${C.blue}20`,background:C.cardBg,
-                  cursor:"pointer",textAlign:"left"}}>
-                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-                  <div style={{width:22,height:22,borderRadius:"50%",
-                    background:["#378ADD","#E24B4A","#1D9E75","#F5A623"][id%4],
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:11,fontWeight:700,color:"white",flexShrink:0}}>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+            {playerIds.map(id => {
+              const ts = playerFirstShot[id]?.timestampSec;
+              const fmtd = ts != null ? fmtTs(ts) : "—";
+              const colors = ["#378ADD","#E24B4A","#1D9E75","#F5A623"];
+              return (
+                <div key={id} style={{display:"flex",alignItems:"center",gap:12,
+                  padding:"14px 16px",borderRadius:12,
+                  border:`1.5px solid ${colors[id%4]}20`,background:C.cardBg}}>
+                  {/* Color dot */}
+                  <div style={{width:28,height:28,borderRadius:"50%",
+                    background:colors[id%4],display:"flex",alignItems:"center",
+                    justifyContent:"center",fontSize:12,fontWeight:700,
+                    color:"white",flexShrink:0}}>
                     {id+1}
                   </div>
-                  <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
-                    letterSpacing:"0.04em"}}>Player {id+1}</div>
+                  {/* Info */}
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
+                      letterSpacing:"0.04em"}}>Player {id+1}</div>
+                    <div style={{fontSize:11,color:C.textMid}}>
+                      {playerShotCounts[id]} shots
+                    </div>
+                  </div>
+                  {/* Jump to first shot */}
+                  {ts != null && (
+                    <button
+                      onClick={() => {
+                        // Seek the main video frame to this timestamp
+                        const vid = document.querySelector("video");
+                        if (vid) { vid.currentTime = Math.max(0, ts - 1); vid.play().catch(()=>{}); }
+                      }}
+                      style={{padding:"6px 12px",borderRadius:8,
+                        border:`1px solid ${C.blue}40`,background:`${C.blue}10`,
+                        fontFamily:"monospace",fontSize:12,color:C.blue,
+                        cursor:"pointer",fontWeight:700,flexShrink:0}}>
+                      ▶ {fmtd}
+                    </button>
+                  )}
+                  {/* Select button */}
+                  <button onClick={() => onSelect(id)}
+                    style={{padding:"8px 16px",borderRadius:9,border:"none",
+                      background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                      fontSize:12,color:C.navy,cursor:"pointer",flexShrink:0}}>
+                    This is me
+                  </button>
                 </div>
-                {thumbnails[id] ? (
-                  <img src={thumbnails[id]} alt={`Player ${id+1}`}
-                    style={{width:"100%",borderRadius:8,display:"block",marginBottom:6}} />
-                ) : (
-                  <div style={{background:"#111",borderRadius:8,aspectRatio:"16/9",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    marginBottom:6,color:"#666",fontSize:11}}>Loading...</div>
-                )}
-                <div style={{fontSize:11,color:C.textMid}}>
-                  {playerShotCounts[id]} shots · first at {fmtTs(playerFirstShot[id]?.timestampSec ?? 0)}
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
