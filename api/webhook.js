@@ -170,6 +170,31 @@ export default async function handler(req, res) {
 
   console.log(`Parsed ${rawShots.length} shots from PBV insights`);
 
+  // ── Calculate game result from rally winners ───────────────────────────────
+  // advantage_scale on the final shot of each rally shows which team won
+  // Team A = players 0+1, Team B = players 2+3
+  let gameResult = null;
+  try {
+    const rallies = insights?.rallies || [];
+    let teamAWins = 0;
+    let teamBWins = 0;
+    rallies.forEach(rally => {
+      const shots = rally.shots || [];
+      const finalShot = shots.find(s => s.is_final === true);
+      if (!finalShot) return;
+      const adv = finalShot.advantage_scale || [];
+      if (adv.length < 4) return;
+      const teamA = (adv[0] + adv[1]) / 2;
+      const teamB = (adv[2] + adv[3]) / 2;
+      if (teamA > teamB) teamAWins++;
+      else teamBWins++;
+    });
+    console.log(`Rally wins — Team A (P0+P1): ${teamAWins}, Team B (P2+P3): ${teamBWins}`);
+    gameResult = { teamAWins, teamBWins };
+  } catch (err) {
+    console.error("Error calculating game result:", err.message);
+  }
+
   // ── Find video_jobs row ───────────────────────────────────────────────────
   let jobRow = null;
   try {
@@ -202,6 +227,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         status: "needs_review",
         raw_pbv_data: rawShots,
+        game_result: gameResult,
         completed_at: new Date().toISOString(),
       }),
     });
