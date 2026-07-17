@@ -5228,273 +5228,99 @@ function getPlayerIdFromQuadrant(playerIds, pendingShots, side, position) {
 
 // Player identification — two-step near/far then left/right
 function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCounts, videoUrl, pendingShots, onSelect, onCancel }) {
+  const videoRef = React.useRef(null);
   const [frameImg, setFrameImg] = React.useState(null);
-  const [frameLoading, setFrameLoading] = React.useState(true);
-  const [step, setStep] = React.useState("side"); // "side" | "position" | "confirm"
-  const [selectedSide, setSelectedSide] = React.useState(null);
-  const [suggestedPlayerId, setSuggestedPlayerId] = React.useState(null);
-  const [thumbnails, setThumbnails] = React.useState({}); // playerId -> dataUrl
 
+  // Capture a frame from the start of the match for reference
   const frameTimestamp = playerFirstShot[playerIds[0]]?.timestampSec ?? 10;
-
   React.useEffect(() => {
-    if (!videoUrl) { setFrameLoading(false); return; }
-    captureVideoFrame(videoUrl, frameTimestamp, (dataUrl, err) => {
+    if (!videoUrl) return;
+    captureVideoFrame(videoUrl, frameTimestamp, (dataUrl) => {
       if (dataUrl) setFrameImg(dataUrl);
-      setFrameLoading(false);
     });
-  }, [videoUrl, frameTimestamp]);
+  }, [videoUrl]);
 
-  // When we reach confirm step, capture a single thumbnail for the suggested player
-  React.useEffect(() => {
-    if (step !== "confirm" || !videoUrl || suggestedPlayerId === null) return;
-    const ts = playerFirstShot[suggestedPlayerId]?.timestampSec;
-    if (ts == null) return;
-    captureVideoFrame(videoUrl, ts, (dataUrl) => {
-      if (dataUrl) setThumbnails(prev => ({ ...prev, [suggestedPlayerId]: dataUrl }));
-    });
-  }, [step, suggestedPlayerId]);
+  const fmtTs = (sec) => sec != null
+    ? String(Math.floor(sec/60)) + ":" + String(sec%60).padStart(2,"0")
+    : "—";
 
-  const fmtTs = (sec) => String(Math.floor(sec/60)) + ":" + String(sec%60).padStart(2,"0");
-
-  const handlePositionSelect = (position) => {
-    const pid = getPlayerIdFromQuadrant(playerIds, pendingShots, selectedSide, position);
-    setSuggestedPlayerId(pid);
-    setStep("confirm");
+  const seekVideo = (sec) => {
+    if (sec == null) return;
+    // Find the video element on the page
+    const vid = document.querySelector("video");
+    if (vid) {
+      vid.currentTime = Math.max(0, sec - 1);
+      vid.play().catch(() => {});
+    }
   };
+
+  const colors = ["#378ADD","#E24B4A","#1D9E75","#F5A623"];
 
   return (
     <div style={{width:"100%",maxWidth:860,margin:"0 auto",padding:"8px 0"}}>
-      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.04em",marginBottom:4}}>
+      <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,
+        letterSpacing:"0.04em",marginBottom:4}}>
         Which player are you?
       </div>
       <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
-        PB Vision tracked <strong>{pendingShots.length} shots</strong> across <strong>{playerIds.length} players</strong>.
-        Answer two quick questions to identify yourself in the match.
+        Click a <span style={{color:C.blue,fontWeight:700}}>blue timestamp</span> to jump to that player's first shot in the video. Watch who hits it, then click <strong>"This is me"</strong>.
       </div>
 
-      {/* Video frame with orientation labels */}
+      {/* Video player */}
       {videoUrl && (
-        <div style={{borderRadius:12,overflow:"hidden",border:"1px solid " + C.border,
-          marginBottom:20,background:"#000",position:"relative"}}>
-          {frameLoading && (
-            <div style={{aspectRatio:"16/9",display:"flex",alignItems:"center",
-              justifyContent:"center",color:"#666",fontSize:13}}>
-              Loading match frame...
+        <div style={{borderRadius:12,overflow:"hidden",border:`1px solid ${C.border}`,
+          marginBottom:20,background:"#000"}}>
+          <video ref={videoRef} src={videoUrl} controls
+            style={{width:"100%",display:"block",maxHeight:"340px",objectFit:"contain"}}
+            preload="metadata" />
+        </div>
+      )}
+
+      {/* Player list */}
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+        {playerIds.map(id => {
+          const ts = playerFirstShot[id]?.timestampSec;
+          return (
+            <div key={id} style={{display:"flex",alignItems:"center",gap:12,
+              padding:"14px 16px",borderRadius:12,
+              border:`1.5px solid ${colors[id%4]}20`,background:C.cardBg}}>
+              <div style={{width:28,height:28,borderRadius:"50%",
+                background:colors[id%4],display:"flex",alignItems:"center",
+                justifyContent:"center",fontSize:12,fontWeight:700,
+                color:"white",flexShrink:0}}>
+                {id+1}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
+                  letterSpacing:"0.04em"}}>Player {id+1}</div>
+                <div style={{fontSize:11,color:C.textMid}}>{playerShotCounts[id]} shots</div>
+              </div>
+              {ts != null && (
+                <button onClick={() => seekVideo(ts)}
+                  style={{padding:"7px 14px",borderRadius:8,
+                    border:`1.5px solid ${C.blue}50`,background:`${C.blue}12`,
+                    fontFamily:"monospace",fontSize:13,color:C.blue,
+                    cursor:"pointer",fontWeight:700,flexShrink:0,
+                    transition:"all 0.15s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background=`${C.blue}25`;}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=`${C.blue}12`;}}>
+                  ▶ {fmtTs(ts)}
+                </button>
+              )}
+              <button onClick={() => onSelect(id)}
+                style={{padding:"9px 18px",borderRadius:9,border:"none",
+                  background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+                  fontSize:13,color:C.navy,cursor:"pointer",flexShrink:0}}>
+                This is me
+              </button>
             </div>
-          )}
-          {frameImg && (
-            <img src={frameImg} alt="Match frame" style={{width:"100%",display:"block"}} />
-          )}
-          {frameImg && (
-            <>
-              <div style={{position:"absolute",bottom:10,left:"50%",transform:"translateX(-50%)",
-                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"3px 12px",
-                color:"white",fontSize:11,fontWeight:700,pointerEvents:"none",whiteSpace:"nowrap"}}>
-                ← NEAR SIDE (closer to camera) →
-              </div>
-              <div style={{position:"absolute",top:10,left:"50%",transform:"translateX(-50%)",
-                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"3px 12px",
-                color:"white",fontSize:11,fontWeight:700,pointerEvents:"none",whiteSpace:"nowrap"}}>
-                ← FAR SIDE (further from camera) →
-              </div>
-              <div style={{position:"absolute",top:10,right:10,
-                background:"rgba(0,0,0,0.7)",borderRadius:6,padding:"2px 8px",
-                fontSize:11,color:"white",fontFamily:"monospace"}}>
-                {fmtTs(frameTimestamp)}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Step 1: Near or Far */}
-      {step === "side" && (
-        <div>
-          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:12}}>
-            Step 1 of 2 — Were you on the near side or far side?
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-            {[
-              {key:"near",label:"Near side",desc:"Bottom of the screen, closer to the camera",emoji:"⬇️"},
-              {key:"far", label:"Far side", desc:"Top of the screen, further from the camera",emoji:"⬆️"},
-            ].map(opt => (
-              React.createElement("button", {
-                key: opt.key,
-                onClick: () => { setSelectedSide(opt.key); setStep("position"); },
-                style: {padding:"20px 16px",borderRadius:14,border:"2px solid " + C.blue + "30",
-                  background:C.cardBg,cursor:"pointer",textAlign:"left",transition:"all 0.15s"},
-                onMouseEnter: e => e.currentTarget.style.borderColor = C.blue,
-                onMouseLeave: e => e.currentTarget.style.borderColor = C.blue + "30",
-              },
-                React.createElement("div", {style:{fontSize:28,marginBottom:8}}, opt.emoji),
-                React.createElement("div", {style:{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,
-                  letterSpacing:"0.04em",marginBottom:4}}, opt.label),
-                React.createElement("div", {style:{fontSize:12,color:C.textMid,lineHeight:1.4}}, opt.desc)
-              )
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: Left or Right */}
-      {step === "position" && (
-        <div>
-          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
-            Step 2 of 2 — Were you on the left or right side?
-          </div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:12}}>
-            Left and right as shown in the video frame above.
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-            {[
-              {key:"left", label:"Left side", emoji:"⬅️"},
-              {key:"right",label:"Right side",emoji:"➡️"},
-            ].map(opt => (
-              React.createElement("button", {
-                key: opt.key,
-                onClick: () => handlePositionSelect(opt.key),
-                style: {padding:"24px 16px",borderRadius:14,border:"2px solid " + C.mint + "30",
-                  background:C.cardBg,cursor:"pointer",textAlign:"center",transition:"all 0.15s"},
-                onMouseEnter: e => e.currentTarget.style.borderColor = C.mint,
-                onMouseLeave: e => e.currentTarget.style.borderColor = C.mint + "30",
-              },
-                React.createElement("div", {style:{fontSize:36,marginBottom:8}}, opt.emoji),
-                React.createElement("div", {style:{fontFamily:"'Bebas Neue'",fontSize:22,
-                  color:C.navy,letterSpacing:"0.04em"}}, opt.label)
-              )
-            ))}
-          </div>
-          <button onClick={() => setStep("side")}
-            style={{width:"100%",padding:"8px",borderRadius:10,
-              border:"1px solid " + C.border,background:"transparent",
-              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
-              color:C.textMid,cursor:"pointer",marginBottom:8}}>
-            ← Back
-          </button>
-        </div>
-      )}
-
-      {/* Step 3: Confirm */}
-      {step === "confirm" && suggestedPlayerId !== null && (
-        <div>
-          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
-            Step 3 of 3 — Is this you?
-          </div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
-            Based on your answers, we think you're <strong>Player {suggestedPlayerId + 1}</strong> with <strong>{playerShotCounts[suggestedPlayerId]} shots</strong>.
-            Here's a frame from their first shot — does that look like you?
-          </div>
-
-          {/* Suggested player thumbnail */}
-          <div style={{borderRadius:12,overflow:"hidden",border:`2px solid ${C.mint}`,
-            marginBottom:16,background:"#000",position:"relative",maxWidth:480}}>
-            {thumbnails[suggestedPlayerId] ? (
-              <img src={thumbnails[suggestedPlayerId]} alt="Your first shot"
-                style={{width:"100%",display:"block"}} />
-            ) : (
-              <div style={{aspectRatio:"16/9",display:"flex",alignItems:"center",
-                justifyContent:"center",color:"#666",fontSize:13}}>
-                Loading frame...
-              </div>
-            )}
-            <div style={{position:"absolute",bottom:8,left:"50%",transform:"translateX(-50%)",
-              background:"rgba(0,0,0,0.75)",borderRadius:6,padding:"3px 10px",
-              color:"white",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
-              Player {suggestedPlayerId + 1} · first shot at {fmtTs(playerFirstShot[suggestedPlayerId]?.timestampSec ?? 0)}
-            </div>
-          </div>
-
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-            <button onClick={() => onSelect(suggestedPlayerId)}
-              style={{padding:"16px",borderRadius:12,border:"none",
-                background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
-                fontSize:14,color:C.navy,cursor:"pointer"}}>
-              ✓ Yes, that's me
-            </button>
-            <button onClick={() => setStep("allplayers")}
-              style={{padding:"16px",borderRadius:12,
-                border:`1.5px solid ${C.border}`,background:C.cardBg,
-                fontFamily:"'Outfit'",fontWeight:600,
-                fontSize:14,color:C.textMid,cursor:"pointer"}}>
-              ✕ No, pick a different player
-            </button>
-          </div>
-          <button onClick={() => { setStep("side"); setSelectedSide(null); setSuggestedPlayerId(null); }}
-            style={{width:"100%",padding:"8px",borderRadius:10,
-              border:`1px solid ${C.border}`,background:"transparent",
-              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,
-              color:C.textMid,cursor:"pointer"}}>
-            ← Start over
-          </button>
-        </div>
-      )}
-
-      {/* Step 4: Manual player pick if confirmation failed */}
-      {step === "allplayers" && (
-        <div>
-          <div style={{fontSize:15,fontWeight:700,color:C.navy,marginBottom:4}}>
-            Pick your player
-          </div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:16,lineHeight:1.5}}>
-            Click a <span style={{color:C.blue,fontWeight:700}}>blue timestamp</span> to jump to that player's first shot in the video above and see who it is. Then click <strong>"This is me"</strong>.
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
-            {playerIds.map(id => {
-              const ts = playerFirstShot[id]?.timestampSec;
-              const fmtd = ts != null ? fmtTs(ts) : "—";
-              const colors = ["#378ADD","#E24B4A","#1D9E75","#F5A623"];
-              return (
-                <div key={id} style={{display:"flex",alignItems:"center",gap:12,
-                  padding:"14px 16px",borderRadius:12,
-                  border:`1.5px solid ${colors[id%4]}20`,background:C.cardBg}}>
-                  {/* Color dot */}
-                  <div style={{width:28,height:28,borderRadius:"50%",
-                    background:colors[id%4],display:"flex",alignItems:"center",
-                    justifyContent:"center",fontSize:12,fontWeight:700,
-                    color:"white",flexShrink:0}}>
-                    {id+1}
-                  </div>
-                  {/* Info */}
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,
-                      letterSpacing:"0.04em"}}>Player {id+1}</div>
-                    <div style={{fontSize:11,color:C.textMid}}>
-                      {playerShotCounts[id]} shots
-                    </div>
-                  </div>
-                  {/* Jump to first shot */}
-                  {ts != null && (
-                    <button
-                      onClick={() => {
-                        // Seek the main video frame to this timestamp
-                        const vid = document.querySelector("video");
-                        if (vid) { vid.currentTime = Math.max(0, ts - 1); vid.play().catch(()=>{}); }
-                      }}
-                      style={{padding:"6px 12px",borderRadius:8,
-                        border:`1px solid ${C.blue}40`,background:`${C.blue}10`,
-                        fontFamily:"monospace",fontSize:12,color:C.blue,
-                        cursor:"pointer",fontWeight:700,flexShrink:0}}>
-                      ▶ {fmtd}
-                    </button>
-                  )}
-                  {/* Select button */}
-                  <button onClick={() => onSelect(id)}
-                    style={{padding:"8px 16px",borderRadius:9,border:"none",
-                      background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
-                      fontSize:12,color:C.navy,cursor:"pointer",flexShrink:0}}>
-                    This is me
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       <button onClick={onCancel}
         style={{width:"100%",padding:"10px",borderRadius:10,
-          border:"1px solid " + C.border,background:"transparent",
+          border:`1px solid ${C.border}`,background:"transparent",
           fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
           color:C.textMid,cursor:"pointer"}}>
         Cancel
@@ -5503,7 +5329,7 @@ function PlayerIdentificationScreen({ playerIds, playerFirstShot, playerShotCoun
   );
 }
 
-// Shows pending PBV shot data for user review/correction before saving to Supabase
+
 function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
   const videoRef = React.useRef(null);
 
