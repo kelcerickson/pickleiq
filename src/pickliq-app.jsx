@@ -5622,7 +5622,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
               color:C.textMid,cursor:"pointer"}}>
             Discard
           </button>
-          <button onClick={()=>onConfirm(shots)}
+          <button onClick={()=>onConfirm(shots, selectedPlayerId)}
             style={{padding:"10px 24px",borderRadius:10,border:"none",
               background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
               color:C.navy,cursor:"pointer"}}>
@@ -7519,14 +7519,219 @@ const PlayersContent = () => {
 };
 
 // ── LOG MATCH GATEWAY ────────────────────────────────────────────────────────
+// Post-save screen: add match result, partner, opponents after automated analysis
+function PostSaveMatchDetails({ matchId, uid, gameResult, selectedPlayerId, onDone }) {
+  // Auto-calculate result from game_result
+  // Team A = players 0+1, Team B = players 2+3
+  // If user is player 0 or 1, they're Team A. Otherwise Team B.
+  const autoResult = React.useMemo(() => {
+    if (!gameResult) return null;
+    const { teamAWins, teamBWins } = gameResult;
+    const userTeam = (selectedPlayerId === 0 || selectedPlayerId === 1) ? "A" : "B";
+    const userWins = userTeam === "A" ? teamAWins : teamBWins;
+    const oppWins  = userTeam === "A" ? teamBWins : teamAWins;
+    return {
+      result: userWins >= oppWins ? "W" : "L",
+      score: `${userWins}-${oppWins}`,
+      teamAWins, teamBWins, userTeam,
+    };
+  }, [gameResult, selectedPlayerId]);
+
+  const [result, setResult] = React.useState(autoResult?.result || "W");
+  const [score, setScore] = React.useState(autoResult?.score || "");
+  const [players, setPlayers] = React.useState([]);
+  const [partnerId, setPartnerId] = React.useState(null);
+  const [opponentIds, setOpponentIds] = React.useState([]);
+  const [saving, setSaving] = React.useState(false);
+
+  // Load players directory
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/players?user_id=eq.${uid}&select=id,name,dupr&order=name`,
+          { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
+        );
+        const data = await res.json();
+        setPlayers(data || []);
+      } catch(e) { console.error("Error loading players:", e); }
+    })();
+  }, [uid]);
+
+  const toggleOpponent = (id) => {
+    setOpponentIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await ensureFreshToken();
+      // Update the match record with result, score, partner, opponents
+      const partner = players.find(p => p.id === partnerId);
+      const opponents = players.filter(p => opponentIds.includes(p.id));
+      await fetch(`${SUPABASE_URL}/rest/v1/matches?id=eq.${matchId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`,
+          "apikey": SUPABASE_KEY,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({
+          result,
+          score: score || null,
+          partner_user_id: null, // partner by name not user_id
+          notes: [
+            partner ? `Partner: ${partner.name}` : null,
+            opponents.length ? `Opponents: ${opponents.map(o=>o.name).join(" & ")}` : null,
+          ].filter(Boolean).join(" | ") || null,
+        }),
+      });
+    } catch(e) { console.error("Error saving match details:", e); }
+    setSaving(false);
+    onDone();
+  };
+
+  return (
+    <div className="fade-up" style={{width:"100%",maxWidth:560,margin:"0 auto",paddingTop:8}}>
+      {/* Success header */}
+      <div style={{textAlign:"center",marginBottom:28}}>
+        <div style={{fontSize:48,marginBottom:8}}>🎉</div>
+        <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.04em"}}>
+          Shots saved!
+        </div>
+        <div style={{fontSize:13,color:C.textMid,marginTop:4}}>
+          Add a few more details to complete your match record.
+        </div>
+        {autoResult && (
+          <div style={{marginTop:10,padding:"8px 16px",background:`${C.mint}15`,
+            borderRadius:10,border:`1px solid ${C.mint}30`,
+            fontSize:12,color:C.textMid,display:"inline-block"}}>
+            📊 Based on rally data: <strong style={{color:autoResult.result==="W"?C.mint:C.rose}}>
+              {autoResult.result==="W"?"Win":"Loss"} {autoResult.score}
+            </strong> — adjust below if incorrect
+          </div>
+        )}
+      </div>
+
+      <div style={{background:C.cardBg,borderRadius:16,border:`1px solid ${C.border}`,
+        padding:"24px 20px",display:"flex",flexDirection:"column",gap:20}}>
+
+        {/* Win / Loss */}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:C.textMid,
+            textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Result</div>
+          <div style={{display:"flex",gap:10}}>
+            {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl]) => (
+              <button key={v} onClick={() => setResult(v)}
+                style={{flex:1,padding:"12px",borderRadius:10,cursor:"pointer",
+                  fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
+                  border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
+                  background:result===v?(v==="W"?`${C.mint}20`:`${C.rose}20`):C.pageBg,
+                  color:result===v?(v==="W"?C.mint:C.rose):C.textMid}}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Score */}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:C.textMid,
+            textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Score (optional)</div>
+          <input
+            value={score}
+            onChange={e => setScore(e.target.value)}
+            placeholder="e.g. 11-7, 11-9"
+            style={{width:"100%",padding:"10px 12px",borderRadius:10,boxSizing:"border-box",
+              border:`1px solid ${C.border}`,fontFamily:"'Outfit'",fontSize:13,
+              color:C.text,background:C.pageBg,outline:"none"}} />
+        </div>
+
+        {/* Partner */}
+        {players.length > 0 && (
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:C.textMid,
+              textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>
+              Your partner (optional)
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {players.map(p => (
+                <button key={p.id} onClick={() => setPartnerId(partnerId===p.id ? null : p.id)}
+                  style={{padding:"7px 14px",borderRadius:20,cursor:"pointer",
+                    fontFamily:"'Outfit'",fontSize:12,fontWeight:600,
+                    border:`1.5px solid ${partnerId===p.id?C.blue:C.border}`,
+                    background:partnerId===p.id?`${C.blue}15`:C.pageBg,
+                    color:partnerId===p.id?C.blue:C.textMid}}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Opponents */}
+        {players.length > 0 && (
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:C.textMid,
+              textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>
+              Opponents (optional)
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {players.filter(p => p.id !== partnerId).map(p => (
+                <button key={p.id} onClick={() => toggleOpponent(p.id)}
+                  style={{padding:"7px 14px",borderRadius:20,cursor:"pointer",
+                    fontFamily:"'Outfit'",fontSize:12,fontWeight:600,
+                    border:`1.5px solid ${opponentIds.includes(p.id)?C.rose:C.border}`,
+                    background:opponentIds.includes(p.id)?`${C.rose}15`:C.pageBg,
+                    color:opponentIds.includes(p.id)?C.rose:C.textMid}}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {players.length === 0 && (
+          <div style={{fontSize:12,color:C.textLight,fontStyle:"italic"}}>
+            Add players to your Players directory to tag partners and opponents.
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div style={{display:"flex",gap:10,marginTop:16}}>
+        <button onClick={onDone}
+          style={{flex:1,padding:"12px",borderRadius:10,
+            border:`1px solid ${C.border}`,background:"transparent",
+            fontFamily:"'Outfit'",fontWeight:600,fontSize:13,
+            color:C.textMid,cursor:"pointer"}}>
+          Skip
+        </button>
+        <button onClick={handleSave} disabled={saving}
+          style={{flex:2,padding:"12px",borderRadius:10,border:"none",
+            background:C.pickle,fontFamily:"'Outfit'",fontWeight:700,
+            fontSize:13,color:C.navy,cursor:"pointer",
+            opacity:saving?0.6:1}}>
+          {saving ? "Saving..." : "Save Match Details →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Entry point for Log Match tab — user first chooses Manual or Automated
 function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingReviewJob=null, onReviewConsumed=null }) {
   const [mode, setMode] = React.useState(
     prefill ? "manual" : null  // if prefilled from claim, go straight to manual
   );
-  const [automatedStep, setAutomatedStep] = React.useState("choose"); // choose|url|file|submitting|pending|correction
+  const [automatedStep, setAutomatedStep] = React.useState("choose"); // choose|url|file|submitting|pending|correction|matchdetails
   const [pendingShots, setPendingShots] = React.useState(null);
   const [pendingVideoUrl, setPendingVideoUrl] = React.useState(null);
+  const [pendingGameResult, setPendingGameResult] = React.useState(null);
+  const [selectedPlayerIdForResult, setSelectedPlayerIdForResult] = React.useState(null);
   const [videoUrl, setVideoUrl] = React.useState("");
   const [matchId, setMatchId] = React.useState(null);
   const [urlStatus, setUrlStatus] = React.useState("idle"); // idle|submitting|success|error
@@ -7561,6 +7766,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
           clearInterval(interval);
           setPendingShots(job.raw_pbv_data);
           setPendingVideoUrl(job.video_url || null);
+          setPendingGameResult(job.game_result || null);
           setAutomatedStep("correction");
         } else if (job?.status === "error") {
           clearInterval(interval);
@@ -8090,7 +8296,20 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
         });
       } catch(err) { console.error("Error marking job complete:", err.message); }
 
-      setPage("shots");
+      // Show match details screen instead of going straight to shots
+      setAutomatedStep("matchdetails");
+    };
+
+    // ── Match details screen shown after saving corrections ──────────────────
+    if (mode === "automated" && automatedStep === "matchdetails") {
+      return <PostSaveMatchDetails
+        matchId={matchId}
+        uid={uid}
+        gameResult={pendingGameResult}
+        selectedPlayerId={selectedPlayerIdForResult}
+        onDone={() => setPage("shots")}
+      />;
+    }
     };
 
     return (
@@ -8098,7 +8317,10 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
         <ShotCorrectionScreen
           pendingShots={pendingShots}
           videoUrl={pendingVideoUrl}
-          onConfirm={handleConfirm}
+          onConfirm={(shots, playerId) => {
+            setSelectedPlayerIdForResult(playerId);
+            handleConfirm(shots);
+          }}
           onCancel={() => { setAutomatedStep("pending"); setPendingShots(null); setPendingVideoUrl(null); }}
         />
       </div>
@@ -9453,7 +9675,7 @@ export default function App(){
       if (!uid) return;
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/video_jobs?user_id=eq.${uid}&status=eq.needs_review&select=id,match_id,raw_pbv_data,video_url,created_at&limit=1`,
+          `${SUPABASE_URL}/rest/v1/video_jobs?user_id=eq.${uid}&status=eq.needs_review&select=id,match_id,raw_pbv_data,video_url,game_result,created_at&limit=1`,
           { headers: { "Authorization": `Bearer ${_authToken || SUPABASE_KEY}`, "apikey": SUPABASE_KEY } }
         );
         const jobs = await res.json();
