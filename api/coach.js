@@ -23,6 +23,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error("Coach API error:", response.status, data);
       return res.status(response.status).json(data);
     }
 
