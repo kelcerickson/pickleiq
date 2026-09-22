@@ -8960,6 +8960,487 @@ const Drills = ({ setPage }) => {
 
 
 
+// ── SHOT REVIEW TOOL (Colab SHOT_LOG → human-verified training data) ─────────
+// Admin-only for now. Loads a SHOT_LOG_{video}.csv from the Colab pipeline,
+// plays each shot from the PlaySight video, and saves corrections to
+// review_sessions + shot_reviews (see SQL in chat).
+const REVIEW_SHOT_TYPES = [
+  { group:"Serve & return", types:["Serve","Return of Serve"] },
+  { group:"Third shot",     types:["Third Shot Drop","Third Shot Drive"] },
+  { group:"Soft game",      types:["Dink","Drop Shot","Reset","Block"] },
+  { group:"Hard game",      types:["Drive","Speed-Up","Counter","Punch Volley","Volley"] },
+  { group:"Specialty",      types:["Lob","Overhead Smash","Erne","ATP"] },
+];
+const REVIEW_ROLES = [
+  { id:"me",      label:"Me",      color:C.pickleD },
+  { id:"partner", label:"Partner", color:C.mint },
+  { id:"opp1",    label:"Opp 1",   color:C.rose },
+  { id:"opp2",    label:"Opp 2",   color:C.purple },
+];
+const REVIEW_QUALITY = [
+  { id:"positive", label:"Positive", color:C.mint },
+  { id:"neutral",  label:"Neutral",  color:C.textMid },
+  { id:"negative", label:"Negative", color:C.rose },
+];
+const REVIEW_OUTCOME = [
+  { id:"ongoing", label:"Rally continues", color:C.textMid },
+  { id:"won",     label:"We won it",       color:C.mint },
+  { id:"lost",    label:"We lost it",      color:C.rose },
+];
+
+// Small REST helper: always refreshes the token so RLS policies see the user
+const reviewApi = async (path, opts = {}) => {
+  await ensureFreshToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: { ...getAuthHeaders(), "Content-Type":"application/json", ...(opts.headers || {}) },
+  });
+  const txt = await res.text();
+  if (!res.ok) throw new Error(txt || `Request failed (${res.status})`);
+  return txt ? JSON.parse(txt) : null;
+};
+
+// Parses a SHOT_LOG csv (simple comma-separated, no quoted fields)
+const parseShotLog = (text) => {
+  const lines = text.replace(/\r/g, "").split("\n").filter(l => l.trim());
+  if (lines.length < 2) throw new Error("The file has no shot rows.");
+  const head = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const col = (n) => head.indexOf(n);
+  if (col("frame") < 0 || col("time_sec") < 0)
+    throw new Error("This doesn't look like a SHOT_LOG file — it needs 'frame' and 'time_sec' columns.");
+  const num = (v) => (v === undefined || v === "" || isNaN(Number(v))) ? null : Number(v);
+  const typeCol = head.findIndex(h => h.includes("type") || h === "kind");
+  const shots = lines.slice(1).map(l => {
+    const c = l.split(",");
+    const autoType = typeCol >= 0 ? (c[typeCol] || "").trim().toLowerCase() : "";
+    return {
+      frame: num(c[col("frame")]),
+      t: num(c[col("time_sec")]),
+      bx: num(c[col("ball_x")]),
+      by: num(c[col("ball_y")]),
+      p: num(c[col("nearest_player_index")]),
+      auto_type: autoType.includes("serve") ? "Serve" : null,
+    };
+  }).filter(s => s.frame !== null && s.t !== null);
+  shots.sort((a, b) => a.t - b.t);
+  // Serves are logged on several back-to-back frames; keep only the first
+  return shots.filter((s, i) => !(i > 0 && s.auto_type === "Serve" &&
+    shots[i - 1].auto_type === "Serve" && s.frame - shots[i - 1].frame <= 15));
+};
+
+const fmtClock = (sec) => {
+  if (sec == null) return "—";
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
+
+function ReviewChip({ active, color = C.navy, onClick, children, small }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: small ? "7px 10px" : "10px 12px", minHeight: 40, borderRadius: 10,
+      border: `1.5px solid ${active ? color : C.border}`,
+      background: active ? `${color}18` : "white",
+      color: active ? (color === C.textMid ? C.text : color) : C.textMid,
+      fontFamily: "'Outfit'", fontWeight: active ? 700 : 500, fontSize: 13,
+      cursor: "pointer", textAlign: "center", lineHeight: 1.2,
+    }}>{children}</button>
+  );
+}
+
+function ReviewSection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginBottom: 6 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function ShotReviewTool() {
+  const [stage, setStage]       = useState("list"); // list | new | players | review
+  const [sessions, setSessions] = useState([]);
+  const [session, setSession]   = useState(null);
+  const [reviews, setReviews]   = useState({});      // frame -> saved review
+  const [idx, setIdx]           = useState(0);
+  const [draft, setDraft]       = useState({});
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState("");
+  const [slow, setSlow]         = useState(false);
+
+  // New-session form
+  const [newName, setNewName]   = useState("");
+  const [newUrl, setNewUrl]     = useState("");
+  const [parsed, setParsed]     = useState(null);
+
+  const videoRef = useRef(null);
+  const stopAt   = useRef(null);
+
+  const loadSessions = async () => {
+    try {
+      const rows = await reviewApi("review_sessions?select=id,video_name,video_url,created_at,shot_count&order=created_at.desc");
+      setSessions(rows || []);
+    } catch (e) { setError(e.message); }
+  };
+  useEffect(() => { loadSessions(); }, []);
+
+  const openSession = async (id) => {
+    setBusy(true); setError("");
+    try {
+      const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,hit_quality,rally_outcome,status`);
+      const map = {};
+      (rows || []).forEach(r => { map[r.frame] = r; });
+      setSession(s); setReviews(map);
+      const firstOpen = s.shots.findIndex(sh => !map[sh.frame]);
+      setIdx(firstOpen < 0 ? 0 : firstOpen);
+      const hasPlayers = s.shots.some(sh => sh.p != null);
+      setStage(!hasPlayers || (s.player_map && Object.keys(s.player_map).length) ? "review" : "players");
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError(""); setParsed(null);
+    try {
+      const shots = parseShotLog(await f.text());
+      setParsed(shots);
+      if (!newName) setNewName(f.name.replace(/^SHOT_LOG_/i, "").replace(/\.csv$/i, ""));
+    } catch (err) { setError(err.message); }
+  };
+
+  const createSession = async () => {
+    setBusy(true); setError("");
+    try {
+      const [s] = await reviewApi("review_sessions", {
+        method: "POST", headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          user_id: getCurrentUserId(), video_name: newName.trim(), video_url: newUrl.trim(),
+          shots: parsed, shot_count: parsed.length, player_map: {},
+        }),
+      });
+      setSession(s); setReviews({}); setIdx(0);
+      setNewName(""); setNewUrl(""); setParsed(null);
+      setStage(parsed.some(sh => sh.p != null) ? "players" : "review");
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  // Play a clip from 2s before the shot to 1.5s after
+  const playShot = (t) => {
+    const v = videoRef.current;
+    if (!v || t == null) return;
+    v.playbackRate = slow ? 0.5 : 1;
+    v.currentTime = Math.max(0, t - 2);
+    stopAt.current = t + 1.5;
+    v.play().catch(() => {});
+  };
+  const onTimeUpdate = () => {
+    const v = videoRef.current;
+    if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
+      v.pause(); stopAt.current = null;
+    }
+  };
+
+  const shots = session?.shots || [];
+  const shot  = shots[idx];
+  const playerMap = session?.player_map || {};
+
+  // Build the draft for the current shot (saved review, else auto guesses)
+  useEffect(() => {
+    if (stage !== "review" || !shot) return;
+    const saved = reviews[shot.frame];
+    const mapped = playerMap[String(shot.p)];
+    setDraft(saved ? { ...saved } : {
+      player_role: mapped && mapped !== "ghost" ? mapped : null,
+      shot_type: shot.auto_type || null,
+      hit_quality: null,
+      rally_outcome: "ongoing",
+    });
+    const tmr = setTimeout(() => playShot(shot.t), 150);
+    return () => clearTimeout(tmr);
+  }, [stage, idx, session?.id]);
+
+  const saveReview = async (status) => {
+    if (!shot) return;
+    if (status === "reviewed" && (!draft.shot_type || !draft.player_role)) {
+      setError("Pick who hit it and the shot type first."); return;
+    }
+    setBusy(true); setError("");
+    const row = {
+      session_id: session.id, user_id: getCurrentUserId(),
+      frame: shot.frame, time_sec: shot.t, auto_player_index: shot.p,
+      auto_shot_type: shot.auto_type,
+      player_role: status === "reviewed" ? draft.player_role : null,
+      shot_type:   status === "reviewed" ? draft.shot_type : null,
+      hit_quality: status === "reviewed" ? draft.hit_quality : null,
+      rally_outcome: status === "reviewed" ? draft.rally_outcome : null,
+      status, updated_at: new Date().toISOString(),
+    };
+    try {
+      await reviewApi("shot_reviews?on_conflict=session_id,frame", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(row),
+      });
+      setReviews(r => ({ ...r, [shot.frame]: row }));
+      if (idx < shots.length - 1) setIdx(idx + 1);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const savePlayerMap = async (map) => {
+    setBusy(true); setError("");
+    try {
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ player_map: map }),
+      });
+      setSession(s => ({ ...s, player_map: map }));
+      setStage("review");
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const reviewedCount = Object.keys(reviews).length;
+  const nextOpen = () => {
+    const after = shots.findIndex((s, i) => i > idx && !reviews[s.frame]);
+    const any   = shots.findIndex(s => !reviews[s.frame]);
+    const target = after >= 0 ? after : any;
+    if (target >= 0) setIdx(target);
+  };
+
+  const btn = (bg, color = C.navy) => ({
+    padding: "12px 14px", borderRadius: 10, border: "none", background: bg, color,
+    fontFamily: "'Outfit'", fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer",
+    opacity: busy ? 0.6 : 1,
+  });
+  const ghostBtn = {
+    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer",
+  };
+  const inputStyle = {
+    width: "100%", padding: "11px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`,
+    fontSize: 14, color: C.text, background: "white", boxSizing: "border-box",
+  };
+  const errorBox = error && (
+    <div style={{ margin: "10px 0", padding: "10px 12px", borderRadius: 9, background: C.roseL,
+      color: C.rose, fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" }}>{error}</div>
+  );
+  const videoEl = session?.video_url ? (
+    <div style={{ borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
+      <video ref={videoRef} src={session.video_url} controls playsInline preload="metadata"
+        onTimeUpdate={onTimeUpdate}
+        style={{ width: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
+    </div>
+  ) : null;
+
+  // ── List of sessions ───────────────────────────────────────────────────────
+  if (stage === "list") return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em" }}>Shot review</div>
+        <button onClick={() => { setError(""); setStage("new"); }} style={btn(C.pickle)}>+ New match</button>
+      </div>
+      {errorBox}
+      {sessions.length === 0 && !error && (
+        <div style={{ padding: 20, background: "white", borderRadius: 12, border: `1px solid ${C.border}`,
+          fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
+          No matches loaded yet. Tap <strong>New match</strong> and pick a SHOT_LOG file from Colab.
+        </div>
+      )}
+      {sessions.map(s => (
+        <button key={s.id} onClick={() => openSession(s.id)} style={{
+          width: "100%", textAlign: "left", display: "block", padding: "14px 16px", marginBottom: 8,
+          background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer",
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: C.navy }}>{s.video_name}</div>
+          <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>
+            {s.shot_count} detected shots, loaded {new Date(s.created_at).toLocaleDateString()}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── New session ────────────────────────────────────────────────────────────
+  if (stage === "new") return (
+    <div style={{ maxWidth: 640 }}>
+      <button onClick={() => setStage("list")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 12 }}>Load a match</div>
+      <ReviewSection title="1. SHOT_LOG file from Colab">
+        <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ fontSize: 13 }} />
+        {parsed && <div style={{ fontSize: 12, color: C.mint, marginTop: 6, fontWeight: 600 }}>
+          Found {parsed.length} shots ({fmtClock(parsed[0]?.t)} to {fmtClock(parsed[parsed.length - 1]?.t)})
+        </div>}
+      </ReviewSection>
+      <ReviewSection title="2. Match name">
+        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Match1" style={inputStyle} />
+      </ReviewSection>
+      <ReviewSection title="3. PlaySight video URL (the same .mp4 link you download)">
+        <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://playsightproduction…mp4" style={inputStyle} />
+      </ReviewSection>
+      {errorBox}
+      <button disabled={!parsed || !newName.trim() || !newUrl.trim() || busy} onClick={createSession}
+        style={{ ...btn(parsed && newName.trim() && newUrl.trim() ? C.pickle : C.border), width: "100%" }}>
+        {busy ? "Saving…" : "Load match"}
+      </button>
+    </div>
+  );
+
+  // ── Map auto player indices to roles ──────────────────────────────────────
+  if (stage === "players") {
+    const counts = {}, first = {};
+    shots.forEach(s => {
+      const k = String(s.p);
+      counts[k] = (counts[k] || 0) + 1;
+      if (first[k] == null) first[k] = s.t;
+    });
+    const keys = Object.keys(counts).filter(k => k !== "null").sort();
+    const map = { ...playerMap };
+    return (
+      <PlayerMapStep keys={keys} counts={counts} first={first} initial={map}
+        videoEl={videoEl} playShot={playShot} busy={busy} errorBox={errorBox}
+        onBack={() => { setStage("list"); loadSessions(); }}
+        onSave={savePlayerMap} btn={btn} ghostBtn={ghostBtn} />
+    );
+  }
+
+  // ── One-shot-at-a-time review ─────────────────────────────────────────────
+  const saved = shot && reviews[shot.frame];
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+        <button onClick={() => { setStage("list"); loadSessions(); }} style={ghostBtn}>← Matches</button>
+        <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
+          <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
+          {reviewedCount} of {shots.length} reviewed
+        </div>
+      </div>
+      <div style={{ height: 4, background: C.border, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${(reviewedCount / Math.max(1, shots.length)) * 100}%`, background: C.mint }} />
+      </div>
+
+      {videoEl}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <button onClick={() => idx > 0 && setIdx(idx - 1)} style={ghostBtn} aria-label="Previous shot">‹</button>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: C.navy, letterSpacing: "0.04em", lineHeight: 1 }}>
+            Shot {idx + 1} at {fmtClock(shot?.t)}
+          </div>
+          <div style={{ fontSize: 11, color: saved ? C.mint : C.textLight, marginTop: 3, fontWeight: 600 }}>
+            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : "Reviewed") : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
+          </div>
+        </div>
+        <button onClick={() => idx < shots.length - 1 && setIdx(idx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={() => playShot(shot?.t)} style={{ ...ghostBtn, flex: 1 }}>↺ Replay</button>
+        <button onClick={() => setSlow(v => !v)} style={{ ...ghostBtn, flex: 1,
+          borderColor: slow ? C.blue : C.border, color: slow ? C.blue : C.textMid }}>
+          {slow ? "Slow-mo on" : "Slow-mo off"}
+        </button>
+        <button onClick={nextOpen} style={{ ...ghostBtn, flex: 1 }}>Next unreviewed</button>
+      </div>
+
+      <ReviewSection title="Who hit it?">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+          {REVIEW_ROLES.map(r => (
+            <ReviewChip key={r.id} color={r.color} active={draft.player_role === r.id}
+              onClick={() => setDraft(d => ({ ...d, player_role: r.id }))}>{r.label}</ReviewChip>
+          ))}
+        </div>
+      </ReviewSection>
+
+      <ReviewSection title="Shot type">
+        {REVIEW_SHOT_TYPES.map(g => (
+          <div key={g.group} style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: C.textLight, marginBottom: 4 }}>{g.group}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(104px,1fr))", gap: 6 }}>
+              {g.types.map(t => (
+                <ReviewChip key={t} small color={C.blue} active={draft.shot_type === t}
+                  onClick={() => setDraft(d => ({ ...d, shot_type: t }))}>{t}</ReviewChip>
+              ))}
+            </div>
+          </div>
+        ))}
+      </ReviewSection>
+
+      <ReviewSection title="Hit quality">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+          {REVIEW_QUALITY.map(q => (
+            <ReviewChip key={q.id} color={q.color} active={draft.hit_quality === q.id}
+              onClick={() => setDraft(d => ({ ...d, hit_quality: q.id }))}>{q.label}</ReviewChip>
+          ))}
+        </div>
+      </ReviewSection>
+
+      <ReviewSection title="Rally outcome">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+          {REVIEW_OUTCOME.map(o => (
+            <ReviewChip key={o.id} color={o.color} active={draft.rally_outcome === o.id}
+              onClick={() => setDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
+          ))}
+        </div>
+      </ReviewSection>
+
+      {errorBox}
+      <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 8, background: C.pageBg, paddingTop: 8 }}>
+        <button onClick={() => saveReview("not_a_shot")} disabled={busy} style={{ ...btn(C.roseL, C.rose), flex: 1 }}>
+          Not a shot
+        </button>
+        <button onClick={() => saveReview("reviewed")} disabled={busy} style={{ ...btn(C.pickle), flex: 2 }}>
+          {busy ? "Saving…" : "Save & next"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Step shown once per match: tell the app which auto index is which person
+function PlayerMapStep({ keys, counts, first, initial, videoEl, playShot, busy, errorBox, onBack, onSave, btn, ghostBtn }) {
+  const [map, setMap] = useState(initial);
+  const options = [...REVIEW_ROLES, { id:"ghost", label:"Duplicate", color:C.textLight }];
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 12 }}>← Matches</button>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em" }}>Who is who?</div>
+      <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5, marginBottom: 12 }}>
+        The tracker numbered the players it saw. Tap a time to watch that player's first shot, then tag them.
+        These tags only pre-fill each shot, so you can still fix any shot during review.
+      </div>
+      {videoEl}
+      {keys.map(k => (
+        <div key={k} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12,
+          padding: 12, marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, color: C.navy, fontSize: 14 }}>Tracker player {k}</div>
+              <div style={{ fontSize: 12, color: C.textMid }}>{counts[k]} shots</div>
+            </div>
+            <button onClick={() => playShot(first[k])} style={{ ...ghostBtn, color: C.blue, borderColor: `${C.blue}50` }}>
+              ▶ {fmtClock(first[k])}
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4 }}>
+            {options.map(o => (
+              <ReviewChip key={o.id} small color={o.color} active={map[k] === o.id}
+                onClick={() => setMap(m => ({ ...m, [k]: o.id }))}>{o.label}</ReviewChip>
+            ))}
+          </div>
+        </div>
+      ))}
+      {errorBox}
+      <button onClick={() => onSave(map)} disabled={busy} style={{ ...btn(C.pickle), width: "100%", marginTop: 8 }}>
+        {busy ? "Saving…" : "Start reviewing shots"}
+      </button>
+    </div>
+  );
+}
+
+
 // ── ADMIN PAGE (only visible to admin user) ────────────────────────────────────
 const ADMIN_USER_ID = "3f0c0be5-76c9-4b45-8f7f-ed2f654cf82c";
 
@@ -9102,11 +9583,12 @@ const Admin = () => {
       </div>
 
       {/* Tab bar */}
-      <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5}}>
+      <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5,overflowX:"auto"}}>
         {[
           {id:"overview",  label:"👥 Users"},
           {id:"feedback",  label:"💬 Feedback"},
           {id:"activity",  label:"📊 Activity"},
+          {id:"review",    label:"🎾 Shot Review"},
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: tab===t.id ? C.navy : "transparent",
@@ -9117,6 +9599,9 @@ const Admin = () => {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {/* ── Tab: Shot Review ── */}
+      {tab === "review" && <ShotReviewTool/>}
 
       {/* ── Tab: Users ── */}
       {tab === "overview" && (
