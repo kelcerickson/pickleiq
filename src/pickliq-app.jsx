@@ -190,6 +190,7 @@ const STYLES = `
   ::-webkit-scrollbar-track{background:${C.pageBg};}
   ::-webkit-scrollbar-thumb{background:${C.border};border-radius:2px;}
   input,textarea,select{font-family:'Outfit',sans-serif;}
+  @media (max-width:700px){input,textarea,select{font-size:16px!important;}}
   @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
@@ -729,7 +730,7 @@ const NAV=[
   {id:"profile",label:"Profile",short:"Me"},
 ];
 // Admin-only nav item — appended dynamically in TopNav
-const ADMIN_NAV = {id:"admin",label:"⚙️ Admin",short:"Admin"};
+const ADMIN_NAV = {id:"admin",label:"⚙️ Admin",short:"⚙️"};
 
 const TopNav=({page,setPage,onSignOut,authUser})=>{
   const isMobile = useIsMobile();
@@ -8969,7 +8970,7 @@ const REVIEW_SHOT_TYPES = [
   { group:"Third shot",     types:["Third Shot Drop","Third Shot Drive"] },
   { group:"Soft game",      types:["Dink","Drop Shot","Reset","Block"] },
   { group:"Hard game",      types:["Drive","Speed-Up","Counter","Punch Volley","Volley"] },
-  { group:"Specialty",      types:["Lob","Overhead Smash","Erne","ATP"] },
+  { group:"Specialty",      types:["Lob","Overhead Smash","Scramble","Erne","ATP"] },
 ];
 const REVIEW_ROLES = [
   { id:"me",      label:"Me",      color:C.pickleD },
@@ -8984,9 +8985,20 @@ const REVIEW_QUALITY = [
 ];
 const REVIEW_OUTCOME = [
   { id:"ongoing", label:"Rally continues", color:C.textMid },
-  { id:"won",     label:"We won it",       color:C.mint },
-  { id:"lost",    label:"We lost it",      color:C.rose },
+  { id:"winner",  label:"Winner",          color:C.mint },
+  { id:"error",   label:"Error",           color:C.rose },
 ];
+const REVIEW_SIDE = [
+  { id:"forehand", label:"Forehand", color:C.blue },
+  { id:"backhand", label:"Backhand", color:C.purple },
+];
+// Early reviews used team-perspective outcomes; convert them to the hitter's side
+const toHitterOutcome = (outcome, role) => {
+  if (outcome !== "won" && outcome !== "lost") return outcome;
+  const ours = role === "me" || role === "partner";
+  if (outcome === "won") return ours ? "winner" : "error";
+  return ours ? "error" : "winner";
+};
 
 // Small REST helper: always refreshes the token so RLS policies see the user
 const reviewApi = async (path, opts = {}) => {
@@ -9028,10 +9040,11 @@ const parseShotLog = (text) => {
     shots[i - 1].auto_type === "Serve" && s.frame - shots[i - 1].frame <= 15));
 };
 
-const fmtClock = (sec) => {
+const fmtClock = (sec, precise = false) => {
   if (sec == null) return "—";
-  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  const m = Math.floor(sec / 60);
+  const s = precise ? (sec % 60).toFixed(2).padStart(5, "0") : String(Math.floor(sec % 60)).padStart(2, "0");
+  return `${m}:${s}`;
 };
 
 function ReviewChip({ active, color = C.navy, onClick, children, small }) {
@@ -9043,6 +9056,7 @@ function ReviewChip({ active, color = C.navy, onClick, children, small }) {
       color: active ? (color === C.textMid ? C.text : color) : C.textMid,
       fontFamily: "'Outfit'", fontWeight: active ? 700 : 500, fontSize: 13,
       cursor: "pointer", textAlign: "center", lineHeight: 1.2,
+      minWidth: 0, overflowWrap: "anywhere",
     }}>{children}</button>
   );
 }
@@ -9066,6 +9080,7 @@ function ShotReviewTool() {
   const [busy, setBusy]         = useState(false);
   const [error, setError]       = useState("");
   const [slow, setSlow]         = useState(false);
+  const [atHit, setAtHit]       = useState(false);   // frozen on the exact hit frame
 
   // New-session form
   const [newName, setNewName]   = useState("");
@@ -9074,6 +9089,7 @@ function ShotReviewTool() {
 
   const videoRef = useRef(null);
   const stopAt   = useRef(null);
+  const hitAt    = useRef(null);
 
   const loadSessions = async () => {
     try {
@@ -9087,7 +9103,7 @@ function ShotReviewTool() {
     setBusy(true); setError("");
     try {
       const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
-      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,hit_quality,rally_outcome,status`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,shot_side,hit_quality,rally_outcome,status`);
       const map = {};
       (rows || []).forEach(r => { map[r.frame] = r; });
       setSession(s); setReviews(map);
@@ -9127,19 +9143,29 @@ function ShotReviewTool() {
     setBusy(false);
   };
 
-  // Play a clip from 2s before the shot to 1.5s after
-  const playShot = (t) => {
+  // Play from 2s before the shot to 1.5s after, then freeze on the exact hit frame
+  const playShot = (t, freezeAfter = true) => {
     const v = videoRef.current;
     if (!v || t == null) return;
+    setAtHit(false);
     v.playbackRate = slow ? 0.5 : 1;
     v.currentTime = Math.max(0, t - 2);
     stopAt.current = t + 1.5;
+    hitAt.current = freezeAfter ? t : null;
     v.play().catch(() => {});
+  };
+  const showHit = (t) => {
+    const v = videoRef.current;
+    if (!v || t == null) return;
+    v.pause(); stopAt.current = null; hitAt.current = null;
+    v.currentTime = t;
+    setAtHit(true);
   };
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
       v.pause(); stopAt.current = null;
+      if (hitAt.current != null) { v.currentTime = hitAt.current; hitAt.current = null; setAtHit(true); }
     }
   };
 
@@ -9152,9 +9178,10 @@ function ShotReviewTool() {
     if (stage !== "review" || !shot) return;
     const saved = reviews[shot.frame];
     const mapped = playerMap[String(shot.p)];
-    setDraft(saved ? { ...saved } : {
+    setDraft(saved ? { ...saved, rally_outcome: toHitterOutcome(saved.rally_outcome, saved.player_role) || "ongoing" } : {
       player_role: mapped && mapped !== "ghost" ? mapped : null,
       shot_type: shot.auto_type || null,
+      shot_side: null,
       hit_quality: null,
       rally_outcome: "ongoing",
     });
@@ -9174,6 +9201,7 @@ function ShotReviewTool() {
       auto_shot_type: shot.auto_type,
       player_role: status === "reviewed" ? draft.player_role : null,
       shot_type:   status === "reviewed" ? draft.shot_type : null,
+      shot_side:   status === "reviewed" ? (draft.shot_side || null) : null,
       hit_quality: status === "reviewed" ? draft.hit_quality : null,
       rally_outcome: status === "reviewed" ? draft.rally_outcome : null,
       status, updated_at: new Date().toISOString(),
@@ -9227,17 +9255,32 @@ function ShotReviewTool() {
     <div style={{ margin: "10px 0", padding: "10px 12px", borderRadius: 9, background: C.roseL,
       color: C.rose, fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" }}>{error}</div>
   );
+  const vw = videoRef.current?.videoWidth || 1920, vh = videoRef.current?.videoHeight || 1080;
+  const showMarker = stage === "review" && atHit && shot?.bx != null && shot?.by != null;
   const videoEl = session?.video_url ? (
-    <div style={{ borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
+    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
       <video ref={videoRef} src={session.video_url} controls playsInline preload="metadata"
-        onTimeUpdate={onTimeUpdate}
-        style={{ width: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
+        onTimeUpdate={onTimeUpdate} onPlay={() => setAtHit(false)} onSeeking={() => { if (hitAt.current == null && stopAt.current == null) setAtHit(false); }}
+        style={{ width: "100%", maxWidth: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
+      {showMarker && (
+        <div aria-hidden="true" style={{
+          position: "absolute", left: `${(shot.bx / vw) * 100}%`, top: `${(shot.by / vh) * 100}%`,
+          width: 30, height: 30, marginLeft: -15, marginTop: -15, borderRadius: "50%",
+          border: `3px solid ${C.pickle}`, boxShadow: "0 0 0 2px rgba(10,22,40,0.7)", pointerEvents: "none",
+        }} />
+      )}
+      {showMarker && (
+        <div style={{ position: "absolute", left: 8, top: 8, background: "rgba(10,22,40,0.8)", color: C.pickle,
+          fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, pointerEvents: "none" }}>
+          Hit moment
+        </div>
+      )}
     </div>
   ) : null;
 
   // ── List of sessions ───────────────────────────────────────────────────────
   if (stage === "list") return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em" }}>Shot review</div>
         <button onClick={() => { setError(""); setStage("new"); }} style={btn(C.pickle)}>+ New match</button>
@@ -9265,7 +9308,7 @@ function ShotReviewTool() {
 
   // ── New session ────────────────────────────────────────────────────────────
   if (stage === "new") return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <button onClick={() => setStage("list")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
       <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 12 }}>Load a match</div>
       <ReviewSection title="1. SHOT_LOG file from Colab">
@@ -9309,7 +9352,7 @@ function ShotReviewTool() {
   // ── One-shot-at-a-time review ─────────────────────────────────────────────
   const saved = shot && reviews[shot.frame];
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
         <button onClick={() => { setStage("list"); loadSessions(); }} style={ghostBtn}>← Matches</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
@@ -9327,7 +9370,7 @@ function ShotReviewTool() {
         <button onClick={() => idx > 0 && setIdx(idx - 1)} style={ghostBtn} aria-label="Previous shot">‹</button>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: C.navy, letterSpacing: "0.04em", lineHeight: 1 }}>
-            Shot {idx + 1} at {fmtClock(shot?.t)}
+            Shot {idx + 1} at {fmtClock(shot?.t, true)}
           </div>
           <div style={{ fontSize: 11, color: saved ? C.mint : C.textLight, marginTop: 3, fontWeight: 600 }}>
             {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : "Reviewed") : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
@@ -9336,20 +9379,31 @@ function ShotReviewTool() {
         <button onClick={() => idx < shots.length - 1 && setIdx(idx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button onClick={() => playShot(shot?.t)} style={{ ...ghostBtn, flex: 1 }}>↺ Replay</button>
-        <button onClick={() => setSlow(v => !v)} style={{ ...ghostBtn, flex: 1,
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 16 }}>
+        <button onClick={() => playShot(shot?.t)} style={ghostBtn}>↺ Replay</button>
+        <button onClick={() => showHit(shot?.t)} style={{ ...ghostBtn,
+          borderColor: atHit ? C.pickleD : C.border, color: atHit ? C.navy : C.textMid }}>◎ Show hit</button>
+        <button onClick={() => setSlow(v => !v)} style={{ ...ghostBtn,
           borderColor: slow ? C.blue : C.border, color: slow ? C.blue : C.textMid }}>
           {slow ? "Slow-mo on" : "Slow-mo off"}
         </button>
-        <button onClick={nextOpen} style={{ ...ghostBtn, flex: 1 }}>Next unreviewed</button>
+        <button onClick={nextOpen} style={ghostBtn}>Next unreviewed</button>
       </div>
 
       <ReviewSection title="Who hit it?">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 }}>
           {REVIEW_ROLES.map(r => (
             <ReviewChip key={r.id} color={r.color} active={draft.player_role === r.id}
               onClick={() => setDraft(d => ({ ...d, player_role: r.id }))}>{r.label}</ReviewChip>
+          ))}
+        </div>
+      </ReviewSection>
+
+      <ReviewSection title="Forehand or backhand? (skip if you can't tell)">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+          {REVIEW_SIDE.map(o => (
+            <ReviewChip key={o.id} color={o.color} active={draft.shot_side === o.id}
+              onClick={() => setDraft(d => ({ ...d, shot_side: d.shot_side === o.id ? null : o.id }))}>{o.label}</ReviewChip>
           ))}
         </div>
       </ReviewSection>
@@ -9358,7 +9412,7 @@ function ShotReviewTool() {
         {REVIEW_SHOT_TYPES.map(g => (
           <div key={g.group} style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 11, color: C.textLight, marginBottom: 4 }}>{g.group}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(104px,1fr))", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
               {g.types.map(t => (
                 <ReviewChip key={t} small color={C.blue} active={draft.shot_type === t}
                   onClick={() => setDraft(d => ({ ...d, shot_type: t }))}>{t}</ReviewChip>
@@ -9369,7 +9423,7 @@ function ShotReviewTool() {
       </ReviewSection>
 
       <ReviewSection title="Hit quality">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
           {REVIEW_QUALITY.map(q => (
             <ReviewChip key={q.id} color={q.color} active={draft.hit_quality === q.id}
               onClick={() => setDraft(d => ({ ...d, hit_quality: q.id }))}>{q.label}</ReviewChip>
@@ -9377,8 +9431,8 @@ function ShotReviewTool() {
         </div>
       </ReviewSection>
 
-      <ReviewSection title="Rally outcome">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+      <ReviewSection title="Did this shot end the rally? (for the person who hit it)">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
           {REVIEW_OUTCOME.map(o => (
             <ReviewChip key={o.id} color={o.color} active={draft.rally_outcome === o.id}
               onClick={() => setDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
@@ -9387,13 +9441,17 @@ function ShotReviewTool() {
       </ReviewSection>
 
       {errorBox}
-      <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 8, background: C.pageBg, paddingTop: 8 }}>
-        <button onClick={() => saveReview("not_a_shot")} disabled={busy} style={{ ...btn(C.roseL, C.rose), flex: 1 }}>
-          Not a shot
-        </button>
-        <button onClick={() => saveReview("reviewed")} disabled={busy} style={{ ...btn(C.pickle), flex: 2 }}>
-          {busy ? "Saving…" : "Save & next"}
-        </button>
+      <div style={{ height: 96 }} />
+      <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 150, background: "rgba(244,247,244,0.96)",
+        borderTop: `1px solid ${C.border}`, padding: "10px 14px calc(10px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ display: "flex", gap: 8, maxWidth: 640, margin: "0 auto" }}>
+          <button onClick={() => saveReview("not_a_shot")} disabled={busy} style={{ ...btn(C.roseL, C.rose), flex: 1 }}>
+            Not a shot
+          </button>
+          <button onClick={() => saveReview("reviewed")} disabled={busy} style={{ ...btn(C.pickle), flex: 2 }}>
+            {busy ? "Saving…" : "Save & next"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -9404,7 +9462,7 @@ function PlayerMapStep({ keys, counts, first, initial, videoEl, playShot, busy, 
   const [map, setMap] = useState(initial);
   const options = [...REVIEW_ROLES, { id:"ghost", label:"Duplicate", color:C.textLight }];
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <button onClick={onBack} style={{ ...ghostBtn, marginBottom: 12 }}>← Matches</button>
       <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em" }}>Who is who?</div>
       <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5, marginBottom: 12 }}>
@@ -9424,7 +9482,7 @@ function PlayerMapStep({ keys, counts, first, initial, videoEl, playShot, busy, 
               ▶ {fmtClock(first[k])}
             </button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 4 }}>
             {options.map(o => (
               <ReviewChip key={o.id} small color={o.color} active={map[k] === o.id}
                 onClick={() => setMap(m => ({ ...m, [k]: o.id }))}>{o.label}</ReviewChip>
@@ -9583,7 +9641,7 @@ const Admin = () => {
       </div>
 
       {/* Tab bar */}
-      <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5,overflowX:"auto"}}>
+      <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5,flexWrap:"wrap"}}>
         {[
           {id:"overview",  label:"👥 Users"},
           {id:"feedback",  label:"💬 Feedback"},
@@ -9592,7 +9650,7 @@ const Admin = () => {
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: tab===t.id ? C.navy : "transparent",
-            border:"none",borderRadius:10,padding:"10px 22px",cursor:"pointer",
+            border:"none",borderRadius:10,padding:isMobile?"8px 12px":"10px 22px",cursor:"pointer",
             fontFamily:"'Outfit'",fontWeight:700,fontSize:13,
             color: tab===t.id ? "white" : C.textMid,
             transition:"all 0.15s",whiteSpace:"nowrap",
