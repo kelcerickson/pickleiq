@@ -9161,6 +9161,35 @@ function ShotReviewTool() {
     v.currentTime = t;
     setAtHit(true);
   };
+  // Step one frame at a time to find the exact contact
+  const stepFrame = (dir) => {
+    const v = videoRef.current;
+    if (!v) return;
+    const withRate = (session?.shots || []).find(x => x.t > 0 && x.frame > 0);
+    const fps = withRate ? withRate.frame / withRate.t : 30;
+    v.pause(); stopAt.current = null; hitAt.current = null;
+    v.currentTime = Math.max(0, v.currentTime + dir / fps);
+    setAtHit(false);
+  };
+  // Download every shot with its review as a CSV (for training in Colab)
+  const exportLabels = () => {
+    const cols = ["frame","time_sec","ball_x","ball_y","auto_player_index","auto_shot_type","status",
+      "player_role","shot_side","shot_type","hit_quality","rally_outcome"];
+    const esc = (v) => v == null ? "" : String(v).includes(",") ? `"${v}"` : String(v);
+    const lines = [cols.join(",")];
+    (session?.shots || []).forEach(sh => {
+      const r = reviews[sh.frame] || {};
+      lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
+        r.player_role, r.shot_side, r.shot_type, r.hit_quality,
+        toHitterOutcome(r.rally_outcome, r.player_role)].map(esc).join(","));
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `LABELS_${session?.video_name || "match"}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
@@ -9357,7 +9386,9 @@ function ShotReviewTool() {
         <button onClick={() => { setStage("list"); loadSessions(); }} style={ghostBtn}>← Matches</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
           <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
-          {reviewedCount} of {shots.length} reviewed
+          {reviewedCount} of {shots.length} reviewed<br />
+          <button onClick={exportLabels} style={{ background: "none", border: "none", padding: 0, marginTop: 2,
+            color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬇ Export labels</button>
         </div>
       </div>
       <div style={{ height: 4, background: C.border, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
@@ -9365,6 +9396,11 @@ function ShotReviewTool() {
       </div>
 
       {videoEl}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
+        <button onClick={() => stepFrame(-1)} style={ghostBtn}>◀ 1 frame</button>
+        <button onClick={() => stepFrame(1)} style={ghostBtn}>1 frame ▶</button>
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <button onClick={() => idx > 0 && setIdx(idx - 1)} style={ghostBtn} aria-label="Previous shot">‹</button>
