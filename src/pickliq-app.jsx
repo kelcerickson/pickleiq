@@ -9081,6 +9081,7 @@ function ShotReviewTool() {
   const [error, setError]       = useState("");
   const [slow, setSlow]         = useState(false);
   const [atHit, setAtHit]       = useState(false);   // frozen on the exact hit frame
+  const [adding, setAdding]     = useState(false);    // scrubbing to mark a shot the detector missed
 
   // New-session form
   const [newName, setNewName]   = useState("");
@@ -9258,6 +9259,37 @@ function ShotReviewTool() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
+  const getFps = () => {
+    const withRate = (session?.shots || []).find(x => x.t > 0 && x.frame > 0);
+    return withRate ? withRate.frame / withRate.t : 30;
+  };
+
+  // Insert a shot at the current video position for a hit the detector never flagged
+  const addMissedShot = async () => {
+    const v = videoRef.current;
+    if (!v || !session) return;
+    const fps = getFps();
+    const t = v.currentTime;
+    const frame = Math.round(t * fps);
+    if ((session.shots || []).some(sh => Math.abs(sh.frame - frame) < 3)) {
+      setError("There's already a detected shot within a couple frames of here.");
+      return;
+    }
+    const newShot = { frame, t: Math.round(t * 1000) / 1000, bx: null, by: null, p: null, auto_type: null, manual: true };
+    const newShots = [...session.shots, newShot].sort((a, b) => a.t - b.t);
+    setBusy(true); setError("");
+    try {
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ shots: newShots, shot_count: newShots.length }),
+      });
+      setSession(s => ({ ...s, shots: newShots, shot_count: newShots.length }));
+      setAdding(false);
+      setIdx(newShots.findIndex(sh => sh.frame === frame));
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
@@ -9282,8 +9314,10 @@ function ShotReviewTool() {
       hit_quality: null,
       rally_outcome: "ongoing",
     });
-    const tmr = setTimeout(() => playShot(shot.t), 150);
-    return () => clearTimeout(tmr);
+    if (!shot.manual) {
+      const tmr = setTimeout(() => playShot(shot.t), 150);
+      return () => clearTimeout(tmr);
+    }
   }, [stage, idx, session?.id]);
 
   const saveReview = async (status) => {
@@ -9505,6 +9539,26 @@ function ShotReviewTool() {
         <button onClick={() => stepFrame(1)} style={ghostBtn}>1 frame ▶</button>
       </div>
 
+      {!adding ? (
+        <button onClick={() => { setAdding(true); videoRef.current?.pause(); }}
+          style={{ ...ghostBtn, width: "100%", marginBottom: 12, borderColor: C.blue, color: C.blue }}>
+          + Add a shot the detector missed
+        </button>
+      ) : (
+        <div style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${C.blue}`, background: `${C.blue}10`,
+          marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>
+            Scrub the video (drag the seek bar, or use ◀ / ▶ above) to the exact frame of contact, then tap Mark shot here.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+            <button onClick={() => setAdding(false)} style={ghostBtn}>Cancel</button>
+            <button onClick={addMissedShot} disabled={busy} style={btn(C.blue, "white")}>
+              {busy ? "Adding…" : "Mark shot here"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <button onClick={() => idx > 0 && setIdx(idx - 1)} style={ghostBtn} aria-label="Previous shot">‹</button>
         <div style={{ flex: 1, textAlign: "center" }}>
@@ -9512,7 +9566,7 @@ function ShotReviewTool() {
             Shot {idx + 1} at {fmtClock(shot?.t, true)}
           </div>
           <div style={{ fontSize: 11, color: saved ? C.mint : C.textLight, marginTop: 3, fontWeight: 600 }}>
-            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : saved.shifted ? "Reviewed — worth a double-check (shifted slightly)" : "Reviewed") : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
+            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : saved.shifted ? "Reviewed — worth a double-check (shifted slightly)" : "Reviewed") : shot?.manual ? "Added by you — the detector missed this one" : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
           </div>
         </div>
         <button onClick={() => idx < shots.length - 1 && setIdx(idx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
