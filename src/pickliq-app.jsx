@@ -9071,7 +9071,7 @@ function ReviewSection({ title, children }) {
 }
 
 function ShotReviewTool() {
-  const [stage, setStage]       = useState("list"); // list | new | players | review
+  const [stage, setStage]       = useState("list"); // list | new | players | review | upgrade
   const [sessions, setSessions] = useState([]);
   const [session, setSession]   = useState(null);
   const [reviews, setReviews]   = useState({});      // frame -> saved review
@@ -9087,6 +9087,11 @@ function ShotReviewTool() {
   const [newUrl, setNewUrl]     = useState("");
   const [parsed, setParsed]     = useState(null);
 
+  // Upgrade-shot-list form (swap in an improved SHOT_LOG_v3 file, carrying reviews forward)
+  const [upgradeParsed, setUpgradeParsed] = useState(null);
+  const [upgradeSummary, setUpgradeSummary] = useState(null);
+  const [upgradeError, setUpgradeError] = useState("");
+
   const videoRef = useRef(null);
   const stopAt   = useRef(null);
   const hitAt    = useRef(null);
@@ -9098,6 +9103,69 @@ function ShotReviewTool() {
     } catch (e) { setError(e.message); }
   };
   useEffect(() => { loadSessions(); }, []);
+
+  // Nearest-frame match: v3 shots were snapped a few frames from the original detections
+  const matchOldReviews = (newShots, oldReviewsMap) => {
+    const oldFrames = Object.keys(oldReviewsMap).map(Number).sort((a, b) => a - b);
+    const carried = {};
+    let shifted = 0;
+    newShots.forEach(sh => {
+      let best = null, bestDist = 21; // within ~1/3 sec at 60fps
+      for (const of of oldFrames) {
+        const d = Math.abs(of - sh.frame);
+        if (d < bestDist) { bestDist = d; best = of; }
+      }
+      if (best != null) {
+        carried[sh.frame] = { ...oldReviewsMap[best], frame: sh.frame, shifted: bestDist > 0 };
+        if (bestDist > 0) shifted++;
+      }
+    });
+    const dropped = oldFrames.length - Object.keys(carried).length;
+    return { carried, shifted, dropped, matched: Object.keys(carried).length };
+  };
+
+  const onUpgradeFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUpgradeError(""); setUpgradeParsed(null); setUpgradeSummary(null);
+    try {
+      const shots = parseShotLog(await f.text());
+      const summary = matchOldReviews(shots, reviews);
+      setUpgradeParsed(shots); setUpgradeSummary(summary);
+    } catch (err) { setUpgradeError(err.message); }
+  };
+
+  const applyUpgrade = async () => {
+    if (!upgradeParsed || !upgradeSummary) return;
+    setBusy(true); setUpgradeError("");
+    try {
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ shots: upgradeParsed, shot_count: upgradeParsed.length }),
+      });
+      const rows = Object.values(upgradeSummary.carried).map(r => ({
+        session_id: session.id, user_id: getCurrentUserId(), frame: r.frame, time_sec: r.time_sec,
+        auto_player_index: r.auto_player_index, auto_shot_type: r.auto_shot_type,
+        player_role: r.player_role, shot_type: r.shot_type, shot_side: r.shot_side || null,
+        hit_quality: r.hit_quality, rally_outcome: r.rally_outcome, status: r.status,
+        updated_at: new Date().toISOString(),
+      }));
+      for (let i = 0; i < rows.length; i += 50) {
+        await reviewApi("shot_reviews?on_conflict=session_id,frame", {
+          method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(rows.slice(i, i + 50)),
+        });
+      }
+      const newReviews = {}; rows.forEach(r => { newReviews[r.frame] = r; });
+      setSession(s => ({ ...s, shots: upgradeParsed, shot_count: upgradeParsed.length }));
+      setReviews(newReviews);
+      const firstOpen = upgradeParsed.findIndex(sh => !newReviews[sh.frame]);
+      setIdx(firstOpen < 0 ? 0 : firstOpen);
+      setUpgradeParsed(null); setUpgradeSummary(null);
+      setStage("review");
+    } catch (e) { setUpgradeError(e.message); }
+    setBusy(false);
+  };
 
   const openSession = async (id) => {
     setBusy(true); setError("");
@@ -9360,6 +9428,36 @@ function ShotReviewTool() {
     </div>
   );
 
+  if (stage === "upgrade") return (
+    <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+      <button onClick={() => setStage("review")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 8 }}>
+        Load improved shot list
+      </div>
+      <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 12 }}>
+        Pick the new SHOT_LOG_v3 file from Drive. Your {reviewedCount} existing reviews carry over by matching each
+        one to the closest shot in the new list. A review more than a third of a second from any new shot is dropped
+        as likely fake; one that moved slightly is flagged for a quick double-check.
+      </div>
+      <input type="file" accept=".csv,text/csv" onChange={onUpgradeFile} style={{ fontSize: 13, marginBottom: 12 }} />
+      {upgradeSummary && (
+        <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+          fontSize: 13, color: C.text, lineHeight: 1.7, marginBottom: 12 }}>
+          New list has <strong>{upgradeParsed.length}</strong> shots (was {shots.length}).<br />
+          <strong style={{ color: C.mint }}>{upgradeSummary.matched}</strong> of your reviews carried over
+          ({upgradeSummary.shifted} shifted slightly, worth a quick double-check).<br />
+          {upgradeSummary.dropped > 0 && <><strong style={{ color: C.rose }}>{upgradeSummary.dropped}</strong> of your
+          reviews were on shots no longer in the new list.<br /></>}
+        </div>
+      )}
+      {upgradeError && errorBox}
+      <button disabled={!upgradeParsed || busy} onClick={applyUpgrade}
+        style={{ ...btn(upgradeParsed ? C.pickle : C.border), width: "100%" }}>
+        {busy ? "Applying…" : "Apply and continue reviewing"}
+      </button>
+    </div>
+  );
+
   // ── Map auto player indices to roles ──────────────────────────────────────
   if (stage === "players") {
     const counts = {}, first = {};
@@ -9384,11 +9482,16 @@ function ShotReviewTool() {
     <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
         <button onClick={() => { setStage("list"); loadSessions(); }} style={ghostBtn}>← Matches</button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+        <button onClick={() => { setUpgradeError(""); setUpgradeParsed(null); setUpgradeSummary(null); setStage("upgrade"); }}
+          style={{ background: "none", border: "none", padding: 0, color: C.blue, fontFamily: "'Outfit'",
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬆ Load improved shot list</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
           <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
           {reviewedCount} of {shots.length} reviewed<br />
           <button onClick={exportLabels} style={{ background: "none", border: "none", padding: 0, marginTop: 2,
             color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬇ Export labels</button>
+        </div>
         </div>
       </div>
       <div style={{ height: 4, background: C.border, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
@@ -9409,7 +9512,7 @@ function ShotReviewTool() {
             Shot {idx + 1} at {fmtClock(shot?.t, true)}
           </div>
           <div style={{ fontSize: 11, color: saved ? C.mint : C.textLight, marginTop: 3, fontWeight: 600 }}>
-            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : "Reviewed") : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
+            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : saved.shifted ? "Reviewed — worth a double-check (shifted slightly)" : "Reviewed") : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
           </div>
         </div>
         <button onClick={() => idx < shots.length - 1 && setIdx(idx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
