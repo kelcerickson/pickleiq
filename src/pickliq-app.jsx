@@ -9566,7 +9566,13 @@ function ShotReviewTool() {
             Shot {idx + 1} at {fmtClock(shot?.t, true)}
           </div>
           <div style={{ fontSize: 11, color: saved ? C.mint : C.textLight, marginTop: 3, fontWeight: 600 }}>
-            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : saved.shifted ? "Reviewed — worth a double-check (shifted slightly)" : "Reviewed") : shot?.manual ? "Added by you — the detector missed this one" : (shot?.p != null ? `Tracker player ${shot.p}` : "Not reviewed yet")}
+            {saved ? (saved.status === "not_a_shot" ? "Marked as not a shot" : saved.shifted ? "Reviewed — worth a double-check (shifted slightly)" : "Reviewed")
+              : shot?.manual ? "Added by you — the detector missed this one"
+              : (() => {
+                  const guess = playerMap[String(shot?.p)];
+                  const role = REVIEW_ROLES.find(r => r.id === guess);
+                  return role ? `Suggested: ${role.label} (tap to confirm below)` : "Not reviewed yet — who hit it?";
+                })()}
           </div>
         </div>
         <button onClick={() => idx < shots.length - 1 && setIdx(idx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
