@@ -9071,7 +9071,7 @@ function ReviewSection({ title, children }) {
 }
 
 function ShotReviewTool() {
-  const [stage, setStage]       = useState("list"); // list | new | players | review | upgrade
+  const [stage, setStage]       = useState("list"); // list | new | players | review | upgrade | scratch
   const [sessions, setSessions] = useState([]);
   const [session, setSession]   = useState(null);
   const [reviews, setReviews]   = useState({});      // frame -> saved review
@@ -9082,6 +9082,14 @@ function ShotReviewTool() {
   const [slow, setSlow]         = useState(false);
   const [atHit, setAtHit]       = useState(false);   // frozen on the exact hit frame
   const [adding, setAdding]     = useState(false);    // scrubbing to mark a shot the detector missed
+
+  // Ground-truth mode: watch a stretch of match straight through and log every real shot
+  const [scratchRange, setScratchRange] = useState({ startMin: "", endMin: "" });
+  const [scratchActive, setScratchActive] = useState(false);
+  const [scratchLogged, setScratchLogged] = useState([]); // shots logged this session, newest last
+  const [scratchDraft, setScratchDraft] = useState(null);  // { t, frame, ...fields } while marking one
+  const [scratchDone, setScratchDone] = useState(false);
+  const scratchVideoRef = useRef(null);
 
   // New-session form
   const [newName, setNewName]   = useState("");
@@ -9290,6 +9298,60 @@ function ShotReviewTool() {
     setBusy(false);
   };
 
+  // Save one ground-truth shot logged during a from-scratch pass
+  const saveScratchShot = async () => {
+    if (!scratchDraft || !session) return;
+    if (!scratchDraft.player_role || !scratchDraft.shot_type) {
+      setError("Pick who hit it and the shot type first."); return;
+    }
+    setBusy(true); setError("");
+    const frame = scratchDraft.frame;
+    const newShot = { frame, t: scratchDraft.t, bx: null, by: null, p: null, auto_type: null, manual: true, scratch: true };
+    try {
+      const newShots = [...session.shots.filter(sh => sh.frame !== frame), newShot].sort((a, b) => a.t - b.t);
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ shots: newShots, shot_count: newShots.length }),
+      });
+      const row = {
+        session_id: session.id, user_id: getCurrentUserId(), frame, time_sec: scratchDraft.t,
+        auto_player_index: null, auto_shot_type: null,
+        player_role: scratchDraft.player_role, shot_type: scratchDraft.shot_type,
+        shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
+        rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
+        updated_at: new Date().toISOString(),
+      };
+      await reviewApi("shot_reviews?on_conflict=session_id,frame", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(row),
+      });
+      setSession(s => ({ ...s, shots: newShots, shot_count: newShots.length }));
+      setReviews(r => ({ ...r, [frame]: row }));
+      setScratchLogged(l => [...l, row]);
+      setScratchDraft(null);
+      const v = scratchVideoRef.current;
+      if (v) v.play().catch(() => {});
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const startMarkingScratchShot = () => {
+    const v = scratchVideoRef.current;
+    if (!v) return;
+    v.pause();
+    const t = v.currentTime;
+    const fps = getFps();
+    setScratchDraft({ t, frame: Math.round(t * fps), player_role: null, shot_type: null, shot_side: null,
+      hit_quality: null, rally_outcome: "ongoing" });
+  };
+
+  const stepScratchFrame = (dir) => {
+    const v = scratchVideoRef.current;
+    if (!v) return;
+    v.pause();
+    v.currentTime = Math.max(0, v.currentTime + dir / getFps());
+  };
+
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
@@ -9462,6 +9524,169 @@ function ShotReviewTool() {
     </div>
   );
 
+  if (stage === "scratch") {
+    const fps = getFps();
+    const startS = parseFloat(scratchRange.startMin) * 60;
+    const endS = parseFloat(scratchRange.endMin) * 60;
+    const rangeValid = !isNaN(startS) && !isNaN(endS) && endS > startS;
+
+    if (!scratchActive) return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <button onClick={() => setStage("review")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 8 }}>
+          Log a range from scratch
+        </div>
+        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
+          Watch this stretch of the match play straight through. Pause and mark every real shot yourself, missed by
+          the detector or not. This builds a ground-truth list we can use to measure how much the detector misses.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, color: C.textLight, marginBottom: 4 }}>Start (minutes)</div>
+            <input type="number" inputMode="decimal" value={scratchRange.startMin}
+              onChange={e => setScratchRange(r => ({ ...r, startMin: e.target.value }))}
+              placeholder="5" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: C.textLight, marginBottom: 4 }}>End (minutes)</div>
+            <input type="number" inputMode="decimal" value={scratchRange.endMin}
+              onChange={e => setScratchRange(r => ({ ...r, endMin: e.target.value }))}
+              placeholder="10" style={inputStyle} />
+          </div>
+        </div>
+        {errorBox}
+        <button disabled={!rangeValid} onClick={() => { setScratchActive(true); setScratchDone(false); }}
+          style={{ ...btn(rangeValid ? C.purple : C.border, "white"), width: "100%" }}>
+          Start logging this range
+        </button>
+      </div>
+    );
+
+    return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+          <button onClick={() => { setScratchActive(false); }} style={ghostBtn}>← Change range</button>
+          <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
+            <strong style={{ color: C.purple }}>{scratchLogged.length}</strong> shots logged this pass
+          </div>
+        </div>
+
+        {session?.video_url && (
+          <div style={{ borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
+            <video ref={scratchVideoRef} src={session.video_url} controls playsInline preload="metadata"
+              onLoadedMetadata={e => { e.currentTarget.currentTime = startS; }}
+              onTimeUpdate={e => { if (e.currentTarget.currentTime >= endS) { e.currentTarget.pause(); setScratchDone(true); } }}
+              style={{ width: "100%", maxWidth: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
+          </div>
+        )}
+
+        {scratchDone && !scratchDraft && (
+          <div style={{ padding: "12px 14px", borderRadius: 10, background: `${C.mint}18`, border: `1.5px solid ${C.mint}`,
+            fontSize: 13, color: C.text, marginBottom: 12, lineHeight: 1.6 }}>
+            Reached the end of this range — {scratchLogged.length} shots logged.
+            Tap <strong>← Change range</strong> to log another stretch, or head back to the match.
+          </div>
+        )}
+
+        {!scratchDraft ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8, marginBottom: 10 }}>
+              <button onClick={() => stepScratchFrame(-5)} style={ghostBtn}>◀◀ 5</button>
+              <button onClick={() => stepScratchFrame(-1)} style={ghostBtn}>◀ 1</button>
+              <button onClick={() => stepScratchFrame(1)} style={ghostBtn}>1 ▶</button>
+              <button onClick={() => stepScratchFrame(5)} style={ghostBtn}>5 ▶▶</button>
+            </div>
+            <button onClick={startMarkingScratchShot} style={{ ...btn(C.purple, "white"), width: "100%", marginBottom: 12 }}>
+              ✋ Mark a shot here
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 12, color: C.textMid, marginBottom: 8 }}>
+              Marked at {fmtClock(scratchDraft.t, true)}. Fine-tune, then fill in the details below.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => { stepScratchFrame(-5); setScratchDraft(d => ({ ...d, t: scratchVideoRef.current.currentTime, frame: Math.round(scratchVideoRef.current.currentTime * fps) })); }} style={ghostBtn}>◀◀ 5</button>
+              <button onClick={() => { stepScratchFrame(-1); setScratchDraft(d => ({ ...d, t: scratchVideoRef.current.currentTime, frame: Math.round(scratchVideoRef.current.currentTime * fps) })); }} style={ghostBtn}>◀ 1</button>
+              <button onClick={() => { stepScratchFrame(1); setScratchDraft(d => ({ ...d, t: scratchVideoRef.current.currentTime, frame: Math.round(scratchVideoRef.current.currentTime * fps) })); }} style={ghostBtn}>1 ▶</button>
+              <button onClick={() => { stepScratchFrame(5); setScratchDraft(d => ({ ...d, t: scratchVideoRef.current.currentTime, frame: Math.round(scratchVideoRef.current.currentTime * fps) })); }} style={ghostBtn}>5 ▶▶</button>
+            </div>
+
+            <ReviewSection title="Who hit it?">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_ROLES.map(r => (
+                  <ReviewChip key={r.id} color={r.color} active={scratchDraft.player_role === r.id}
+                    onClick={() => setScratchDraft(d => ({ ...d, player_role: r.id }))}>{r.label}</ReviewChip>
+                ))}
+              </div>
+            </ReviewSection>
+
+            <ReviewSection title="Forehand or backhand? (skip if you can't tell)">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_SIDE.map(o => (
+                  <ReviewChip key={o.id} color={o.color} active={scratchDraft.shot_side === o.id}
+                    onClick={() => setScratchDraft(d => ({ ...d, shot_side: d.shot_side === o.id ? null : o.id }))}>{o.label}</ReviewChip>
+                ))}
+              </div>
+            </ReviewSection>
+
+            <ReviewSection title="Shot type">
+              {REVIEW_SHOT_TYPES.map(g => (
+                <div key={g.group} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: C.textLight, marginBottom: 4 }}>{g.group}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
+                    {g.types.map(t => (
+                      <ReviewChip key={t} small color={C.blue} active={scratchDraft.shot_type === t}
+                        onClick={() => setScratchDraft(d => ({ ...d, shot_type: t }))}>{t}</ReviewChip>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </ReviewSection>
+
+            <ReviewSection title="Hit quality">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_QUALITY.map(q => (
+                  <ReviewChip key={q.id} color={q.color} active={scratchDraft.hit_quality === q.id}
+                    onClick={() => setScratchDraft(d => ({ ...d, hit_quality: q.id }))}>{q.label}</ReviewChip>
+                ))}
+              </div>
+            </ReviewSection>
+
+            <ReviewSection title="Did this shot end the rally?">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_OUTCOME.map(o => (
+                  <ReviewChip key={o.id} color={o.color} active={scratchDraft.rally_outcome === o.id}
+                    onClick={() => setScratchDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
+                ))}
+              </div>
+            </ReviewSection>
+
+            {errorBox}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setScratchDraft(null)} disabled={busy} style={{ ...ghostBtn, flex: 1 }}>Cancel</button>
+              <button onClick={saveScratchShot} disabled={busy} style={{ ...btn(C.pickle), flex: 2 }}>
+                {busy ? "Saving…" : "Save & resume playing"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {scratchLogged.length > 0 && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginBottom: 6 }}>Logged this pass</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {scratchLogged.map((r, i) => (
+                <span key={i} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 999, background: `${C.purple}15`,
+                  color: C.purple, fontWeight: 600 }}>{fmtClock(r.time_sec, true)} · {r.shot_type}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (stage === "upgrade") return (
     <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <button onClick={() => setStage("review")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
@@ -9520,6 +9745,10 @@ function ShotReviewTool() {
         <button onClick={() => { setUpgradeError(""); setUpgradeParsed(null); setUpgradeSummary(null); setStage("upgrade"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.blue, fontFamily: "'Outfit'",
             fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬆ Load improved shot list</button>
+        <button onClick={() => { setError(""); setScratchRange({ startMin: "", endMin: "" }); setScratchLogged([]);
+          setScratchActive(false); setScratchDone(false); setScratchDraft(null); setStage("scratch"); }}
+          style={{ background: "none", border: "none", padding: 0, color: C.purple, fontFamily: "'Outfit'",
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🔬 Log a range from scratch</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
           <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
           {reviewedCount} of {shots.length} reviewed<br />
@@ -9534,9 +9763,11 @@ function ShotReviewTool() {
 
       {videoEl}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
-        <button onClick={() => stepFrame(-1)} style={ghostBtn}>◀ 1 frame</button>
-        <button onClick={() => stepFrame(1)} style={ghostBtn}>1 frame ▶</button>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
+        <button onClick={() => stepFrame(-5)} style={ghostBtn}>◀◀ 5</button>
+        <button onClick={() => stepFrame(-1)} style={ghostBtn}>◀ 1</button>
+        <button onClick={() => stepFrame(1)} style={ghostBtn}>1 ▶</button>
+        <button onClick={() => stepFrame(5)} style={ghostBtn}>5 ▶▶</button>
       </div>
 
       {!adding ? (
