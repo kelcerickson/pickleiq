@@ -9251,13 +9251,14 @@ function ShotReviewTool() {
   // Download every shot with its review as a CSV (for training in Colab)
   const exportLabels = () => {
     const cols = ["frame","time_sec","ball_x","ball_y","auto_player_index","auto_shot_type","status",
-      "player_role","shot_side","shot_type","hit_quality","rally_outcome"];
+      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome"];
     const esc = (v) => v == null ? "" : String(v).includes(",") ? `"${v}"` : String(v);
     const lines = [cols.join(",")];
     (session?.shots || []).forEach(sh => {
       const r = reviews[sh.frame] || {};
+      const source = sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected";
       lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
-        r.player_role, r.shot_side, r.shot_type, r.hit_quality,
+        source, r.player_role, r.shot_side, r.shot_type, r.hit_quality,
         toHitterOutcome(r.rally_outcome, r.player_role)].map(esc).join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
