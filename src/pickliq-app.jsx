@@ -9119,7 +9119,9 @@ function ShotReviewTool() {
     const carried = {};
     let shifted = 0;
     newShots.forEach(sh => {
-      let best = null, bestDist = 21; // within ~1/3 sec at 60fps
+      // Tight on purpose: a looser tolerance risks snapping an old review onto the WRONG nearby
+      // shot when the new list is dense with close-together candidates (e.g. duplicate bursts).
+      let best = null, bestDist = 8; // within ~0.13s at 60fps — about contact-snap drift, no more
       for (const of of oldFrames) {
         const d = Math.abs(of - sh.frame);
         if (d < bestDist) { bestDist = d; best = of; }
