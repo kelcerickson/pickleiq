@@ -9156,7 +9156,7 @@ function ShotReviewTool() {
       });
       const rows = Object.values(upgradeSummary.carried).map(r => ({
         session_id: session.id, user_id: getCurrentUserId(), frame: r.frame, time_sec: r.time_sec,
-        auto_player_index: r.auto_player_index, auto_shot_type: r.auto_shot_type,
+        auto_player_index: r.auto_player_index, auto_shot_type: r.auto_shot_type, source: r.source || "detected",
         player_role: r.player_role, shot_type: r.shot_type, shot_side: r.shot_side || null,
         hit_quality: r.hit_quality, rally_outcome: r.rally_outcome, status: r.status,
         updated_at: new Date().toISOString(),
@@ -9182,7 +9182,7 @@ function ShotReviewTool() {
     setBusy(true); setError("");
     try {
       const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
-      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,shot_side,hit_quality,rally_outcome,status`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source`);
       const map = {};
       (rows || []).forEach(r => { map[r.frame] = r; });
       setSession(s); setReviews(map);
@@ -9258,7 +9258,9 @@ function ShotReviewTool() {
     const lines = [cols.join(",")];
     (session?.shots || []).forEach(sh => {
       const r = reviews[sh.frame] || {};
-      const source = sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected";
+      // Prefer the source saved in the database at review time; only fall back to the (unreliable)
+      // in-memory flag for older rows saved before this was persisted
+      const source = r.source || (sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected");
       lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
         source, r.player_role, r.shot_side, r.shot_type, r.hit_quality,
         toHitterOutcome(r.rally_outcome, r.player_role)].map(esc).join(","));
@@ -9318,7 +9320,7 @@ function ShotReviewTool() {
       });
       const row = {
         session_id: session.id, user_id: getCurrentUserId(), frame, time_sec: scratchDraft.t,
-        auto_player_index: null, auto_shot_type: null,
+        auto_player_index: null, auto_shot_type: null, source: "scratch_ground_truth",
         player_role: scratchDraft.player_role, shot_type: scratchDraft.shot_type,
         shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
         rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
@@ -9391,10 +9393,15 @@ function ShotReviewTool() {
       setError("Pick who hit it and the shot type first."); return;
     }
     setBusy(true); setError("");
+    // Persist provenance (detected / manually added / logged from scratch) into the DB row itself,
+    // not just the in-memory shot object — that object gets replaced wholesale whenever an improved
+    // shot list is loaded later, which was silently erasing this tag on every "Load improved shot
+    // list" upgrade.
+    const source = shot.scratch ? "scratch_ground_truth" : shot.manual ? "manual_missed" : "detected";
     const row = {
       session_id: session.id, user_id: getCurrentUserId(),
       frame: shot.frame, time_sec: shot.t, auto_player_index: shot.p,
-      auto_shot_type: shot.auto_type,
+      auto_shot_type: shot.auto_type, source,
       player_role: status === "reviewed" ? draft.player_role : null,
       shot_type:   status === "reviewed" ? draft.shot_type : null,
       shot_side:   status === "reviewed" ? (draft.shot_side || null) : null,
