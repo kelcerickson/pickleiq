@@ -281,6 +281,18 @@ const SHOT_CATS = [
   { id:"volley",  label:"Volley",     color:C.purple, icon:"🏐", shots:[
     { name:"Volley BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Good trend. Compact swing — block don't swing" },
     { name:"Volley FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Work on volley-to-dink transitions" }]},
+  { id:"3rddrop", label:"3rd Shot Drop",color:C.blue,   icon:"🌊", shots:[
+    { name:"3rd Shot Drop BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Land in the first 3ft past the NVZ line off the serving team's 3rd ball" },
+    { name:"3rd Shot Drop FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands, low to high through contact" }]},
+  { id:"3rddrive",label:"3rd Shot Drive",color:C.amber, icon:"💥", shots:[
+    { name:"3rd Shot Drive BH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Only drive when opponent is out of position" },
+    { name:"3rd Shot Drive FH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Aim low over the net, 2ft inside the line" }]},
+  { id:"block",   label:"Block",      color:C.mint,   icon:"🛡️", shots:[
+    { name:"Block BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Minimal backswing, let their pace do the work" },
+    { name:"Block FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands, redirect don't resist" }]},
+  { id:"punchvolley",label:"Punch Volley",color:C.purple,icon:"👊",shots:[
+    { name:"Punch Volley BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Short, firm punch — no backswing" },
+    { name:"Punch Volley FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Finish at net with compact paddle speed" }]},
 ];
 
 // ── SHARED GOALS STATE (module-level so Profile edits flow to all pages) ─────
@@ -8983,6 +8995,36 @@ const REVIEW_QUALITY = [
   { id:"neutral",  label:"Neutral",  color:C.textMid },
   { id:"negative", label:"Negative", color:C.rose },
 ];
+// Maps a review's (shot_type, shot_side) to the exact "name" the real stats tables use (SHOT_CATS).
+// Serve has no side. Everything else needs forehand/backhand to count — unsided shots are skipped
+// at sync time rather than guessed, so a stat isn't silently attributed to the wrong side.
+const STATS_NAME_MAP = {
+  "Serve": { none: "Serve" },
+  "Return of Serve": { forehand: "Return FH", backhand: "Return BH" },
+  "Dink": { forehand: "Dink FH", backhand: "Dink BH" },
+  "Drop Shot": { forehand: "Drop FH", backhand: "Drop BH" },
+  "Third Shot Drop": { forehand: "3rd Shot Drop FH", backhand: "3rd Shot Drop BH" },
+  "Third Shot Drive": { forehand: "3rd Shot Drive FH", backhand: "3rd Shot Drive BH" },
+  "Drive": { forehand: "Drive FH", backhand: "Drive BH" },
+  "Volley": { forehand: "Volley FH", backhand: "Volley BH" },
+  "Block": { forehand: "Block FH", backhand: "Block BH" },
+  "Counter": { forehand: "Counter FH", backhand: "Counter BH" },
+  "Speed-Up": { forehand: "Speed Up FH", backhand: "Speed Up BH" },
+  "Punch Volley": { forehand: "Punch Volley FH", backhand: "Punch Volley BH" },
+  "Reset": { forehand: "Reset FH", backhand: "Reset BH" },
+  "Lob": { forehand: "Lob FH", backhand: "Lob BH" },
+  "Overhead Smash": { forehand: "Slam FH", backhand: "Slam BH" },
+  "Erne": { forehand: "Erne FH", backhand: "Erne BH" },
+  "ATP": { forehand: "ATP FH", backhand: "ATP BH" },
+  "Scramble": { forehand: "Scramble FH", backhand: "Scramble BH" },
+};
+const statsName = (shot_type, shot_side) => {
+  const entry = STATS_NAME_MAP[shot_type];
+  if (!entry) return null;
+  if (entry.none) return entry.none;
+  return entry[shot_side] || null; // null when side is missing — caller decides how to handle
+};
+
 const REVIEW_OUTCOME = [
   { id:"ongoing", label:"Rally continues", color:C.textMid },
   { id:"winner",  label:"Winner",          color:C.mint },
@@ -9070,8 +9112,107 @@ function ReviewSection({ title, children }) {
   );
 }
 
+function PeopleScoutTool() {
+  const [stage, setStage] = useState("list"); // list | detail
+  const [people, setPeople] = useState(null); // [{name, totalAttempts}] grouped
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(null); // person name
+  const [detail, setDetail] = useState(null); // [{name, category, attempts, ...}]
+
+  const loadPeople = async () => {
+    setLoading(true); setError("");
+    try {
+      const rows = await sb.query("scout_shots", { filter: `user_id=eq.${getCurrentUserId()}`, select: "person_name,attempts" });
+      const byName = {};
+      (rows || []).forEach(r => { byName[r.person_name] = (byName[r.person_name] || 0) + (r.attempts || 0); });
+      setPeople(Object.entries(byName).map(([name, totalAttempts]) => ({ name, totalAttempts }))
+        .sort((a, b) => b.totalAttempts - a.totalAttempts));
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+  useEffect(() => { loadPeople(); }, []);
+
+  const openPerson = async (name) => {
+    setSelected(name); setStage("detail"); setError(""); setDetail(null);
+    try {
+      const rows = await sb.query("scout_shots", { filter: `user_id=eq.${getCurrentUserId()}&person_name=eq.${encodeURIComponent(name)}`, order: "attempts.desc" });
+      setDetail(rows || []);
+    } catch (e) { setError(e.message); }
+  };
+
+  const ghostBtn = {
+    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer",
+  };
+
+  if (stage === "detail") {
+    const totalAttempts = (detail || []).reduce((a, r) => a + (r.attempts || 0), 0);
+    return (
+      <div style={{ maxWidth: 640 }}>
+        <button onClick={() => { setStage("list"); setSelected(null); }} style={{ ...ghostBtn, marginBottom: 12 }}>← People</button>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 4 }}>{selected}</div>
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 14 }}>{totalAttempts} shots logged across every match you've played with or against them</div>
+        {error && <div style={{ padding: "10px 12px", borderRadius: 9, background: C.roseL, color: C.rose, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {detail === null ? (
+          <div style={{ fontSize: 13, color: C.textMid }}>Loading…</div>
+        ) : detail.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.textMid }}>No shots logged for {selected} yet.</div>
+        ) : detail.map(r => {
+          const total = r.attempts || 0;
+          const posP = total ? Math.round((r.pos_count || 0) / total * 100) : 0;
+          const negP = total ? Math.round((r.neg_count || 0) / total * 100) : 0;
+          const rallyTotal = (r.wins || 0) + (r.misses || 0);
+          return (
+            <div key={r.name} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12,
+              padding: "12px 14px", marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                <strong style={{ color: C.navy, fontSize: 14 }}>{r.name}</strong>
+                <span style={{ fontSize: 12, color: C.textMid }}>{total} attempts</span>
+              </div>
+              <div style={{ fontSize: 12, color: C.textMid }}>
+                {posP}% positive · {negP}% negative
+                {rallyTotal > 0 && ` · ${r.wins || 0} won / ${r.misses || 0} lost the rally on this shot`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 4 }}>People</div>
+      <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
+        Your own scouting notes on partners and opponents, built from shots you've logged and synced
+        in Shot Review. Nothing here is visible to them — it's your data about how they've played against you.
+      </div>
+      {error && <div style={{ padding: "10px 12px", borderRadius: 9, background: C.roseL, color: C.rose, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+      {loading ? (
+        <div style={{ fontSize: 13, color: C.textMid }}>Loading…</div>
+      ) : (people || []).length === 0 ? (
+        <div style={{ padding: 20, background: "white", borderRadius: 12, border: `1px solid ${C.border}`,
+          fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
+          No one logged yet. In Shot Review, sync a match with a partner or opponent's name entered and
+          they'll show up here.
+        </div>
+      ) : people.map(p => (
+        <button key={p.name} onClick={() => openPerson(p.name)} style={{
+          width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "14px 16px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`,
+          borderRadius: 12, cursor: "pointer",
+        }}>
+          <strong style={{ color: C.navy, fontSize: 15 }}>{p.name}</strong>
+          <span style={{ fontSize: 12, color: C.textMid }}>{p.totalAttempts} shots →</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ShotReviewTool() {
-  const [stage, setStage]       = useState("list"); // list | new | players | review | upgrade | scratch
+  const [stage, setStage]       = useState("list"); // list | new | players | review | upgrade | scratch | sync
   const [sessions, setSessions] = useState([]);
   const [session, setSession]   = useState(null);
   const [reviews, setReviews]   = useState({});      // frame -> saved review
@@ -9090,6 +9231,11 @@ function ShotReviewTool() {
   const [scratchDraft, setScratchDraft] = useState(null);  // { t, frame, ...fields } while marking one
   const [scratchDone, setScratchDone] = useState(false);
   const scratchVideoRef = useRef(null);
+
+  // Sync-to-my-stats state
+  const [syncPreview, setSyncPreview] = useState(null); // computed delta, null until opened
+  const [syncError, setSyncError] = useState("");
+  const [matchForm, setMatchForm] = useState({ date: "", partnerName: "", opp1Name: "", opp2Name: "", score: "", result: "" });
 
   // New-session form
   const [newName, setNewName]   = useState("");
@@ -9272,6 +9418,169 @@ function ShotReviewTool() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
+  // Build today's full shot totals for one role (me / partner / opp1 / opp2), bucketed by the real
+  // stats taxonomy's exact names. Shots with no forehand/backhand tag can't be bucketed and are
+  // called out separately rather than guessed.
+  const computeRoleTotals = (role) => {
+    const totals = {}; // name -> {attempts,pos,neu,neg,wins,misses}
+    let skippedNoSide = 0, skippedUnmapped = 0;
+    Object.values(reviews).forEach(r => {
+      if (!r || r.status !== "reviewed" || r.player_role !== role || !r.shot_type) return;
+      const name = statsName(r.shot_type, r.shot_side);
+      if (!STATS_NAME_MAP[r.shot_type]) { skippedUnmapped++; return; }
+      if (!name) { skippedNoSide++; return; }
+      const t = totals[name] || { attempts: 0, pos: 0, neu: 0, neg: 0, wins: 0, misses: 0 };
+      t.attempts += 1;
+      const q = r.hit_quality || "neutral";
+      if (q === "positive") t.pos += 1; else if (q === "negative") t.neg += 1; else t.neu += 1;
+      const outcome = toHitterOutcome(r.rally_outcome, r.player_role);
+      if (outcome === "winner") t.wins += 1; else if (outcome === "error") t.misses += 1;
+      totals[name] = t;
+    });
+    return { totals, skippedNoSide, skippedUnmapped };
+  };
+  const ROLE_LABELS = { me: "Me", partner: "Partner", opp1: "Opponent 1", opp2: "Opponent 2" };
+  const personNameFor = (role) => {
+    if (role === "me") return null;
+    const names = session?.people_names || {};
+    const key = role === "partner" ? "partnerName" : role === "opp1" ? "opp1Name" : "opp2Name";
+    return (names[key] || "").trim() || null;
+  };
+
+  const openSyncPreview = () => {
+    setSyncError("");
+    const synced = session?.synced_totals || {};
+    const roles = {};
+    let anyDelta = false;
+    ["me", "partner", "opp1", "opp2"].forEach(role => {
+      const { totals, skippedNoSide, skippedUnmapped } = computeRoleTotals(role);
+      const syncedForRole = synced[role] || {};
+      const delta = {};
+      Object.entries(totals).forEach(([name, t]) => {
+        const s0 = syncedForRole[name] || { attempts: 0, pos: 0, neu: 0, neg: 0, wins: 0, misses: 0 };
+        const d = {
+          attempts: Math.max(0, t.attempts - s0.attempts), pos: Math.max(0, t.pos - s0.pos),
+          neu: Math.max(0, t.neu - s0.neu), neg: Math.max(0, t.neg - s0.neg),
+          wins: Math.max(0, t.wins - s0.wins), misses: Math.max(0, t.misses - s0.misses),
+        };
+        if (d.attempts > 0) { delta[name] = d; anyDelta = true; }
+      });
+      roles[role] = { totals, delta, skippedNoSide, skippedUnmapped, personName: personNameFor(role) };
+    });
+    setSyncPreview({ roles, anyDelta });
+    setStage("sync");
+  };
+
+  const createLinkedMatch = async () => {
+    setSyncError(""); setBusy(true);
+    try {
+      const uid = getCurrentUserId();
+      const opponentText = [matchForm.opp1Name, matchForm.opp2Name].filter(Boolean).join(", ");
+      const rows = await sb.insert("matches", {
+        date: matchForm.date || new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }),
+        opponent: opponentText, partner: matchForm.partnerName,
+        result: matchForm.result, score: matchForm.score, notes: "Logged via Shot Review",
+        nvz_arrival: 0, nvz_win: 0, serve_neut: 0, errors: 0, partner_role: "Balanced", user_id: uid,
+      });
+      const matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
+      if (!matchId) throw new Error("Could not create the match record.");
+      const people_names = { partnerName: matchForm.partnerName.trim(), opp1Name: matchForm.opp1Name.trim(), opp2Name: matchForm.opp2Name.trim() };
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ match_id: matchId, people_names }),
+      });
+      setSession(s => ({ ...s, match_id: matchId, people_names }));
+    } catch (e) { setSyncError(e.message); }
+    setBusy(false);
+  };
+
+  const confirmSync = async () => {
+    if (!syncPreview || !session?.match_id) return;
+    setBusy(true); setSyncError("");
+    try {
+      const uid = getCurrentUserId();
+
+      // "Me" goes into the real personal-stats tables, exactly as the Match screen does
+      const fetchShotEx = async (name) => {
+        try { return await sb.query("shots", { filter: `name=eq.${encodeURIComponent(name)}&user_id=eq.${uid}`, single: true }); }
+        catch (e) { return null; }
+      };
+      const meDelta = syncPreview.roles.me.delta;
+      for (const [name, d] of Object.entries(meDelta)) {
+        const ex = await fetchShotEx(name);
+        const cat = SHOT_CATS.find(c => c.shots.some(sh => sh.name === name));
+        await sb.upsert("shots", {
+          name, category: cat?.label || "",
+          attempts: (ex?.attempts || 0) + d.attempts,
+          wins: (ex?.wins || 0) + d.wins, misses: (ex?.misses || 0) + d.misses,
+          pos_count: (ex?.pos_count || 0) + d.pos, neu_count: (ex?.neu_count || 0) + d.neu,
+          neg_count: (ex?.neg_count || 0) + d.neg,
+          win_history: [...((ex?.win_history) || [0,0,0,0]).slice(1), d.wins > 0 ? 100 : 0],
+          miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), d.misses > 0 ? 100 : 0],
+          color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+        }, "user_id,name");
+      }
+      const meTotals = syncPreview.roles.me.totals;
+      const me_shot_data = {}, me_rally_data = {};
+      Object.entries(meTotals).forEach(([name, t]) => {
+        me_shot_data[name] = { pos: t.pos, neu: t.neu, neg: t.neg };
+        me_rally_data[name] = { won: t.wins, lost: t.misses };
+      });
+      await sb.upsert("match_shots", {
+        match_id: session.match_id, user_id: uid, shot_data: me_shot_data, rally_data: me_rally_data,
+        nvz_arrived: 0, nvz_total: 0, nvz_won: 0, nvz_won_total: 0, errors: 0, serve_neut: 0,
+      }, "match_id,user_id");
+
+      // Partner / Opp 1 / Opp 2 go into the scouting tables — your own intelligence on people you've
+      // played with or against, keyed by name rather than their own account (they may not have one)
+      const fetchScoutEx = async (personName, name) => {
+        try {
+          return await sb.query("scout_shots", {
+            filter: `user_id=eq.${uid}&person_name=eq.${encodeURIComponent(personName)}&name=eq.${encodeURIComponent(name)}`,
+            single: true,
+          });
+        } catch (e) { return null; }
+      };
+      for (const role of ["partner", "opp1", "opp2"]) {
+        const r = syncPreview.roles[role];
+        if (!r.personName) continue; // no name entered for this role — nothing to attribute to
+        for (const [name, d] of Object.entries(r.delta)) {
+          const ex = await fetchScoutEx(r.personName, name);
+          const cat = SHOT_CATS.find(c => c.shots.some(sh => sh.name === name));
+          await sb.upsert("scout_shots", {
+            user_id: uid, person_name: r.personName, name, category: cat?.label || "",
+            attempts: (ex?.attempts || 0) + d.attempts,
+            wins: (ex?.wins || 0) + d.wins, misses: (ex?.misses || 0) + d.misses,
+            pos_count: (ex?.pos_count || 0) + d.pos, neu_count: (ex?.neu_count || 0) + d.neu,
+            neg_count: (ex?.neg_count || 0) + d.neg,
+          }, "user_id,person_name,name");
+        }
+        const shot_data = {}, rally_data = {};
+        Object.entries(r.totals).forEach(([name, t]) => {
+          shot_data[name] = { pos: t.pos, neu: t.neu, neg: t.neg };
+          rally_data[name] = { won: t.wins, lost: t.misses };
+        });
+        if (Object.keys(shot_data).length) {
+          await sb.upsert("match_scout_shots", {
+            match_id: session.match_id, user_id: uid, person_name: r.personName, role,
+            shot_data, rally_data,
+          }, "match_id,user_id,person_name");
+        }
+      }
+
+      const synced_totals = {};
+      ["me", "partner", "opp1", "opp2"].forEach(role => { synced_totals[role] = syncPreview.roles[role].totals; });
+      await reviewApi(`review_sessions?id=eq.${session.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ synced_totals }),
+      });
+      setSession(s => ({ ...s, synced_totals }));
+      setSyncPreview(null);
+      setStage("review");
+    } catch (e) { setSyncError(e.message); }
+    setBusy(false);
+  };
+
   const getFps = () => {
     const withRate = (session?.shots || []).find(x => x.t > 0 && x.frame > 0);
     return withRate ? withRate.frame / withRate.t : 30;
@@ -9697,6 +10006,135 @@ function ShotReviewTool() {
     );
   }
 
+  if (stage === "sync") {
+    const p = syncPreview;
+    if (!p) return null;
+
+    if (!session.match_id) return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <button onClick={() => { setStage("review"); setSyncPreview(null); }} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 8 }}>
+          Link this to a match
+        </div>
+        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
+          Your stats are tracked per match. Add a few details so this match shows up in your Matches list
+          alongside the shots you've logged here.
+        </div>
+        <ReviewSection title="Date">
+          <input type="date" value={matchForm.date} onChange={e => setMatchForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} />
+        </ReviewSection>
+        <ReviewSection title="Partner's name">
+          <input value={matchForm.partnerName} onChange={e => setMatchForm(f => ({ ...f, partnerName: e.target.value }))} placeholder="Alex" style={inputStyle} />
+        </ReviewSection>
+        <ReviewSection title="Opponent 1's name">
+          <input value={matchForm.opp1Name} onChange={e => setMatchForm(f => ({ ...f, opp1Name: e.target.value }))} placeholder="Jordan" style={inputStyle} />
+        </ReviewSection>
+        <ReviewSection title="Opponent 2's name">
+          <input value={matchForm.opp2Name} onChange={e => setMatchForm(f => ({ ...f, opp2Name: e.target.value }))} placeholder="Sam" style={inputStyle} />
+        </ReviewSection>
+        <div style={{ fontSize: 12, color: C.textLight, marginBottom: 14, lineHeight: 1.5 }}>
+          A name left blank means that role's shots stay as training data only — they won't be added
+          anywhere you can browse them yet.
+        </div>
+        <ReviewSection title="Score">
+          <input value={matchForm.score} onChange={e => setMatchForm(f => ({ ...f, score: e.target.value }))} placeholder="11-7, 11-9" style={inputStyle} />
+        </ReviewSection>
+        <ReviewSection title="Result">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+            {["Win", "Loss"].map(r => (
+              <ReviewChip key={r} color={r === "Win" ? C.mint : C.rose} active={matchForm.result === r}
+                onClick={() => setMatchForm(f => ({ ...f, result: r }))}>{r}</ReviewChip>
+            ))}
+          </div>
+        </ReviewSection>
+        {syncError && errorBox}
+        <button disabled={busy} onClick={createLinkedMatch} style={{ ...btn(C.pickle), width: "100%" }}>
+          {busy ? "Creating…" : "Create match and continue"}
+        </button>
+      </div>
+    );
+
+    const roleColor = { me: C.pickleD, partner: C.mint, opp1: C.rose, opp2: C.purple };
+    const visibleRoles = ["me", "partner", "opp1", "opp2"].filter(role => role === "me" || p.roles[role].personName);
+
+    return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <button onClick={() => { setStage("review"); setSyncPreview(null); }} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 8 }}>
+          Sync to your intelligence database
+        </div>
+        <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
+          <strong>Me</strong> goes into your personal Shots and Matches pages. Partner and named
+          opponents go into your scouting data under <strong>People</strong>, so you can review how
+          they played without it touching your own stats. Nothing saves until you confirm, and syncing
+          again later only adds what's new.
+        </div>
+
+        {!p.anyDelta ? (
+          <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+            fontSize: 13, color: C.textMid, marginBottom: 14 }}>
+            Nothing new to sync since last time — every reviewed shot is already counted.
+          </div>
+        ) : visibleRoles.map(role => {
+          const r = p.roles[role];
+          const deltaNames = Object.keys(r.delta);
+          if (!deltaNames.length) return null;
+          const totalNewAttempts = deltaNames.reduce((a, n) => a + r.delta[n].attempts, 0);
+          const title = role === "me" ? "Me" : `${ROLE_LABELS[role]} — ${r.personName}`;
+          return (
+            <div key={role} style={{ padding: "12px 14px", borderRadius: 10, background: `${roleColor[role]}12`,
+              border: `1.5px solid ${roleColor[role]}`, marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, color: C.navy, marginBottom: 8 }}>{title} — {totalNewAttempts} new shots</div>
+              {deltaNames.map(name => {
+                const d = r.delta[name];
+                return (
+                  <div key={name} style={{ fontSize: 12, color: C.text, padding: "4px 0", borderTop: `1px solid ${C.border}` }}>
+                    <strong>{name}</strong> — {d.attempts} attempt{d.attempts !== 1 ? "s" : ""}
+                    {(d.pos || d.neu || d.neg) ? ` (${d.pos} positive, ${d.neu} neutral, ${d.neg} negative)` : ""}
+                    {(d.wins || d.misses) ? `, ${d.wins} won / ${d.misses} lost the rally` : ""}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        {visibleRoles.some(role => p.roles[role].skippedNoSide > 0 || p.roles[role].skippedUnmapped > 0) && (
+          <div style={{ padding: "10px 12px", borderRadius: 10, background: C.amberL, fontSize: 12,
+            color: C.text, marginBottom: 14, lineHeight: 1.6 }}>
+            {visibleRoles.map(role => {
+              const r = p.roles[role];
+              if (!r.skippedNoSide && !r.skippedUnmapped) return null;
+              const label = role === "me" ? "Your" : `${r.personName}'s`;
+              return (
+                <div key={role}>
+                  {r.skippedNoSide > 0 && <>⚠️ {r.skippedNoSide} of {label} shots have no forehand/backhand tag and can't be counted yet.</>}
+                  {r.skippedUnmapped > 0 && <> {r.skippedUnmapped} don't have a matching category and were skipped.</>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {Object.keys(syncPreview.roles).some(role => role !== "me" && !syncPreview.roles[role].personName &&
+          Object.keys(syncPreview.roles[role].totals).length > 0) && (
+          <div style={{ padding: "10px 12px", borderRadius: 10, background: `${C.blue}12`, fontSize: 12,
+            color: C.text, marginBottom: 14, lineHeight: 1.6 }}>
+            ℹ️ You've logged Partner or opponent shots but left that name blank when linking this match —
+            those shots stay as training data only. Go to <strong>← Back</strong>, tap this again, and you'll
+            be able to add names without losing anything.
+          </div>
+        )}
+
+        {syncError && errorBox}
+        <button disabled={!p.anyDelta || busy} onClick={confirmSync}
+          style={{ ...btn(p.anyDelta ? C.pickle : C.border), width: "100%" }}>
+          {busy ? "Syncing…" : p.anyDelta ? "Confirm and add to my database" : "Nothing to sync"}
+        </button>
+      </div>
+    );
+  }
+
   if (stage === "upgrade") return (
     <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <button onClick={() => setStage("review")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
@@ -9759,6 +10197,9 @@ function ShotReviewTool() {
           setScratchActive(false); setScratchDone(false); setScratchDraft(null); setStage("scratch"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.purple, fontFamily: "'Outfit'",
             fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🔬 Log a range from scratch</button>
+        <button onClick={openSyncPreview}
+          style={{ background: "none", border: "none", padding: 0, color: C.pickleD, fontFamily: "'Outfit'",
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>📊 Sync to my stats</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
           <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
           {reviewedCount} of {shots.length} reviewed<br />
@@ -10087,6 +10528,7 @@ const Admin = () => {
           {id:"feedback",  label:"💬 Feedback"},
           {id:"activity",  label:"📊 Activity"},
           {id:"review",    label:"🎾 Shot Review"},
+          {id:"people",     label:"👥 People"},
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: tab===t.id ? C.navy : "transparent",
@@ -10100,6 +10542,9 @@ const Admin = () => {
 
       {/* ── Tab: Shot Review ── */}
       {tab === "review" && <ShotReviewTool/>}
+
+      {/* ── Tab: People ── */}
+      {tab === "people" && <PeopleScoutTool/>}
 
       {/* ── Tab: Users ── */}
       {tab === "overview" && (
