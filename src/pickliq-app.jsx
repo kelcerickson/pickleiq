@@ -9353,17 +9353,24 @@ function ShotReviewTool() {
 
   const createSession = async () => {
     setBusy(true); setError("");
+    const shotsToSave = parsed || []; // no CSV at all is fine — a pure manual match, logged entirely from scratch
     try {
       const [s] = await reviewApi("review_sessions", {
         method: "POST", headers: { Prefer: "return=representation" },
         body: JSON.stringify({
           user_id: getCurrentUserId(), video_name: newName.trim(), video_url: newUrl.trim(),
-          shots: parsed, shot_count: parsed.length, player_map: {},
+          shots: shotsToSave, shot_count: shotsToSave.length, player_map: {},
         }),
       });
       setSession(s); setReviews({}); setIdx(0);
       setNewName(""); setNewUrl(""); setParsed(null);
-      setStage(parsed.some(sh => sh.p != null) ? "players" : "review");
+      if (shotsToSave.length === 0) {
+        setScratchRange({ startMin: "", endMin: "" }); setScratchLogged([]); setScratchActive(false);
+        setScratchDone(false); setScratchDraft(null);
+        setStage("scratch");
+      } else {
+        setStage(shotsToSave.some(sh => sh.p != null) ? "players" : "review");
+      }
     } catch (e) { setError(e.message); }
     setBusy(false);
   };
@@ -9823,11 +9830,14 @@ function ShotReviewTool() {
     <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
       <button onClick={() => setStage("list")} style={{ ...ghostBtn, marginBottom: 12 }}>← Back</button>
       <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: C.navy, letterSpacing: "0.04em", marginBottom: 12 }}>Load a match</div>
-      <ReviewSection title="1. SHOT_LOG file from Colab">
+      <ReviewSection title="1. SHOT_LOG file from Colab (optional)">
         <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ fontSize: 13 }} />
         {parsed && <div style={{ fontSize: 12, color: C.mint, marginTop: 6, fontWeight: 600 }}>
           Found {parsed.length} shots ({fmtClock(parsed[0]?.t)} to {fmtClock(parsed[parsed.length - 1]?.t)})
         </div>}
+        <div style={{ fontSize: 12, color: C.textLight, marginTop: 6, lineHeight: 1.5 }}>
+          Skip this to log the whole match yourself from scratch — no detection step needed.
+        </div>
       </ReviewSection>
       <ReviewSection title="2. Match name">
         <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Match1" style={inputStyle} />
@@ -9836,8 +9846,8 @@ function ShotReviewTool() {
         <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://playsightproduction…mp4" style={inputStyle} />
       </ReviewSection>
       {errorBox}
-      <button disabled={!parsed || !newName.trim() || !newUrl.trim() || busy} onClick={createSession}
-        style={{ ...btn(parsed && newName.trim() && newUrl.trim() ? C.pickle : C.border), width: "100%" }}>
+      <button disabled={!newName.trim() || !newUrl.trim() || busy} onClick={createSession}
+        style={{ ...btn(newName.trim() && newUrl.trim() ? C.pickle : C.border), width: "100%" }}>
         {busy ? "Saving…" : "Load match"}
       </button>
     </div>
@@ -9856,8 +9866,8 @@ function ShotReviewTool() {
           Log a range from scratch
         </div>
         <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
-          Watch this stretch of the match play straight through. Pause and mark every real shot yourself, missed by
-          the detector or not. This builds a ground-truth list we can use to measure how much the detector misses.
+          Watch this stretch of the match play straight through. Pause and mark every real shot — this is how you
+          log a full match yourself, and it doubles as ground-truth data for improving detection over time.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 14 }}>
           <div>
