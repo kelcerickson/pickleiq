@@ -9158,7 +9158,7 @@ function computeMatchMetrics(reviewsMap) {
   let srvTotal = 0, srvNeut = 0, myErrors = 0, rallies = 0, usWon = 0;
   let usServe = 0, usServeWon = 0, themServe = 0, themServeWon = 0, noServer = 0;
   let usTagged = 0, usArr = 0, usKitchenWon = 0, themTagged = 0, themArr = 0, themKitchenWon = 0;
-  let usMissing = 0, themMissing = 0;
+  let usMissing = 0, themMissing = 0, wonBeforeKitchen = 0;
   let server = null, rallyLen = 0, shortRallies = 0;
   rows.forEach(r => {
     rallyLen++;
@@ -9179,10 +9179,16 @@ function computeMatchMetrics(reviewsMap) {
     if (short) shortRallies++;
     if (sv === "us") {
       usServe++; if (weWon) usServeWon++;
-      if (r.nvz_us && !short) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
+      if (r.nvz_us && !short) {
+        if (r.nvz_us !== "both" && weWon) wonBeforeKitchen++;
+        else { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
+      }
     } else if (sv === "them") {
       themServe++; if (!weWon) themServeWon++;
-      if (r.nvz_them && !short) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+      if (r.nvz_them && !short) {
+        if (r.nvz_them !== "both" && !weWon) wonBeforeKitchen++;
+        else { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+      }
     } else if (!short) noServer++;
     if (!short && sv === "us" && !r.nvz_us) usMissing++;
     if (!short && sv === "them" && !r.nvz_them) themMissing++;
@@ -9192,7 +9198,7 @@ function computeMatchMetrics(reviewsMap) {
   return {
     rallies, usWon, myErrors, srvTotal, srvNeut, serveNeut: pct(srvNeut, srvTotal),
     usServe, usServeWon, themServe, themServeWon, noServer,
-    usTagged, themTagged, shortRallies, untagged: usMissing + themMissing + noServer,
+    usTagged, themTagged, shortRallies, wonBeforeKitchen, untagged: usMissing + themMissing + noServer,
     usArr, usKitchenWon, themArr, themKitchenWon,
     usArrival: pct(usArr, usTagged), usNvzWin: pct(usKitchenWon, usArr),
     themArrival: pct(themArr, themTagged), themNvzWin: pct(themKitchenWon, themArr),
@@ -10324,7 +10330,7 @@ function ShotReviewTool() {
             <div>My errors: <strong>{p.metrics.myErrors}</strong></div>
             {p.metrics.shortRallies > 0 && (
               <div style={{ fontSize: 12, color: C.textMid }}>
-                {p.metrics.shortRallies} rallies ended by the 3rd shot and don't count toward kitchen numbers.
+                {p.metrics.shortRallies} rallies ended by the 3rd shot{p.metrics.wonBeforeKitchen > 0 ? ` and ${p.metrics.wonBeforeKitchen} were won by the serving team before reaching the kitchen` : ""} — these don't count toward kitchen numbers.
               </div>
             )}
             {p.metrics.untagged > 0 && (
@@ -10419,13 +10425,15 @@ function ShotReviewTool() {
     const goTo = (i) => {
       setRallyIdx(i);
       const r = ends[i];
-      setRallyDraft(r ? { serving_team: r.serving_team || null, nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null } : {});
+      setRallyDraft(r ? { serving_team: r.serving_team || null, nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null,
+        rally_outcome: toHitterOutcome(r.rally_outcome, r.player_role) } : {});
       if (r) setTimeout(() => playRally(r), 150);
     };
     const curInfo = cur ? rallyInfo(reviews, cur.frame, cur) : { server: null, length: 0, short: false };
     const curDerived = curInfo.server;
     const curServer = rallyDraft.serving_team || curDerived;
     const curFields = nvzFields(rallyDraft, curServer, true, curInfo.short);
+    const curOutcome = rallyDraft.rally_outcome && isRallyEnd(rallyDraft.rally_outcome) ? { rally_outcome: rallyDraft.rally_outcome } : {};
     const curReady = curInfo.short ? true
       : curServer === "us" ? !!rallyDraft.nvz_us : curServer === "them" ? !!rallyDraft.nvz_them : false;
     const saveRally = async () => {
@@ -10434,9 +10442,9 @@ function ShotReviewTool() {
       try {
         await reviewApi(`shot_reviews?session_id=eq.${session.id}&frame=eq.${cur.frame}`, {
           method: "PATCH", headers: { Prefer: "return=minimal" },
-          body: JSON.stringify({ ...curFields, updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ ...curFields, ...curOutcome, updated_at: new Date().toISOString() }),
         });
-        setReviews(rv => ({ ...rv, [cur.frame]: { ...rv[cur.frame], ...curFields } }));
+        setReviews(rv => ({ ...rv, [cur.frame]: { ...rv[cur.frame], ...curFields, ...curOutcome } }));
         if (rallyIdx < ends.length - 1) goTo(rallyIdx + 1);
       } catch (e) { setError(e.message); }
       setBusy(false);
@@ -10480,6 +10488,14 @@ function ShotReviewTool() {
                 {slow ? "Slow-mo on" : "Slow-mo off"}
               </button>
             </div>
+            <ReviewSection title={`How did ${roleLabel === "Me" ? "my" : roleLabel + "'s"} last shot end the rally?`}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_OUTCOME.filter(o => o.id !== "ongoing").map(o => (
+                  <ReviewChip key={o.id} small color={o.color} active={rallyDraft.rally_outcome === o.id}
+                    onClick={() => setRallyDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
+                ))}
+              </div>
+            </ReviewSection>
             <NvzRows singles={session?.match_type === "singles"} server={curServer}
               derived={!rallyDraft.serving_team && !!curDerived}
               us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
@@ -10566,7 +10582,8 @@ function ShotReviewTool() {
             const first = ends.findIndex(r => !rallyTagged(reviews, r));
             const i = first < 0 ? 0 : first;
             setRallyIdx(i);
-            setRallyDraft(ends[i] ? { serving_team: ends[i].serving_team || null, nvz_us: ends[i].nvz_us || null, nvz_them: ends[i].nvz_them || null } : {});
+            setRallyDraft(ends[i] ? { serving_team: ends[i].serving_team || null, nvz_us: ends[i].nvz_us || null, nvz_them: ends[i].nvz_them || null,
+              rally_outcome: toHitterOutcome(ends[i].rally_outcome, ends[i].player_role) } : {});
             setStage("rallies");
           }}
           style={{ background: "none", border: "none", padding: 0, color: C.mint, fontFamily: "'Outfit'",
