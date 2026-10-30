@@ -734,12 +734,11 @@ const UploadModal = ({onClose})=>{
 
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
 const NAV=[
-  {id:"dashboard",label:"Dashboard",short:"🏠"},
-  {id:"shots",label:"Shots",short:"Shots"},
+  {id:"dashboard",label:"Home",short:"🏠"},
   {id:"matches",label:"Matches",short:"Match"},
-  {id:"drills",label:"Drills",short:"Drills"},
-  {id:"coach",label:"Coach",short:"Coach"},
-  {id:"profile",label:"Profile",short:"Me"},
+  {id:"stats",label:"Stats",short:"Stats"},
+  {id:"people",label:"People",short:"People"},
+  {id:"train",label:"Train",short:"Train"},
 ];
 // Admin-only nav item — appended dynamically in TopNav
 const ADMIN_NAV = {id:"admin",label:"⚙️ Admin",short:"⚙️"};
@@ -772,7 +771,7 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
           marginLeft:isMobile?2:12,
           justifyContent:isMobile?"space-between":"flex-start"}}>
           {[...NAV, ...(authUser?.id===ADMIN_USER_ID?[ADMIN_NAV]:[])].map(n=>{
-            const a=page===n.id || (n.id==="matches" && page==="matches:partners") || (n.id==="matches" && page==="matches_review");
+            const a=page===n.id || (n.id==="matches" && page==="matches:partners") || (n.id==="matches" && page==="matches_review") || (n.id==="train" && (page==="drills"||page==="coach")) || (n.id==="stats" && page==="shots");
             return(
               <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id==="matches"?"matches":n.id)} style={{
                 background:a?C.pickle:"transparent",
@@ -797,7 +796,8 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
             background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
             display:"flex",alignItems:"center",justifyContent:"center",
             fontFamily:"'Bebas Neue'",fontSize:14,color:C.navy,fontWeight:700,
-            title:authUser?.email,cursor:"default",flexShrink:0}}>
+            title:authUser?.email,cursor:"pointer",flexShrink:0,
+            boxShadow:page==="profile"?`0 0 0 2px ${C.navy}, 0 0 0 4px ${C.pickle}`:"none"}} onClick={()=>setPage("profile")}>
             {(authUser?.email||"?")[0].toUpperCase()}
           </div>
           {/* Sign out button */}
@@ -934,6 +934,7 @@ const Dashboard=({setPage})=>{
   const [dbMatches, setDbMatches] = useState([]);
   const [profileData, setProfileData] = useState(null);
   const [dashShots, setDashShots] = useState([]);
+  const [typeFilter] = useTypeFilter();
 
   useEffect(()=>{
     const uid = getCurrentUserId();
@@ -974,7 +975,7 @@ const Dashboard=({setPage})=>{
       .catch(()=>{});
   },[]);
 
-  const allMatches = dbMatches; // always user-specific — no global fallback
+  const allMatches = dbMatches.filter(m => matchPassesFilter(m, typeFilter)); // user-specific, filtered by match type
   const totalMatches = allMatches.length;
   const wins = allMatches.filter(m=>m.result==="W").length;
   const winRate = totalMatches > 0 ? Math.round(wins/totalMatches*100) : 0;
@@ -990,6 +991,8 @@ const Dashboard=({setPage})=>{
     CORE_KPIS[2].value = avgServe+"%"; CORE_KPIS[2].numVal = avgServe;
     CORE_KPIS[3].value = avgNvz+"%";   CORE_KPIS[3].numVal = avgNvz;
     CORE_KPIS[4].value = avgNvzWin+"%";CORE_KPIS[4].numVal = avgNvzWin;
+  } else {
+    CORE_KPIS.forEach(k => { k.value = "—"; k.numVal = 0; });
   }
 
   const playerName = profileData?.player_name || "Player";
@@ -1058,11 +1061,13 @@ const Dashboard=({setPage})=>{
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}>
         <div>
-          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>{totalMatches===0?`Welcome to PickleIntel 👋`:`Good morning, ${firstName} 👋`}</h1>
-          <p style={{color:C.textMid,fontSize:14,marginTop:3}}>{totalMatches===0?"Log your first match to get started":`${totalMatches} matches · ${wins}W ${totalMatches-wins}L`}</p>
+          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>{dbMatches.length===0?`Welcome to PickleIntel 👋`:`Good morning, ${firstName} 👋`}</h1>
+          <p style={{color:C.textMid,fontSize:14,marginTop:3}}>{totalMatches===0?(dbMatches.length>0?"No matches of this type yet":"Log your first match to get started"):`${totalMatches} matches · ${wins}W ${totalMatches-wins}L`}</p>
         </div>
 
       </div>
+
+      <TypeFilterBar untagged={dbMatches.filter(m=>!m.match_type).length}/>
 
       {/* ── Row 1: DUPR · Win Rate · Player Identity ── */}
       {(()=>{
@@ -9759,6 +9764,7 @@ function ShotReviewTool() {
         body: JSON.stringify({ synced_totals, match_type: syncMatchType || session.match_type || null }),
       });
       setSession(s => ({ ...s, synced_totals, match_type: syncMatchType || s.match_type }));
+      invalidateAnalytics();
       setSyncPreview(null);
       setStage("review");
     } catch (e) { setSyncError(e.message); }
@@ -11031,6 +11037,654 @@ const Admin = () => {
 };
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── ANALYTICS LAYER: match-type filter + shot-by-shot data shared by every page ──
+// ══════════════════════════════════════════════════════════════════════════════
+const FILTER_KEY = "pi_match_type_filter";
+const readTypeFilter = () => { try { return localStorage.getItem(FILTER_KEY) || "all"; } catch (e) { return "all"; } };
+function useTypeFilter() {
+  const [f, setF] = useState(readTypeFilter);
+  useEffect(() => {
+    const h = () => setF(readTypeFilter());
+    window.addEventListener("pi-filter", h);
+    return () => window.removeEventListener("pi-filter", h);
+  }, []);
+  const set = (v) => { try { localStorage.setItem(FILTER_KEY, v); } catch (e) {} window.dispatchEvent(new Event("pi-filter")); };
+  return [f, set];
+}
+const matchPassesFilter = (m, f) => f === "all" || (m && m.match_type === f);
+
+function TypeFilterBar({ untagged = 0 }) {
+  const [f, setF] = useTypeFilter();
+  const opts = [{ id: "all", label: "All" }, ...MATCH_TYPES];
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 2 }}>
+        {opts.map(o => (
+          <button key={o.id} onClick={() => setF(o.id)} style={{
+            flexShrink: 0, padding: "8px 14px", borderRadius: 999,
+            border: `1.5px solid ${f === o.id ? C.navy : C.border}`, background: f === o.id ? C.navy : "white",
+            color: f === o.id ? "white" : C.textMid, fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13, cursor: "pointer",
+          }}>{o.label}</button>
+        ))}
+      </div>
+      {f !== "all" && untagged > 0 && (
+        <div style={{ fontSize: 11, color: C.textLight, marginTop: 6, lineHeight: 1.5 }}>
+          {untagged} match{untagged !== 1 ? "es have" : " has"} no type set and {untagged !== 1 ? "aren't" : "isn't"} included —
+          open it under Matches to set the type.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One load of everything the analysis pages need, cached until a sync or edit changes it
+let _analyticsPromise = null;
+let _analyticsData = null;
+function invalidateAnalytics() { _analyticsPromise = null; _analyticsData = null; }
+function loadAnalytics() {
+  if (_analyticsPromise) return _analyticsPromise;
+  _analyticsPromise = (async () => {
+    const uid = getCurrentUserId();
+    const [matches, sessions, profile] = await Promise.all([
+      sb.query("matches", { filter: `user_id=eq.${uid}`, order: "created_at.desc" }).catch(() => []),
+      reviewApi(`review_sessions?user_id=eq.${uid}&select=id,video_name,match_id,match_type,people_names,created_at`).catch(() => []),
+      sb.query("profile", { filter: `user_id=eq.${uid}`, single: true, select: "player_name" }).catch(() => null),
+    ]);
+    const sess = Array.isArray(sessions) ? sessions : [];
+    // One request per match keeps each under the database's 1,000-row page limit
+    const reviewLists = await Promise.all(sess.map(s => reviewApi(
+      `shot_reviews?session_id=eq.${s.id}&status=eq.reviewed&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,nvz_us,nvz_them,serving_team&order=frame.asc`
+    ).catch(() => [])));
+    const ms = Array.isArray(matches) ? matches : [];
+    const matchById = {};
+    ms.forEach(m => { matchById[m.id] = m; });
+    const all = sess.map((s, i) => {
+      const m = s.match_id ? matchById[s.match_id] : null;
+      return { ...s, match: m, type: (m && m.match_type) || s.match_type || null, reviews: reviewLists[i] || [] };
+    });
+    const sessionByMatch = {};
+    all.forEach(s => { if (s.match_id) sessionByMatch[s.match_id] = s; });
+    const firstName = (profile?.player_name || "").trim().split(" ")[0];
+    const data = { matches: ms, sessions: all, sessionByMatch, myName: firstName || "Me" };
+    _analyticsData = data;
+    return data;
+  })();
+  _analyticsPromise.catch(() => { _analyticsPromise = null; });
+  return _analyticsPromise;
+}
+function useAnalytics() {
+  const [data, setData] = useState(_analyticsData);
+  const [err, setErr] = useState("");
+  const [ver, setVer] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setErr("");
+    loadAnalytics().then(d => { if (alive) setData(d); }).catch(e => { if (alive) setErr(e.message || "Could not load your data."); });
+    return () => { alive = false; };
+  }, [ver]);
+  const refresh = () => { invalidateAnalytics(); setVer(v => v + 1); };
+  return { data, err, refresh };
+}
+
+const roleName = (s, role, myName) => {
+  const pn = (s && s.people_names) || {};
+  if (role === "me") return myName || "Me";
+  if (role === "partner") return pn.partnerName || "Partner";
+  if (role === "opp1") return pn.opp1Name || "Opponent 1";
+  return pn.opp2Name || "Opponent 2";
+};
+const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
+const fmtPct = (v) => (v == null ? "—" : `${v}%`);
+
+// Totals for any set of individual shots, plus a per-shot-type breakdown
+function aggShots(rows) {
+  const a = { total: 0, pos: 0, neu: 0, neg: 0, winners: 0, errors: 0, byType: {} };
+  rows.forEach(r => {
+    if (!r.shot_type) return;
+    const out = toHitterOutcome(r.rally_outcome, r.player_role);
+    const t = a.byType[r.shot_type] || (a.byType[r.shot_type] = { type: r.shot_type, n: 0, pos: 0, neu: 0, neg: 0, winners: 0, errors: 0, fh: 0, bh: 0 });
+    a.total++; t.n++;
+    if (r.hit_quality === "positive") { a.pos++; t.pos++; }
+    else if (r.hit_quality === "negative") { a.neg++; t.neg++; }
+    else if (r.hit_quality === "neutral") { a.neu++; t.neu++; }
+    if (out === "winner") { a.winners++; t.winners++; }
+    else if (out === "error") { a.errors++; t.errors++; }
+    if (r.shot_side === "forehand") t.fh++;
+    else if (r.shot_side === "backhand") t.bh++;
+  });
+  a.rated = a.pos + a.neu + a.neg;
+  a.types = Object.values(a.byType).sort((x, y) => y.n - x.n);
+  return a;
+}
+const topBy = (agg, key) => [...agg.types].filter(t => t[key] > 0).sort((x, y) => y[key] - x[key])[0] || null;
+
+// ── Shared UI pieces for the analysis pages ─────────────────────────────────
+function APage({ children }) {
+  const isMobile = useIsMobile();
+  return (
+    <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto", padding: isMobile ? "14px 14px 28px" : "28px", boxSizing: "border-box", width: "100%" }}>
+      {children}
+    </div>
+  );
+}
+const ATitle = ({ title, sub }) => (
+  <div style={{ marginBottom: 14 }}>
+    <h1 style={{ fontFamily: "'Bebas Neue'", fontSize: 34, letterSpacing: "0.05em", color: C.navy, lineHeight: 1 }}>{title}</h1>
+    {sub && <p style={{ color: C.textMid, fontSize: 13, marginTop: 4 }}>{sub}</p>}
+  </div>
+);
+const ATabs = ({ tabs, value, onChange }) => (
+  <div style={{ display: "flex", gap: 4, marginBottom: 16, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 4, overflowX: "auto" }}>
+    {tabs.map(t => (
+      <button key={t.id} onClick={() => onChange(t.id)} style={{
+        flex: "1 0 auto", background: value === t.id ? C.navy : "transparent", border: "none", borderRadius: 9,
+        padding: "9px 12px", cursor: "pointer", fontFamily: "'Outfit'", fontWeight: 700, fontSize: 13,
+        color: value === t.id ? "white" : C.textMid, whiteSpace: "nowrap",
+      }}>{t.label}</button>
+    ))}
+  </div>
+);
+const ATile = ({ label, value, color = C.navy, sub }) => (
+  <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+    <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>{label}</div>
+    <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color, lineHeight: 1.1 }}>{value}</div>
+    {sub && <div style={{ fontSize: 11, color: C.textMid }}>{sub}</div>}
+  </div>
+);
+const ALoading = ({ err }) => (
+  <div style={{ padding: 24, textAlign: "center", color: err ? C.rose : C.textMid, fontSize: 13 }}>{err || "Loading…"}</div>
+);
+const AEmpty = ({ children }) => (
+  <div style={{ padding: 16, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>{children}</div>
+);
+const ASection = ({ children }) => (
+  <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.06em", margin: "18px 0 8px" }}>{children}</div>
+);
+const linkBtn = { background: "none", border: "none", padding: 0, color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" };
+
+function AggTiles({ agg }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
+      <ATile label="Shots" value={agg.total} />
+      <ATile label="Positive" value={agg.rated ? fmtPct(pctOf(agg.pos, agg.rated)) : "—"} color={C.mint}
+        sub={agg.rated ? `${pctOf(agg.neg, agg.rated)}% negative` : null} />
+      <ATile label="Winners" value={agg.winners} color={C.mint} />
+      <ATile label="Errors" value={agg.errors} color={C.rose} />
+    </div>
+  );
+}
+
+function ShotTypeList({ agg, empty }) {
+  if (!agg.types.length) return <AEmpty>{empty}</AEmpty>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {agg.types.map(t => {
+        const rated = t.pos + t.neu + t.neg;
+        return (
+          <div key={t.type} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <strong style={{ color: C.navy, fontSize: 14 }}>{t.type}</strong>
+              <span style={{ fontSize: 12, color: C.textMid, flexShrink: 0 }}>{t.n} shot{t.n !== 1 ? "s" : ""} · {pctOf(t.n, agg.total)}%</span>
+            </div>
+            {rated > 0 && (
+              <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: C.border, margin: "6px 0 4px" }}>
+                <div style={{ width: `${(t.pos / rated) * 100}%`, background: C.mint }} />
+                <div style={{ width: `${(t.neu / rated) * 100}%`, background: "#CBD5E1" }} />
+                <div style={{ width: `${(t.neg / rated) * 100}%`, background: C.rose }} />
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5 }}>
+              {rated > 0 ? `${pctOf(t.pos, rated)}% positive · ${pctOf(t.neg, rated)}% negative` : "Quality not rated"}
+              {(t.winners || t.errors) ? ` · ${t.winners} winner${t.winners !== 1 ? "s" : ""}, ${t.errors} error${t.errors !== 1 ? "s" : ""}` : ""}
+              {(t.fh || t.bh) ? ` · FH ${t.fh} / BH ${t.bh}` : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function WeaponLeak({ agg, who = "your" }) {
+  const weapon = topBy(agg, "winners");
+  const leak = topBy(agg, "errors");
+  if (!weapon && !leak) return null;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 4 }}>
+      <div style={{ background: C.mintL, border: `1px solid ${C.mint}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.06em" }}>🏆 Top weapon</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>{weapon ? weapon.type : "—"}</div>
+        <div style={{ fontSize: 11, color: C.textMid }}>{weapon ? `${weapon.winners} winner${weapon.winners !== 1 ? "s" : ""}` : `No winners logged`}</div>
+      </div>
+      <div style={{ background: C.roseL, border: `1px solid ${C.rose}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.rose, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚠️ Biggest leak</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>{leak ? leak.type : "—"}</div>
+        <div style={{ fontSize: 11, color: C.textMid }}>{leak ? `${leak.errors} error${leak.errors !== 1 ? "s" : ""}` : `No errors logged`}</div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── STATS PAGE ── shot-by-shot, filtered by match type, through any lens ──────
+// ══════════════════════════════════════════════════════════════════════════════
+const STAT_LENSES = {
+  me:      { label: "Me",        roles: ["me"] },
+  partner: { label: "Partners",  roles: ["partner"] },
+  us:      { label: "Us",        roles: ["me", "partner"] },
+  them:    { label: "Opponents", roles: ["opp1", "opp2"] },
+};
+function StatsPage({ setPage }) {
+  const [f] = useTypeFilter();
+  const { data, err } = useAnalytics();
+  const [lens, setLens] = useState("me");
+  if (!data) return <APage><ATitle title="Stats" /><ALoading err={err} /></APage>;
+
+  const sess = data.sessions.filter(s => f === "all" || s.type === f);
+  const untagged = data.sessions.filter(s => !s.type).length;
+  const rows = sess.flatMap(s => s.reviews.filter(r => STAT_LENSES[lens].roles.includes(r.player_role)));
+  const agg = aggShots(rows);
+  const lensBlurb = {
+    me: "Every shot you've hit.",
+    partner: "Every shot hit by whoever partnered you — see People for one partner at a time.",
+    us: "You and your partner combined.",
+    them: "Everyone who's played against you.",
+  }[lens];
+
+  return (
+    <APage>
+      <ATitle title="Stats" sub={`${sess.length} match${sess.length !== 1 ? "es" : ""} logged shot by shot`} />
+      <TypeFilterBar untagged={untagged} />
+      <ATabs tabs={Object.entries(STAT_LENSES).map(([id, l]) => ({ id, label: l.label }))} value={lens} onChange={setLens} />
+      <div style={{ fontSize: 12, color: C.textMid, marginBottom: 10 }}>{lensBlurb}</div>
+      <AggTiles agg={agg} />
+      <WeaponLeak agg={agg} />
+      <ASection>By shot type</ASection>
+      <ShotTypeList agg={agg} empty="No shots logged for this view yet. Log a match in Matches → Log a match." />
+      <div style={{ marginTop: 18, fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
+        This page uses matches logged shot by shot. Your all-time totals, including matches logged the older way,
+        are still here: <button onClick={() => setPage("shots")} style={linkBtn}>All-time shot history →</button>
+      </div>
+    </APage>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── MATCH REPORT ── "why did we win / lose" for one match ─────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+const cmpSide = (a, b, higherIsBetter = true) =>
+  (a == null || b == null || a === b) ? null : ((a > b) === higherIsBetter ? "us" : "them");
+
+function CompareRow({ label, us, them, better }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 76px 76px", gap: 6, padding: "8px 0", borderTop: `1px solid ${C.border}`, alignItems: "center" }}>
+      <div style={{ fontSize: 13, color: C.text }}>{label}</div>
+      <div style={{ textAlign: "center", fontWeight: 700, fontSize: 14, color: better === "us" ? C.mint : C.navy }}>{us}</div>
+      <div style={{ textAlign: "center", fontWeight: 700, fontSize: 14, color: better === "them" ? C.rose : C.navy }}>{them}</div>
+    </div>
+  );
+}
+
+function buildInsights({ m, us, them, won, perPlayer }) {
+  const ins = [];
+  const errDiff = them.errors - us.errors;
+  if (Math.abs(errDiff) >= 3) ins.push({ good: errDiff > 0, w: Math.abs(errDiff) * 2,
+    text: errDiff > 0 ? `They made ${them.errors} errors to our ${us.errors} — ${errDiff} more free points for us.`
+                      : `We made ${us.errors} errors to their ${them.errors} — ${-errDiff} more free points for them.` });
+  const winDiff = us.winners - them.winners;
+  if (Math.abs(winDiff) >= 3) ins.push({ good: winDiff > 0, w: Math.abs(winDiff) * 2,
+    text: winDiff > 0 ? `We hit ${us.winners} winners to their ${them.winners}.`
+                      : `They hit ${them.winners} winners to our ${us.winners}.` });
+  if (m.usArrival != null && m.themArrival != null && Math.abs(m.usArrival - m.themArrival) >= 15) {
+    const d = m.usArrival - m.themArrival;
+    ins.push({ good: d > 0, w: Math.abs(d) / 3,
+      text: d > 0 ? `On serve we got to the kitchen ${m.usArrival}% of the time; they only managed ${m.themArrival}%.`
+                  : `On serve they got to the kitchen ${m.themArrival}% of the time; we only managed ${m.usArrival}%.` });
+  }
+  const usHold = pctOf(m.usServeWon, m.usServe), themHold = pctOf(m.themServeWon, m.themServe);
+  if (usHold != null && themHold != null && Math.abs(usHold - themHold) >= 15) {
+    const d = usHold - themHold;
+    ins.push({ good: d > 0, w: Math.abs(d) / 3,
+      text: d > 0 ? `We won ${usHold}% of rallies on our serve; they won ${themHold}% on theirs.`
+                  : `They won ${themHold}% of rallies on their serve; we won only ${usHold}% on ours.` });
+  }
+  const ourLeak = topBy(us, "errors");
+  if (ourLeak && us.errors >= 3 && ourLeak.errors >= 2)
+    ins.push({ good: false, w: ourLeak.errors, text: `${ourLeak.errors} of our ${us.errors} errors came on ${ourLeak.type}.` });
+  const theirWeapon = topBy(them, "winners");
+  if (theirWeapon && them.winners >= 3 && theirWeapon.winners >= 2)
+    ins.push({ good: false, w: theirWeapon.winners, text: `Their winners came mostly from ${theirWeapon.type} (${theirWeapon.winners}).` });
+  const ourWeapon = topBy(us, "winners");
+  if (ourWeapon && us.winners >= 3 && ourWeapon.winners >= 2)
+    ins.push({ good: true, w: ourWeapon.winners, text: `Our winners came mostly from ${ourWeapon.type} (${ourWeapon.winners}).` });
+  const theirLeak = topBy(them, "errors");
+  if (theirLeak && them.errors >= 3 && theirLeak.errors >= 2)
+    ins.push({ good: true, w: theirLeak.errors, text: `${theirLeak.errors} of their ${them.errors} errors came on ${theirLeak.type}.` });
+  // One player carrying most of a team's errors
+  perPlayer.forEach(p => {
+    const team = p.ours ? us : them;
+    if (team.errors >= 4 && p.agg.errors / team.errors >= 0.6)
+      ins.push({ good: !p.ours, w: p.agg.errors, text: `${p.name} made ${p.agg.errors} of ${p.ours ? "our" : "their"} ${team.errors} errors.` });
+  });
+  ins.sort((a, b) => (a.good === b.good ? b.w - a.w : (a.good === won ? -1 : 1)));
+  return ins.slice(0, 5);
+}
+
+function MatchReport({ match, session, myName, onBack, onChanged }) {
+  const [saving, setSaving] = useState(false);
+  const setType = async (id) => {
+    setSaving(true);
+    try { await sb.update("matches", { match_type: id }, `id=eq.${match.id}`); onChanged && onChanged(); }
+    catch (e) { alert("Couldn't save the match type: " + e.message); }
+    setSaving(false);
+  };
+  const won = match.result === "W";
+  const header = (
+    <>
+      <button onClick={onBack} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+        fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer", marginBottom: 12 }}>← Matches</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: C.textLight }}>{match.date}{match.score ? ` · ${match.score}` : ""}</div>
+          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color: C.navy, letterSpacing: "0.04em", lineHeight: 1.1 }}>vs {match.opponent || "—"}</div>
+          <div style={{ fontSize: 13, color: C.textMid }}>w/ {match.partner || "—"}</div>
+        </div>
+        <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 999,
+          background: won ? C.mintL : C.roseL, color: won ? C.mint : C.rose }}>{won ? "WIN" : "LOSS"}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 4, margin: "12px 0 4px" }}>
+        {MATCH_TYPES.map(t => (
+          <button key={t.id} disabled={saving} onClick={() => setType(t.id)} style={{
+            padding: "7px 2px", borderRadius: 8, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 11, cursor: "pointer",
+            border: `1.5px solid ${match.match_type === t.id ? C.navy : C.border}`,
+            background: match.match_type === t.id ? C.navy : "white", color: match.match_type === t.id ? "white" : C.textMid,
+          }}>{t.label}</button>
+        ))}
+      </div>
+      {!match.match_type && <div style={{ fontSize: 11, color: C.amber }}>Tap a match type so this match shows up in the right filter.</div>}
+    </>
+  );
+
+  if (!session || !session.reviews.length) {
+    return (
+      <div>
+        {header}
+        <ASection>Match stats</ASection>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+          <ATile label="NVZ arrival" value={fmtPct(match.nvz_arrival || null)} color={C.mint} />
+          <ATile label="NVZ win rate" value={fmtPct(match.nvz_win || null)} color={C.blue} />
+          <ATile label="Serve neut." value={fmtPct(match.serve_neut || null)} color={C.amber} />
+          <ATile label="My errors" value={match.errors ?? "—"} color={C.rose} />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <AEmpty>This match was logged before shot-by-shot logging, so there's no team breakdown. Matches logged in
+            Matches → Log a match get the full report.</AEmpty>
+        </div>
+      </div>
+    );
+  }
+
+  const reviewsMap = {};
+  session.reviews.forEach(r => { reviewsMap[r.frame] = r; });
+  const m = computeMatchMetrics(reviewsMap);
+  const us = aggShots(session.reviews.filter(r => r.player_role === "me" || r.player_role === "partner"));
+  const them = aggShots(session.reviews.filter(r => r.player_role === "opp1" || r.player_role === "opp2"));
+  const perPlayer = ["me", "partner", "opp1", "opp2"].map(role => ({
+    role, ours: role === "me" || role === "partner", name: roleName(session, role, myName),
+    agg: aggShots(session.reviews.filter(r => r.player_role === role)),
+  })).filter(p => p.agg.total > 0);
+  const insights = buildInsights({ m, us, them, won, perPlayer });
+  const usHold = pctOf(m.usServeWon, m.usServe), themHold = pctOf(m.themServeWon, m.themServe);
+  const usPos = pctOf(us.pos, us.rated), themPos = pctOf(them.pos, them.rated);
+
+  const ErrList = ({ agg, keyName, color }) => {
+    const list = [...agg.types].filter(t => t[keyName] > 0).sort((a, b) => b[keyName] - a[keyName]).slice(0, 5);
+    if (!list.length) return <div style={{ fontSize: 12, color: C.textLight }}>None</div>;
+    return list.map(t => (
+      <div key={t.type} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0", gap: 6 }}>
+        <span style={{ color: C.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.type}</span>
+        <strong style={{ color }}>{t[keyName]}</strong>
+      </div>
+    ));
+  };
+  const TwoCol = ({ title, keyName, usColor, themColor }) => (
+    <>
+      <ASection>{title}</ASection>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 4 }}>US</div>
+          <ErrList agg={us} keyName={keyName} color={usColor} />
+        </div>
+        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 4 }}>THEM</div>
+          <ErrList agg={them} keyName={keyName} color={themColor} />
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div>
+      {header}
+
+      <ASection>{won ? "Why we won" : "Why we lost"}</ASection>
+      {insights.length ? (
+        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "6px 12px" }}>
+          {insights.map((i, k) => (
+            <div key={k} style={{ display: "flex", gap: 8, padding: "7px 0", borderTop: k ? `1px solid ${C.border}` : "none", fontSize: 13, lineHeight: 1.5 }}>
+              <span style={{ flexShrink: 0 }}>{i.good ? "✅" : "⚠️"}</span><span style={{ color: C.text }}>{i.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : <AEmpty>No big gaps between the teams — this one came down to small margins.</AEmpty>}
+
+      <ASection>Us vs them</ASection>
+      <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "4px 12px 6px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 76px 76px", gap: 6, padding: "6px 0", fontSize: 11, fontWeight: 700, color: C.textLight }}>
+          <span /><span style={{ textAlign: "center" }}>US</span><span style={{ textAlign: "center" }}>THEM</span>
+        </div>
+        <CompareRow label="Rallies won" us={m.usWon} them={m.rallies - m.usWon} better={cmpSide(m.usWon, m.rallies - m.usWon)} />
+        <CompareRow label="Won on own serve" us={fmtPct(usHold)} them={fmtPct(themHold)} better={cmpSide(usHold, themHold)} />
+        <CompareRow label="Kitchen arrival on serve" us={fmtPct(m.usArrival)} them={fmtPct(m.themArrival)} better={cmpSide(m.usArrival, m.themArrival)} />
+        <CompareRow label="Won once at kitchen" us={fmtPct(m.usNvzWin)} them={fmtPct(m.themNvzWin)} better={cmpSide(m.usNvzWin, m.themNvzWin)} />
+        <CompareRow label="Winners" us={us.winners} them={them.winners} better={cmpSide(us.winners, them.winners)} />
+        <CompareRow label="Errors" us={us.errors} them={them.errors} better={cmpSide(us.errors, them.errors, false)} />
+        <CompareRow label="Positive shots" us={fmtPct(usPos)} them={fmtPct(themPos)} better={cmpSide(usPos, themPos)} />
+      </div>
+      {m.untagged > 0 && (
+        <div style={{ fontSize: 11, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>
+          {m.untagged} rall{m.untagged !== 1 ? "ies are" : "y is"} missing a kitchen tag — finish them with 🏃 Tag kitchen arrival in Log a match.
+        </div>
+      )}
+
+      <TwoCol title="Where the errors came from" keyName="errors" usColor={C.rose} themColor={C.mint} />
+      <TwoCol title="Where the winners came from" keyName="winners" usColor={C.mint} themColor={C.rose} />
+
+      <ASection>Each player</ASection>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {perPlayer.map(p => {
+          const leak = topBy(p.agg, "errors");
+          return (
+            <div key={p.role} style={{ background: "white", border: `1px solid ${C.border}`, borderLeft: `4px solid ${p.ours ? C.mint : C.rose}`, borderRadius: 12, padding: "10px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong style={{ color: C.navy, fontSize: 14 }}>{p.name}</strong>
+                <span style={{ fontSize: 11, color: C.textLight }}>{(REVIEW_ROLES.find(r => r.id === p.role) || {}).label}</span>
+              </div>
+              <div style={{ fontSize: 12, color: C.textMid, marginTop: 2, lineHeight: 1.5 }}>
+                {p.agg.total} shots{p.agg.rated ? ` · ${pctOf(p.agg.pos, p.agg.rated)}% positive` : ""} · {p.agg.winners} winner{p.agg.winners !== 1 ? "s" : ""} · {p.agg.errors} error{p.agg.errors !== 1 ? "s" : ""}
+              </div>
+              <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5 }}>
+                Most used: {p.agg.types.slice(0, 3).map(t => `${t.type} (${t.n})`).join(", ")}
+              </div>
+              {leak && <div style={{ fontSize: 12, color: C.rose, lineHeight: 1.5 }}>Most errors: {leak.type} ({leak.errors})</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── MATCHES PAGE ── list → report, plus logging ───────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+const pill = (bg, color) => ({ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: bg, color, whiteSpace: "nowrap" });
+
+function MatchesPage({ setPage }) {
+  const [tab, setTab] = useState("list");
+  const [f] = useTypeFilter();
+  const { data, err, refresh } = useAnalytics();
+  const [selId, setSelId] = useState(null);
+
+  if (tab === "list" && selId && data) {
+    const match = data.matches.find(x => x.id === selId);
+    if (match) return (
+      <APage>
+        <MatchReport match={match} session={data.sessionByMatch[match.id]} myName={data.myName}
+          onBack={() => setSelId(null)} onChanged={refresh} />
+      </APage>
+    );
+  }
+
+  const changeTab = (id) => { if (id === "list") refresh(); setTab(id); };
+  const list = data ? data.matches.filter(x => matchPassesFilter(x, f)) : [];
+  const wins = list.filter(x => x.result === "W").length;
+
+  return (
+    <APage>
+      <ATitle title="Matches" sub={data ? `${list.length} match${list.length !== 1 ? "es" : ""} · ${wins}W ${list.length - wins}L` : null} />
+      <ATabs tabs={[{ id: "list", label: "Matches" }, { id: "log", label: "Log a match" }, { id: "more", label: "More tools" }]}
+        value={tab} onChange={changeTab} />
+      {tab === "list" && (!data ? <ALoading err={err} /> : (
+        <>
+          <TypeFilterBar untagged={data.matches.filter(x => !x.match_type).length} />
+          {!list.length ? <AEmpty>No matches here yet. Log one under <strong>Log a match</strong>.</AEmpty> : list.map(x => (
+            <button key={x.id} onClick={() => setSelId(x.id)} style={{ width: "100%", textAlign: "left", display: "block",
+              padding: "12px 14px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: C.textLight }}>{x.date}{x.score ? ` · ${x.score}` : ""}</span>
+                <span style={pill(x.result === "W" ? C.mintL : C.roseL, x.result === "W" ? C.mint : C.rose)}>{x.result === "W" ? "WIN" : "LOSS"}</span>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>vs {x.opponent || "—"}</div>
+              <div style={{ fontSize: 12, color: C.textMid }}>w/ {x.partner || "—"}</div>
+              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                {x.match_type ? <span style={pill(C.pageBg, C.textMid)}>{matchTypeLabel(x.match_type)}</span>
+                  : <span style={pill(C.amberL, C.amber)}>Set match type</span>}
+                {data.sessionByMatch[x.id] && <span style={pill(C.blueL, C.blue)}>📊 Full report</span>}
+              </div>
+            </button>
+          ))}
+        </>
+      ))}
+      {tab === "log" && <ShotReviewTool />}
+      {tab === "more" && <MatchCenter defaultTab="history" setPage={setPage} />}
+    </APage>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── PEOPLE PAGE ── partners and opponents, filtered by match type ─────────────
+// ══════════════════════════════════════════════════════════════════════════════
+function PeoplePage() {
+  const [f] = useTypeFilter();
+  const { data, err } = useAnalytics();
+  const [sel, setSel] = useState(null);
+  const [lens, setLens] = useState("against");
+  if (!data) return <APage><ATitle title="People" /><ALoading err={err} /></APage>;
+
+  const sess = data.sessions.filter(s => f === "all" || s.type === f);
+  const people = {};
+  sess.forEach(s => {
+    const pn = s.people_names || {};
+    [["partner", pn.partnerName], ["opp1", pn.opp1Name], ["opp2", pn.opp2Name]].forEach(([role, raw]) => {
+      const name = (raw || "").trim();
+      if (!name) return;
+      const p = people[name] || (people[name] = { name, withS: [], againstS: [], withRows: [], againstRows: [] });
+      const rows = s.reviews.filter(r => r.player_role === role);
+      if (role === "partner") { p.withS.push(s); p.withRows.push(...rows); }
+      else { p.againstS.push(s); p.againstRows.push(...rows); }
+    });
+  });
+  const list = Object.values(people).sort((a, b) => (b.withRows.length + b.againstRows.length) - (a.withRows.length + a.againstRows.length));
+  const untagged = data.sessions.filter(s => !s.type).length;
+
+  if (sel && people[sel]) {
+    const p = people[sel];
+    const effLens = lens === "with" && !p.withS.length ? "against" : lens === "against" && !p.againstS.length ? "with" : lens;
+    const ss = effLens === "with" ? p.withS : p.againstS;
+    const agg = aggShots(effLens === "with" ? p.withRows : p.againstRows);
+    const ourWins = ss.filter(s => s.match && s.match.result === "W").length;
+    const decided = ss.filter(s => s.match).length;
+    return (
+      <APage>
+        <button onClick={() => setSel(null)} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+          fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer", marginBottom: 12 }}>← People</button>
+        <ATitle title={p.name} sub={`Partner ${p.withS.length}× · Opponent ${p.againstS.length}×`} />
+        <TypeFilterBar untagged={untagged} />
+        <ATabs tabs={[{ id: "against", label: `As my opponent (${p.againstS.length})` }, { id: "with", label: `As my partner (${p.withS.length})` }]}
+          value={effLens} onChange={setLens} />
+        {decided > 0 && (
+          <div style={{ fontSize: 13, color: C.text, marginBottom: 10 }}>
+            {effLens === "with" ? "Together" : "Against them"}: <strong>{ourWins}W {decided - ourWins}L</strong>
+          </div>
+        )}
+        <AggTiles agg={agg} />
+        <WeaponLeak agg={agg} />
+        <ASection>Their shots</ASection>
+        <ShotTypeList agg={agg} empty={`No shots logged for ${p.name} in this view.`} />
+        <ASection>Matches</ASection>
+        {ss.map(s => (
+          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
+            <span style={{ color: C.text, minWidth: 0 }}>{s.match ? s.match.date : s.video_name}{s.type ? ` · ${matchTypeLabel(s.type)}` : ""}</span>
+            {s.match && <strong style={{ color: s.match.result === "W" ? C.mint : C.rose, flexShrink: 0 }}>{s.match.result === "W" ? "W" : "L"}</strong>}
+          </div>
+        ))}
+      </APage>
+    );
+  }
+
+  return (
+    <APage>
+      <ATitle title="People" sub="Your scouting notes on partners and opponents — only you can see this." />
+      <TypeFilterBar untagged={untagged} />
+      {!list.length ? (
+        <AEmpty>No one here yet. When you sync a logged match with partner and opponent names, they'll show up here.</AEmpty>
+      ) : list.map(p => (
+        <button key={p.name} onClick={() => { setSel(p.name); setLens(p.againstS.length ? "against" : "with"); }} style={{
+          width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+          padding: "12px 14px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>{p.name}</div>
+            <div style={{ fontSize: 12, color: C.textMid }}>
+              {[p.withS.length ? `Partner ${p.withS.length}×` : null, p.againstS.length ? `Opponent ${p.againstS.length}×` : null].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+          <span style={{ fontSize: 12, color: C.textMid, flexShrink: 0 }}>{p.withRows.length + p.againstRows.length} shots →</span>
+        </button>
+      ))}
+    </APage>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── TRAIN PAGE ── drills plan + AI coach in one place ─────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+function TrainPage({ setPage, initialTab = "plan" }) {
+  const isMobile = useIsMobile();
+  const [tab, setTab] = useState(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: isMobile ? "14px 14px 0" : "24px 32px 0", boxSizing: "border-box" }}>
+        <ATabs tabs={[{ id: "plan", label: "🎯 My plan & drills" }, { id: "coach", label: "🥒 Ask the coach" }]} value={tab} onChange={setTab} />
+      </div>
+      {tab === "plan" ? <Drills setPage={setPage} /> : <Coach />}
+    </div>
+  );
+}
+
+
 // ── HELP MODAL ────────────────────────────────────────────────────────────────
 const FAQS = [
   { q:"How do I log a match?",
@@ -11556,12 +12210,15 @@ export default function App(){
         <main style={{flex:1}}>
           {page==="dashboard"&&<Dashboard setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
-          {page==="matches"  &&<MatchCenter defaultTab="log" setPage={setPage} pendingReviewJob={null}/>}
+          {page==="stats"    &&<StatsPage setPage={setPage}/>}
+          {page==="people"   &&<PeoplePage/>}
+          {page==="train"    &&<TrainPage setPage={setPage} initialTab="plan"/>}
+          {page==="matches"  &&<MatchesPage setPage={setPage}/>}
           {page==="matches_review"&&<MatchCenter defaultTab="log" setPage={setPage} pendingReviewJob={pendingReviewJob} onReviewConsumed={()=>setPendingReviewJob(null)}/>}
           {page==="matches:partners"&&<MatchCenter defaultTab="partners" setPage={setPage} pendingReviewJob={null}/>}
-          {page==="drills"   &&<Drills setPage={setPage}/>}
+          {page==="drills"   &&<TrainPage setPage={setPage} initialTab="plan"/>}
           {page==="admin"    &&getCurrentUserId()===ADMIN_USER_ID&&<Admin/>}
-          {page==="coach"    &&<Coach/>}
+          {page==="coach"    &&<TrainPage setPage={setPage} initialTab="coach"/>}
           {page==="profile"  &&<Profile setPage={setPage}/>}
         </main>
         {/* ── Global Footer ── */}
