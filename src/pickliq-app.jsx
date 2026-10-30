@@ -9066,43 +9066,81 @@ const NVZ_SINGLES = [
   { id:"both",    label:"Yes", color:C.mint },
   { id:"neither", label:"No",  color:C.rose },
 ];
-function NvzRows({ singles, us, them, onChange }) {
+const teamOf = (role) => (role === "me" || role === "partner") ? "us" : (role === "opp1" || role === "opp2") ? "them" : null;
+
+// Who served the rally that ends at `frame`: the first Serve logged after the previous rally ended.
+// `self` is the rally-ending shot itself (it can be the serve, e.g. a missed serve).
+function deriveServer(reviewsMap, frame, self) {
+  const rows = Object.values(reviewsMap || {}).filter(r => r && r.status === "reviewed" && r.frame < frame)
+    .sort((a, b) => a.frame - b.frame);
+  let server = null;
+  rows.forEach(r => {
+    if (r.shot_type === "Serve" && server === null) server = teamOf(r.player_role);
+    if (isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role))) server = null;
+  });
+  if (server === null && self && self.shot_type === "Serve") server = teamOf(self.player_role);
+  return server;
+}
+const serverOf = (reviewsMap, r) => (r && r.serving_team) || deriveServer(reviewsMap, r.frame, r);
+// A rally counts as tagged once the serving team's kitchen answer is in
+const rallyTagged = (reviewsMap, r) => {
+  const sv = serverOf(reviewsMap, r);
+  return sv === "us" ? !!r.nvz_us : sv === "them" ? !!r.nvz_them : false;
+};
+// What gets saved on a rally-ending shot: only the serving team's answer
+const nvzFields = (d, server, isEnd) => ({
+  serving_team: isEnd ? (server || null) : null,
+  nvz_us:   isEnd && server === "us"   ? (d.nvz_us || null)   : null,
+  nvz_them: isEnd && server === "them" ? (d.nvz_them || null) : null,
+});
+
+// Kitchen arrival is only asked for the SERVING team — the returning team almost always gets in,
+// so the meaningful question is whether the serving team fought their way to the kitchen.
+function NvzRows({ singles, server, derived, us, them, onChange }) {
   const opts = singles ? NVZ_SINGLES : NVZ_DOUBLES;
-  const cols = `repeat(${opts.length},minmax(0,1fr))`;
+  const teamOpts = singles
+    ? [{ id:"us", label:"I served" }, { id:"them", label:"Opponent served" }]
+    : [{ id:"us", label:"We served" }, { id:"them", label:"They served" }];
+  const key = server === "us" ? "nvz_us" : "nvz_them";
+  const val = server === "us" ? us : them;
+  const q = server === "us"
+    ? (singles ? "On my serve, did I get to the kitchen?" : "On our serve, did we get to the kitchen?")
+    : (singles ? "On their serve, did my opponent get to the kitchen?" : "On their serve, did they get to the kitchen?");
   return (
     <div style={{ padding:"10px 12px", borderRadius:10, background:`${C.mint}10`, border:`1.5px solid ${C.mint}50`, marginBottom:14 }}>
       <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>
-        {singles ? "Did I get to the kitchen this rally?" : "Did we get to the kitchen this rally?"}
+        Who served this rally?{derived && <span style={{ fontWeight:500, color:C.textLight }}> (from the serve you logged)</span>}
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:cols, gap:6, marginBottom:10 }}>
-        {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={us === o.id}
-          onClick={() => onChange("nvz_us", us === o.id ? null : o.id)}>{o.label}</ReviewChip>)}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:6, marginBottom: server ? 10 : 0 }}>
+        {teamOpts.map(o => <ReviewChip key={o.id} small color={C.navy} active={server === o.id}
+          onClick={() => onChange("serving_team", o.id)}>{o.label}</ReviewChip>)}
       </div>
-      <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>
-        {singles ? "Did my opponent get to the kitchen?" : "Did they get to the kitchen?"}
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:cols, gap:6 }}>
-        {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={them === o.id}
-          onClick={() => onChange("nvz_them", them === o.id ? null : o.id)}>{o.label}</ReviewChip>)}
-      </div>
+      {server && <>
+        <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>{q}</div>
+        <div style={{ display:"grid", gridTemplateColumns:`repeat(${opts.length},minmax(0,1fr))`, gap:6 }}>
+          {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={val === o.id}
+            onClick={() => onChange(key, val === o.id ? null : o.id)}>{o.label}</ReviewChip>)}
+        </div>
+      </>}
     </div>
   );
 }
 const isRallyEnd = (outcome) => outcome === "winner" || outcome === "error";
 
-// Builds the match-level numbers (serve neut, NVZ arrival / win rate, rallies) from individual reviews
+// Builds the match-level numbers from individual reviews. NVZ numbers are per SERVING team.
 function computeMatchMetrics(reviewsMap) {
   const rows = Object.values(reviewsMap || {}).filter(r => r && r.status === "reviewed")
     .sort((a, b) => a.frame - b.frame);
-  let srvTotal = 0, srvNeut = 0, myErrors = 0;
-  let rallies = 0, usWon = 0;
-  let usTagged = 0, usArr = 0, usKitchenWon = 0;
-  let themTagged = 0, themArr = 0, themKitchenWon = 0;
+  let srvTotal = 0, srvNeut = 0, myErrors = 0, rallies = 0, usWon = 0;
+  let usServe = 0, usServeWon = 0, themServe = 0, themServeWon = 0, noServer = 0;
+  let usTagged = 0, usArr = 0, usKitchenWon = 0, themTagged = 0, themArr = 0, themKitchenWon = 0;
+  let server = null;
   rows.forEach(r => {
     if (r.player_role === "me" && (r.shot_type === "Serve" || r.shot_type === "Return of Serve") && r.hit_quality) {
       srvTotal++;
       if (r.hit_quality !== "negative") srvNeut++;
     }
+    if (r.shot_type === "Serve" && server === null) server = teamOf(r.player_role);
     const out = toHitterOutcome(r.rally_outcome, r.player_role);
     if (!isRallyEnd(out)) return;
     rallies++;
@@ -9110,14 +9148,21 @@ function computeMatchMetrics(reviewsMap) {
     const weWon = (ours && out === "winner") || (!ours && out === "error");
     if (weWon) usWon++;
     if (r.player_role === "me" && out === "error") myErrors++;
-    if (r.nvz_us) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
-    if (r.nvz_them) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+    const sv = r.serving_team || server;
+    if (sv === "us") {
+      usServe++; if (weWon) usServeWon++;
+      if (r.nvz_us) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
+    } else if (sv === "them") {
+      themServe++; if (!weWon) themServeWon++;
+      if (r.nvz_them) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+    } else noServer++;
+    server = null;
   });
   const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null;
   return {
-    rallies, usWon, myErrors, srvTotal, srvNeut,
-    serveNeut: pct(srvNeut, srvTotal),
-    usTagged, themTagged, untagged: rallies - Math.min(usTagged, themTagged),
+    rallies, usWon, myErrors, srvTotal, srvNeut, serveNeut: pct(srvNeut, srvTotal),
+    usServe, usServeWon, themServe, themServeWon, noServer,
+    usTagged, themTagged, untagged: (usServe - usTagged) + (themServe - themTagged) + noServer,
     usArrival: pct(usArr, usTagged), usNvzWin: pct(usKitchenWon, usArr),
     themArrival: pct(themArr, themTagged), themNvzWin: pct(themKitchenWon, themArr),
   };
@@ -9402,7 +9447,7 @@ function ShotReviewTool() {
         auto_player_index: r.auto_player_index, auto_shot_type: r.auto_shot_type, source: r.source || "detected",
         player_role: r.player_role, shot_type: r.shot_type, shot_side: r.shot_side || null,
         hit_quality: r.hit_quality, rally_outcome: r.rally_outcome, status: r.status,
-        nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null,
+        nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null, serving_team: r.serving_team || null,
         updated_at: new Date().toISOString(),
       }));
       for (let i = 0; i < rows.length; i += 50) {
@@ -9426,7 +9471,7 @@ function ShotReviewTool() {
     setBusy(true); setError("");
     try {
       const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
-      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source,nvz_us,nvz_them`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source,nvz_us,nvz_them,serving_team`);
       const map = {};
       (rows || []).forEach(r => { map[r.frame] = r; });
       setSession(s); setReviews(map);
@@ -9504,7 +9549,7 @@ function ShotReviewTool() {
   // Download every shot with its review as a CSV (for training in Colab)
   const exportLabels = () => {
     const cols = ["frame","time_sec","ball_x","ball_y","auto_player_index","auto_shot_type","status",
-      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome","nvz_us","nvz_them"];
+      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome","serving_team","nvz_us","nvz_them"];
     const esc = (v) => v == null ? "" : String(v).includes(",") ? `"${v}"` : String(v);
     const lines = [cols.join(",")];
     (session?.shots || []).forEach(sh => {
@@ -9514,7 +9559,7 @@ function ShotReviewTool() {
       const source = r.source || (sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected");
       lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
         source, r.player_role, r.shot_side, r.shot_type, r.hit_quality,
-        toHitterOutcome(r.rally_outcome, r.player_role), r.nvz_us, r.nvz_them].map(esc).join(","));
+        toHitterOutcome(r.rally_outcome, r.player_role), r.serving_team, r.nvz_us, r.nvz_them].map(esc).join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -9752,8 +9797,8 @@ function ShotReviewTool() {
         player_role: scratchDraft.player_role, shot_type: scratchDraft.shot_type,
         shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
         rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
-        nvz_us: isRallyEnd(scratchDraft.rally_outcome) ? (scratchDraft.nvz_us || null) : null,
-        nvz_them: isRallyEnd(scratchDraft.rally_outcome) ? (scratchDraft.nvz_them || null) : null,
+        ...nvzFields(scratchDraft, scratchDraft.serving_team || deriveServer(reviews, scratchDraft.frame, scratchDraft),
+          isRallyEnd(scratchDraft.rally_outcome)),
         updated_at: new Date().toISOString(),
       };
       await reviewApi("shot_reviews?on_conflict=session_id,frame", {
@@ -9837,8 +9882,8 @@ function ShotReviewTool() {
       shot_side:   status === "reviewed" ? (draft.shot_side || null) : null,
       hit_quality: status === "reviewed" ? draft.hit_quality : null,
       rally_outcome: status === "reviewed" ? draft.rally_outcome : null,
-      nvz_us: status === "reviewed" && isRallyEnd(draft.rally_outcome) ? (draft.nvz_us || null) : null,
-      nvz_them: status === "reviewed" && isRallyEnd(draft.rally_outcome) ? (draft.nvz_them || null) : null,
+      ...nvzFields(draft, draft.serving_team || deriveServer(reviews, shot.frame, { ...draft, frame: shot.frame }),
+        status === "reviewed" && isRallyEnd(draft.rally_outcome)),
       status, updated_at: new Date().toISOString(),
     };
     try {
@@ -10115,7 +10160,10 @@ function ShotReviewTool() {
               </div>
             </ReviewSection>
             {isRallyEnd(scratchDraft.rally_outcome) && (
-              <NvzRows singles={session?.match_type === "singles"} us={scratchDraft.nvz_us} them={scratchDraft.nvz_them}
+              <NvzRows singles={session?.match_type === "singles"}
+                server={scratchDraft.serving_team || deriveServer(reviews, scratchDraft.frame, scratchDraft)}
+                derived={!scratchDraft.serving_team && !!deriveServer(reviews, scratchDraft.frame, scratchDraft)}
+                us={scratchDraft.nvz_us} them={scratchDraft.nvz_them}
                 onChange={(k, v) => setScratchDraft(d => ({ ...d, [k]: v }))} />
             )}
 
@@ -10232,15 +10280,17 @@ function ShotReviewTool() {
             <div>{p.metrics.rallies} rallies · we won {p.metrics.usWon}</div>
             <div>My serve neutralization: <strong>{p.metrics.serveNeut != null ? p.metrics.serveNeut + "%" : "—"}</strong>
               {p.metrics.srvTotal > 0 && ` (${p.metrics.srvNeut} of ${p.metrics.srvTotal} serves & returns)`}</div>
-            <div>NVZ arrival — us <strong>{p.metrics.usArrival != null ? p.metrics.usArrival + "%" : "—"}</strong>,
+            <div>On our serve: won <strong>{p.metrics.usServeWon}</strong> of {p.metrics.usServe} rallies ·
+              on theirs they won <strong>{p.metrics.themServeWon}</strong> of {p.metrics.themServe}</div>
+            <div>Kitchen arrival on serve — us <strong>{p.metrics.usArrival != null ? p.metrics.usArrival + "%" : "—"}</strong>,
               them <strong>{p.metrics.themArrival != null ? p.metrics.themArrival + "%" : "—"}</strong></div>
-            <div>NVZ win rate — us <strong>{p.metrics.usNvzWin != null ? p.metrics.usNvzWin + "%" : "—"}</strong>,
+            <div>Won once there — us <strong>{p.metrics.usNvzWin != null ? p.metrics.usNvzWin + "%" : "—"}</strong>,
               them <strong>{p.metrics.themNvzWin != null ? p.metrics.themNvzWin + "%" : "—"}</strong></div>
             <div>My errors: <strong>{p.metrics.myErrors}</strong></div>
             {p.metrics.untagged > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: C.amber }}>
-                ⚠️ {p.metrics.untagged} of {p.metrics.rallies} rallies have no kitchen tag yet — use
-                🏃 Tag kitchen arrival to fill them in. NVZ numbers only count tagged rallies.
+                ⚠️ {p.metrics.untagged} of {p.metrics.rallies} rallies are missing the serving team or its kitchen
+                answer — use 🏃 Tag kitchen arrival to fill them in. NVZ numbers only count tagged rallies.
               </div>
             )}
           </div>
@@ -10315,7 +10365,7 @@ function ShotReviewTool() {
     const ends = Object.values(reviews)
       .filter(r => r && r.status === "reviewed" && isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role)))
       .sort((a, b) => a.frame - b.frame);
-    const tagged = ends.filter(r => r.nvz_us && r.nvz_them).length;
+    const tagged = ends.filter(r => rallyTagged(reviews, r)).length;
     const cur = ends[rallyIdx];
     const tOf = (r) => r.time_sec ?? (shots.find(sh => sh.frame === r.frame) || {}).t;
     const playRally = (r) => {
@@ -10329,19 +10379,22 @@ function ShotReviewTool() {
     const goTo = (i) => {
       setRallyIdx(i);
       const r = ends[i];
-      setRallyDraft(r ? { nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null } : {});
+      setRallyDraft(r ? { serving_team: r.serving_team || null, nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null } : {});
       if (r) setTimeout(() => playRally(r), 150);
     };
+    const curDerived = cur ? deriveServer(reviews, cur.frame, cur) : null;
+    const curServer = rallyDraft.serving_team || curDerived;
+    const curFields = nvzFields(rallyDraft, curServer, true);
+    const curReady = curServer === "us" ? !!rallyDraft.nvz_us : curServer === "them" ? !!rallyDraft.nvz_them : false;
     const saveRally = async () => {
-      if (!cur) return;
+      if (!cur || !curReady) return;
       setBusy(true); setError("");
       try {
         await reviewApi(`shot_reviews?session_id=eq.${session.id}&frame=eq.${cur.frame}`, {
           method: "PATCH", headers: { Prefer: "return=minimal" },
-          body: JSON.stringify({ nvz_us: rallyDraft.nvz_us || null, nvz_them: rallyDraft.nvz_them || null,
-            updated_at: new Date().toISOString() }),
+          body: JSON.stringify({ ...curFields, updated_at: new Date().toISOString() }),
         });
-        setReviews(rv => ({ ...rv, [cur.frame]: { ...rv[cur.frame], nvz_us: rallyDraft.nvz_us || null, nvz_them: rallyDraft.nvz_them || null } }));
+        setReviews(rv => ({ ...rv, [cur.frame]: { ...rv[cur.frame], ...curFields } }));
         if (rallyIdx < ends.length - 1) goTo(rallyIdx + 1);
       } catch (e) { setError(e.message); }
       setBusy(false);
@@ -10385,11 +10438,13 @@ function ShotReviewTool() {
                 {slow ? "Slow-mo on" : "Slow-mo off"}
               </button>
             </div>
-            <NvzRows singles={session?.match_type === "singles"} us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
+            <NvzRows singles={session?.match_type === "singles"} server={curServer}
+              derived={!rallyDraft.serving_team && !!curDerived}
+              us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
               onChange={(k, v) => setRallyDraft(d => ({ ...d, [k]: v }))} />
             {errorBox}
-            <button onClick={saveRally} disabled={busy || !rallyDraft.nvz_us || !rallyDraft.nvz_them}
-              style={{ ...btn(rallyDraft.nvz_us && rallyDraft.nvz_them ? C.pickle : C.border), width: "100%" }}>
+            <button onClick={saveRally} disabled={busy || !curReady}
+              style={{ ...btn(curReady ? C.pickle : C.border), width: "100%" }}>
               {busy ? "Saving…" : rallyIdx < ends.length - 1 ? "Save & next rally" : "Save"}
             </button>
           </>
@@ -10465,10 +10520,10 @@ function ShotReviewTool() {
             const ends = Object.values(reviews)
               .filter(r => r && r.status === "reviewed" && isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role)))
               .sort((a, b) => a.frame - b.frame);
-            const first = ends.findIndex(r => !r.nvz_us || !r.nvz_them);
+            const first = ends.findIndex(r => !rallyTagged(reviews, r));
             const i = first < 0 ? 0 : first;
             setRallyIdx(i);
-            setRallyDraft(ends[i] ? { nvz_us: ends[i].nvz_us || null, nvz_them: ends[i].nvz_them || null } : {});
+            setRallyDraft(ends[i] ? { serving_team: ends[i].serving_team || null, nvz_us: ends[i].nvz_us || null, nvz_them: ends[i].nvz_them || null } : {});
             setStage("rallies");
           }}
           style={{ background: "none", border: "none", padding: 0, color: C.mint, fontFamily: "'Outfit'",
@@ -10597,7 +10652,10 @@ function ShotReviewTool() {
         </div>
       </ReviewSection>
       {isRallyEnd(draft.rally_outcome) && (
-        <NvzRows singles={session?.match_type === "singles"} us={draft.nvz_us} them={draft.nvz_them}
+        <NvzRows singles={session?.match_type === "singles"}
+          server={draft.serving_team || deriveServer(reviews, shot?.frame, { ...draft, frame: shot?.frame })}
+          derived={!draft.serving_team && !!deriveServer(reviews, shot?.frame, { ...draft, frame: shot?.frame })}
+          us={draft.nvz_us} them={draft.nvz_them}
           onChange={(k, v) => setDraft(d => ({ ...d, [k]: v }))} />
       )}
 
