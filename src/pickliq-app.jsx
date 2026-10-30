@@ -10450,6 +10450,35 @@ function ShotReviewTool() {
       setBusy(false);
     };
     const outcome = cur ? toHitterOutcome(cur.rally_outcome, cur.player_role) : null;
+    // Two "rally-ending" shots seconds apart are almost always one rally logged twice
+    // (e.g. the opponent's shot marked Winner AND your miss marked Error, or the same shot logged twice)
+    const prev = rallyIdx > 0 ? ends[rallyIdx - 1] : null;
+    const gap = prev && cur ? (tOf(cur) ?? 0) - (tOf(prev) ?? 0) : null;
+    const looksDup = gap != null && gap < 4;
+    const prevRole = prev ? (REVIEW_ROLES.find(r => r.id === prev.player_role) || {}).label : "";
+    const prevOut = prev ? toHitterOutcome(prev.rally_outcome, prev.player_role) : null;
+    const fixNotEnd = async (mode, which = "cur") => {
+      const target = which === "prev" ? prev : cur;
+      if (!target) return;
+      setBusy(true); setError("");
+      const patch = mode === "delete"
+        ? { status: "not_a_shot", rally_outcome: null, serving_team: null, nvz_us: null, nvz_them: null }
+        : { rally_outcome: "ongoing", serving_team: null, nvz_us: null, nvz_them: null };
+      try {
+        await reviewApi(`shot_reviews?session_id=eq.${session.id}&frame=eq.${target.frame}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+        });
+        setReviews(rv => ({ ...rv, [target.frame]: { ...rv[target.frame], ...patch } }));
+        const nextList = ends.filter(r => r.frame !== target.frame);
+        const i = Math.min(which === "prev" ? rallyIdx - 1 : rallyIdx, Math.max(0, nextList.length - 1));
+        const r = nextList[i];
+        setRallyDraft(r ? { serving_team: r.serving_team || null, nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null,
+          rally_outcome: toHitterOutcome(r.rally_outcome, r.player_role) } : {});
+        setRallyIdx(i);
+      } catch (e) { setError(e.message); }
+      setBusy(false);
+    };
     const roleLabel = cur ? (REVIEW_ROLES.find(r => r.id === cur.player_role) || {}).label : "";
     return (
       <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
@@ -10488,6 +10517,22 @@ function ShotReviewTool() {
                 {slow ? "Slow-mo on" : "Slow-mo off"}
               </button>
             </div>
+            {looksDup && (
+              <div style={{ padding: "10px 12px", borderRadius: 10, background: C.amberL, border: `1.5px solid ${C.amber}`,
+                marginBottom: 14, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+                  <PiIcon name="alert" size={18} color={C.amber} stroke={2} />
+                  <span>This looks like the <strong>same rally as the one before</strong> — that one ended only
+                    {" "}{gap.toFixed(1)}s earlier ({prevRole} hit {prev.shot_type || "a shot"} for {prevOut === "winner" ? "a winner" : prevOut === "forced" ? "a forced error" : "an unforced error"}).
+                    Keep one rally ending and fix the other.</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                  <button disabled={busy} onClick={() => fixNotEnd("continue", "prev")} style={{ ...ghostBtn, fontSize: 12, padding: "8px 6px" }}>Earlier shot didn't end it</button>
+                  <button disabled={busy} onClick={() => fixNotEnd("continue", "cur")} style={{ ...ghostBtn, fontSize: 12, padding: "8px 6px" }}>This shot didn't end it</button>
+                  <button disabled={busy} onClick={() => fixNotEnd("delete", "cur")} style={{ ...ghostBtn, fontSize: 12, padding: "8px 6px" }}>Same shot twice — remove this one</button>
+                </div>
+              </div>
+            )}
             <ReviewSection title={`How did ${roleLabel === "Me" ? "my" : roleLabel + "'s"} last shot end the rally?`}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
                 {REVIEW_OUTCOME.filter(o => o.id !== "ongoing").map(o => (
@@ -10501,6 +10546,13 @@ function ShotReviewTool() {
               us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
               short={curInfo.short} length={curInfo.length}
               onChange={(k, v) => setRallyDraft(d => ({ ...d, [k]: v }))} />
+            {!looksDup && (
+              <div style={{ textAlign: "right", marginBottom: 10 }}>
+                <button disabled={busy} onClick={() => fixNotEnd("continue")} style={{ ...linkBtn, color: C.textMid }}>
+                  This shot didn't actually end a rally
+                </button>
+              </div>
+            )}
             {errorBox}
             <button onClick={saveRally} disabled={busy || !curReady}
               style={{ ...btn(curReady ? C.pickle : C.border), width: "100%" }}>
