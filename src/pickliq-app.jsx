@@ -9070,33 +9070,41 @@ const teamOf = (role) => (role === "me" || role === "partner") ? "us" : (role ==
 
 // Who served the rally that ends at `frame`: the first Serve logged after the previous rally ended.
 // `self` is the rally-ending shot itself (it can be the serve, e.g. a missed serve).
-function deriveServer(reviewsMap, frame, self) {
+// A rally only counts toward kitchen arrival if it lasted long enough for the serving team to get in.
+// Rallies ending on the serve, return, or 3rd shot (aces, faults, return errors, 3rd-shot winners) are excluded.
+const NVZ_MIN_SHOTS = 4;
+function rallyInfo(reviewsMap, frame, self) {
   const rows = Object.values(reviewsMap || {}).filter(r => r && r.status === "reviewed" && r.frame < frame)
     .sort((a, b) => a.frame - b.frame);
-  let server = null;
+  let server = null, length = 0;
   rows.forEach(r => {
+    length++;
     if (r.shot_type === "Serve" && server === null) server = teamOf(r.player_role);
-    if (isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role))) server = null;
+    if (isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role))) { server = null; length = 0; }
   });
+  length++; // the rally-ending shot itself
   if (server === null && self && self.shot_type === "Serve") server = teamOf(self.player_role);
-  return server;
+  return { server, length, short: length < NVZ_MIN_SHOTS };
 }
+function deriveServer(reviewsMap, frame, self) { return rallyInfo(reviewsMap, frame, self).server; }
+const rallyIsShort = (reviewsMap, frame, self) => rallyInfo(reviewsMap, frame, self).short;
 const serverOf = (reviewsMap, r) => (r && r.serving_team) || deriveServer(reviewsMap, r.frame, r);
 // A rally counts as tagged once the serving team's kitchen answer is in
 const rallyTagged = (reviewsMap, r) => {
+  if (rallyIsShort(reviewsMap, r.frame, r)) return true; // nothing to answer for short rallies
   const sv = serverOf(reviewsMap, r);
   return sv === "us" ? !!r.nvz_us : sv === "them" ? !!r.nvz_them : false;
 };
 // What gets saved on a rally-ending shot: only the serving team's answer
-const nvzFields = (d, server, isEnd) => ({
+const nvzFields = (d, server, isEnd, short) => ({
   serving_team: isEnd ? (server || null) : null,
-  nvz_us:   isEnd && server === "us"   ? (d.nvz_us || null)   : null,
-  nvz_them: isEnd && server === "them" ? (d.nvz_them || null) : null,
+  nvz_us:   isEnd && !short && server === "us"   ? (d.nvz_us || null)   : null,
+  nvz_them: isEnd && !short && server === "them" ? (d.nvz_them || null) : null,
 });
 
 // Kitchen arrival is only asked for the SERVING team — the returning team almost always gets in,
 // so the meaningful question is whether the serving team fought their way to the kitchen.
-function NvzRows({ singles, server, derived, us, them, onChange }) {
+function NvzRows({ singles, server, derived, us, them, onChange, short, length }) {
   const opts = singles ? NVZ_SINGLES : NVZ_DOUBLES;
   const teamOpts = singles
     ? [{ id:"us", label:"I served" }, { id:"them", label:"Opponent served" }]
@@ -9115,7 +9123,13 @@ function NvzRows({ singles, server, derived, us, them, onChange }) {
         {teamOpts.map(o => <ReviewChip key={o.id} small color={C.navy} active={server === o.id}
           onClick={() => onChange("serving_team", o.id)}>{o.label}</ReviewChip>)}
       </div>
-      {server && <>
+      {short && (
+        <div style={{ fontSize:12, color:C.textMid, lineHeight:1.5, marginTop: server ? 0 : 10 }}>
+          This rally ended on shot {length} — too early for the serving team to reach the kitchen, so it
+          doesn't count toward kitchen arrival. Nothing to answer here.
+        </div>
+      )}
+      {server && !short && <>
         <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>{q}</div>
         <div style={{ display:"grid", gridTemplateColumns:`repeat(${opts.length},minmax(0,1fr))`, gap:6 }}>
           {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={val === o.id}
@@ -9134,8 +9148,10 @@ function computeMatchMetrics(reviewsMap) {
   let srvTotal = 0, srvNeut = 0, myErrors = 0, rallies = 0, usWon = 0;
   let usServe = 0, usServeWon = 0, themServe = 0, themServeWon = 0, noServer = 0;
   let usTagged = 0, usArr = 0, usKitchenWon = 0, themTagged = 0, themArr = 0, themKitchenWon = 0;
-  let server = null;
+  let usMissing = 0, themMissing = 0;
+  let server = null, rallyLen = 0, shortRallies = 0;
   rows.forEach(r => {
+    rallyLen++;
     if (r.player_role === "me" && (r.shot_type === "Serve" || r.shot_type === "Return of Serve") && r.hit_quality) {
       srvTotal++;
       if (r.hit_quality !== "negative") srvNeut++;
@@ -9149,20 +9165,24 @@ function computeMatchMetrics(reviewsMap) {
     if (weWon) usWon++;
     if (r.player_role === "me" && out === "error") myErrors++;
     const sv = r.serving_team || server;
+    const short = rallyLen < NVZ_MIN_SHOTS;
+    if (short) shortRallies++;
     if (sv === "us") {
       usServe++; if (weWon) usServeWon++;
-      if (r.nvz_us) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
+      if (r.nvz_us && !short) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
     } else if (sv === "them") {
       themServe++; if (!weWon) themServeWon++;
-      if (r.nvz_them) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
-    } else noServer++;
-    server = null;
+      if (r.nvz_them && !short) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+    } else if (!short) noServer++;
+    if (!short && sv === "us" && !r.nvz_us) usMissing++;
+    if (!short && sv === "them" && !r.nvz_them) themMissing++;
+    server = null; rallyLen = 0;
   });
   const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null;
   return {
     rallies, usWon, myErrors, srvTotal, srvNeut, serveNeut: pct(srvNeut, srvTotal),
     usServe, usServeWon, themServe, themServeWon, noServer,
-    usTagged, themTagged, untagged: (usServe - usTagged) + (themServe - themTagged) + noServer,
+    usTagged, themTagged, shortRallies, untagged: usMissing + themMissing + noServer,
     usArrival: pct(usArr, usTagged), usNvzWin: pct(usKitchenWon, usArr),
     themArrival: pct(themArr, themTagged), themNvzWin: pct(themKitchenWon, themArr),
   };
@@ -9798,7 +9818,7 @@ function ShotReviewTool() {
         shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
         rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
         ...nvzFields(scratchDraft, scratchDraft.serving_team || deriveServer(reviews, scratchDraft.frame, scratchDraft),
-          isRallyEnd(scratchDraft.rally_outcome)),
+          isRallyEnd(scratchDraft.rally_outcome), rallyIsShort(reviews, scratchDraft.frame, scratchDraft)),
         updated_at: new Date().toISOString(),
       };
       await reviewApi("shot_reviews?on_conflict=session_id,frame", {
@@ -9883,7 +9903,8 @@ function ShotReviewTool() {
       hit_quality: status === "reviewed" ? draft.hit_quality : null,
       rally_outcome: status === "reviewed" ? draft.rally_outcome : null,
       ...nvzFields(draft, draft.serving_team || deriveServer(reviews, shot.frame, { ...draft, frame: shot.frame }),
-        status === "reviewed" && isRallyEnd(draft.rally_outcome)),
+        status === "reviewed" && isRallyEnd(draft.rally_outcome),
+        rallyIsShort(reviews, shot.frame, { ...draft, frame: shot.frame })),
       status, updated_at: new Date().toISOString(),
     };
     try {
@@ -10164,6 +10185,8 @@ function ShotReviewTool() {
                 server={scratchDraft.serving_team || deriveServer(reviews, scratchDraft.frame, scratchDraft)}
                 derived={!scratchDraft.serving_team && !!deriveServer(reviews, scratchDraft.frame, scratchDraft)}
                 us={scratchDraft.nvz_us} them={scratchDraft.nvz_them}
+                short={rallyIsShort(reviews, scratchDraft.frame, scratchDraft)}
+                length={rallyInfo(reviews, scratchDraft.frame, scratchDraft).length}
                 onChange={(k, v) => setScratchDraft(d => ({ ...d, [k]: v }))} />
             )}
 
@@ -10287,6 +10310,11 @@ function ShotReviewTool() {
             <div>Won once there — us <strong>{p.metrics.usNvzWin != null ? p.metrics.usNvzWin + "%" : "—"}</strong>,
               them <strong>{p.metrics.themNvzWin != null ? p.metrics.themNvzWin + "%" : "—"}</strong></div>
             <div>My errors: <strong>{p.metrics.myErrors}</strong></div>
+            {p.metrics.shortRallies > 0 && (
+              <div style={{ fontSize: 12, color: C.textMid }}>
+                {p.metrics.shortRallies} rallies ended by the 3rd shot and don't count toward kitchen numbers.
+              </div>
+            )}
             {p.metrics.untagged > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: C.amber }}>
                 ⚠️ {p.metrics.untagged} of {p.metrics.rallies} rallies are missing the serving team or its kitchen
@@ -10382,10 +10410,12 @@ function ShotReviewTool() {
       setRallyDraft(r ? { serving_team: r.serving_team || null, nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null } : {});
       if (r) setTimeout(() => playRally(r), 150);
     };
-    const curDerived = cur ? deriveServer(reviews, cur.frame, cur) : null;
+    const curInfo = cur ? rallyInfo(reviews, cur.frame, cur) : { server: null, length: 0, short: false };
+    const curDerived = curInfo.server;
     const curServer = rallyDraft.serving_team || curDerived;
-    const curFields = nvzFields(rallyDraft, curServer, true);
-    const curReady = curServer === "us" ? !!rallyDraft.nvz_us : curServer === "them" ? !!rallyDraft.nvz_them : false;
+    const curFields = nvzFields(rallyDraft, curServer, true, curInfo.short);
+    const curReady = curInfo.short ? true
+      : curServer === "us" ? !!rallyDraft.nvz_us : curServer === "them" ? !!rallyDraft.nvz_them : false;
     const saveRally = async () => {
       if (!cur || !curReady) return;
       setBusy(true); setError("");
@@ -10441,6 +10471,7 @@ function ShotReviewTool() {
             <NvzRows singles={session?.match_type === "singles"} server={curServer}
               derived={!rallyDraft.serving_team && !!curDerived}
               us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
+              short={curInfo.short} length={curInfo.length}
               onChange={(k, v) => setRallyDraft(d => ({ ...d, [k]: v }))} />
             {errorBox}
             <button onClick={saveRally} disabled={busy || !curReady}
@@ -10656,6 +10687,8 @@ function ShotReviewTool() {
           server={draft.serving_team || deriveServer(reviews, shot?.frame, { ...draft, frame: shot?.frame })}
           derived={!draft.serving_team && !!deriveServer(reviews, shot?.frame, { ...draft, frame: shot?.frame })}
           us={draft.nvz_us} them={draft.nvz_them}
+          short={rallyIsShort(reviews, shot?.frame, { ...draft, frame: shot?.frame })}
+          length={rallyInfo(reviews, shot?.frame, { ...draft, frame: shot?.frame }).length}
           onChange={(k, v) => setDraft(d => ({ ...d, [k]: v }))} />
       )}
 
