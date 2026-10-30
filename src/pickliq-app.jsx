@@ -172,12 +172,11 @@ const useIsMobile = () => {
 };
 
 const C = {
-  pageBg:"#F4F7F4", cardBg:"#FFFFFF", darkBg:"#0A1628", darkCard:"#111E35", darkBorder:"#1E2D45",
-  pickle:"#C5E84A", pickleD:"#A8CC2E", navy:"#0A1628", navyMid:"#162440",
-  blue:"#3B6FE8", blueL:"#EEF3FD", mint:"#2DD4A0", mintL:"#E8FAF5",
-  amber:"#F5A623", amberL:"#FEF6E8", rose:"#F05A7A", roseL:"#FEF0F3",
-  purple:"#9B5FE8", purpleL:"#F3EEFE",
-  text:"#111827", textMid:"#4B5563", textLight:"#9CA3AF", border:"#E5E9F0",
+  pageBg:"#F3F0E6", cardBg:"#FBF9F3", darkBg:"#1B3A26", darkCard:"#24452F", darkBorder:"#34553F",
+  pickle:"#C9DB74", pickleD:"#B2C75B", navy:"#1B3A26", navyMid:"#2A4D36", sage:"#B4C2A6",
+  blue:"#2F6343", blueL:"#E4EDE2", mint:"#3C7A4A", mintL:"#E7F0DA", amber:"#A9782A", amberL:"#F4EAD5",
+  rose:"#B4473C", roseL:"#F7E3DE", purple:"#6F8562", purpleL:"#E9EEE1",
+  text:"#1D2B22", textMid:"#56625A", textLight:"#8D968F", border:"#DFDACB",
 };
 
 const STYLES = `
@@ -237,60 +236,60 @@ const STYLES = `
 // ── SHOT DATA: wins = points won (you finished the rally); misses = points lost (you finished the rally unsuccessfully) ──
 // Both tracked as raw counts (not %). winHistory/missHistory = 4-week weekly counts.
 const SHOT_CATS = [
-  { id:"4th",     label:"4th Shot",   color:C.blue,   icon:"🎯", shots:[
+  { id:"4th",     label:"4th Shot",   color:C.blue,   icon:"", shots:[
     { name:"4th Shot Backhand", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Stay low through contact, push don't flick" },
     { name:"4th Shot Forehand", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Most reliable — keep building on this" }]},
-  { id:"counter", label:"Counter",    color:C.purple, icon:"⚡", shots:[
+  { id:"counter", label:"Counter",    color:C.purple, icon:"", shots:[
     { name:"Counter BH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Too much arm — add body rotation" },
     { name:"Counter FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Improving — keep paddle up early" }]},
-  { id:"dink",    label:"Dink",       color:C.mint,   icon:"🏓", shots:[
+  { id:"dink",    label:"Dink",       color:C.mint,   icon:"", shots:[
     { name:"Dink BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Elite rate — maintain NVZ patience" },
     { name:"Dink FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Your best shot. Use it to set up attacks" }]},
-  { id:"drive",   label:"Drive",      color:C.amber,  icon:"💥", shots:[
+  { id:"drive",   label:"Drive",      color:C.amber,  icon:"", shots:[
     { name:"Drive BH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"High error rate — only drive when opponent is out of position" },
     { name:"Drive FH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Down-the-line drives going wide — aim 2ft inside the line" }]},
-  { id:"drop",    label:"Drop",       color:C.blue,   icon:"🌊", shots:[
+  { id:"drop",    label:"Drop",       color:C.blue,   icon:"", shots:[
     { name:"Drop BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Big improvement! Land in the first 3ft past the NVZ line" },
     { name:"Drop FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"3rd shot drop becoming a real weapon" }]},
-  { id:"lob",     label:"Lob",        color:C.purple, icon:"🌙", shots:[
+  { id:"lob",     label:"Lob",        color:C.purple, icon:"", shots:[
     { name:"Lob BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Low %. Use only when opponents crowd the NVZ" },
     { name:"Lob FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Marginal improvement — be selective" }]},
-  { id:"reset",   label:"Reset",      color:C.mint,   icon:"🔄", shots:[
+  { id:"reset",   label:"Reset",      color:C.mint,   icon:"", shots:[
     { name:"Reset BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Priority drill: reset BH from mid-court pressure" },
     { name:"Reset FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands developing — good progress" }]},
-  { id:"scramble",label:"Scramble",   color:C.rose,   icon:"🏃", shots:[
+  { id:"scramble",label:"Scramble",   color:C.rose,   icon:"", shots:[
     { name:"Scramble BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Prioritize getting ball back over winning the point" },
     { name:"Scramble FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Great recovery tool — use topspin to get depth" }]},
-  { id:"serve",   label:"Serve",      color:C.amber,  icon:"🎾", shots:[
+  { id:"serve",   label:"Serve",      color:C.amber,  icon:"", shots:[
     { name:"Serve",     attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Solid. Target deep to backhand corner more" }]},
-  { id:"return",  label:"Return",     color:C.mint,   icon:"↩️", shots:[
+  { id:"return",  label:"Return",     color:C.mint,   icon:"", shots:[
     { name:"Return BH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Return quality dropping — get deeper, aim for feet" },
     { name:"Return FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Good rate. Depth is priority over power" }]},
-  { id:"erne",    label:"Erne",       color:C.rose,   icon:"🌪️", shots:[
+  { id:"erne",    label:"Erne",       color:C.rose,   icon:"", shots:[
     { name:"Erne BH",   attempts:0,  misses:0,  wins:0,  missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Low attempts but high reward — drill the jump timing off the kitchen corner" },
     { name:"Erne FH",   attempts:0,  misses:0,  wins:0,  missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Your better side. Disguise the approach or opponent will lob" }]},
-  { id:"atp",     label:"ATP",        color:C.blue,   icon:"🔄", shots:[
+  { id:"atp",     label:"ATP",        color:C.blue,   icon:"", shots:[
     { name:"ATP BH",    attempts:0,  misses:0,  wins:0,  missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"High-risk, high-reward. Only attempt when ball is clearly beyond the post" },
     { name:"ATP FH",    attempts:0,  misses:0,  wins:0,  missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Better trend — commit fully or the ball clips the net" }]},
-  { id:"slam",    label:"Slam",       color:C.rose,   icon:"🔥", shots:[
+  { id:"slam",    label:"Slam",       color:C.rose,   icon:"", shots:[
     { name:"Slam BH", attempts:0,  misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Very low %. Only attempt above shoulder height" },
     { name:"Slam FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Improving — weight forward at contact" }]},
-  { id:"speedup", label:"Speed Up",   color:C.blue,   icon:"⚡", shots:[
+  { id:"speedup", label:"Speed Up",   color:C.blue,   icon:"", shots:[
     { name:"Speed Up BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Only speed up when you'd win 70%+ — Ben Johns principle" },
     { name:"Speed Up FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Better timing — still pick spots carefully" }]},
-  { id:"volley",  label:"Volley",     color:C.purple, icon:"🏐", shots:[
+  { id:"volley",  label:"Volley",     color:C.purple, icon:"", shots:[
     { name:"Volley BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Good trend. Compact swing — block don't swing" },
     { name:"Volley FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Work on volley-to-dink transitions" }]},
-  { id:"3rddrop", label:"3rd Shot Drop",color:C.blue,   icon:"🌊", shots:[
+  { id:"3rddrop", label:"3rd Shot Drop",color:C.blue,   icon:"", shots:[
     { name:"3rd Shot Drop BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Land in the first 3ft past the NVZ line off the serving team's 3rd ball" },
     { name:"3rd Shot Drop FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands, low to high through contact" }]},
-  { id:"3rddrive",label:"3rd Shot Drive",color:C.amber, icon:"💥", shots:[
+  { id:"3rddrive",label:"3rd Shot Drive",color:C.amber, icon:"", shots:[
     { name:"3rd Shot Drive BH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Only drive when opponent is out of position" },
     { name:"3rd Shot Drive FH", attempts:0, misses:0, wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Aim low over the net, 2ft inside the line" }]},
-  { id:"block",   label:"Block",      color:C.mint,   icon:"🛡️", shots:[
+  { id:"block",   label:"Block",      color:C.mint,   icon:"", shots:[
     { name:"Block BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Minimal backswing, let their pace do the work" },
     { name:"Block FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Soft hands, redirect don't resist" }]},
-  { id:"punchvolley",label:"Punch Volley",color:C.purple,icon:"👊",shots:[
+  { id:"punchvolley",label:"Punch Volley",color:C.purple,icon:"",shots:[
     { name:"Punch Volley BH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Short, firm punch — no backswing" },
     { name:"Punch Volley FH", attempts:0, misses:0,  wins:0, missHistory:[0,0,0,0], winHistory:[0,0,0,0], tip:"Finish at net with compact paddle speed" }]},
 ];
@@ -446,14 +445,14 @@ const InfoTip = ({ text, position="top" }) => {
       <span style={{
         display:"inline-flex", alignItems:"center", justifyContent:"center",
         width:15, height:15, borderRadius:"50%",
-        background:"#CBD5E1", color:"white",
+        background:"#D6D9CC", color:"white",
         fontSize:9, fontWeight:800, cursor:"pointer",
         fontFamily:"'Outfit'", letterSpacing:0, lineHeight:1,
         flexShrink:0, userSelect:"none",
         transition:"background 0.15s",
       }}
         onMouseEnter={e=>e.currentTarget.style.background=C.blue}
-        onMouseLeave={e=>e.currentTarget.style.background="#CBD5E1"}>
+        onMouseLeave={e=>e.currentTarget.style.background="#D6D9CC"}>
         i
       </span>
       {show && (
@@ -705,12 +704,12 @@ const UploadModal = ({onClose})=>{
           <>
             <div onClick={go} style={{border:`2px dashed ${C.border}`,borderRadius:14,
               padding:"44px 24px",textAlign:"center",cursor:"pointer",background:C.pageBg}}>
-              <div style={{fontSize:40,marginBottom:10}}>🎾</div>
+              
               <p style={{color:C.text,fontSize:14,marginBottom:6,fontWeight:500}}>Drop your match video here</p>
               <p style={{color:C.textLight,fontSize:12}}>MP4, MOV · up to 4GB · live or recorded</p>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:14}}>
-              {["📱 Record Live","☁️ Import from Cloud","📡 From Playsight Court","📂 Browse Files"].map(o=>(
+              {["Record Live","Import from Cloud","From Playsight Court","Browse Files"].map(o=>(
                 <button key={o} onClick={go} style={{background:C.pageBg,border:`1px solid ${C.border}`,
                   borderRadius:10,color:C.textMid,fontSize:12,padding:"11px",cursor:"pointer",fontFamily:"'Outfit'"}}>{o}</button>
               ))}
@@ -732,86 +731,91 @@ const UploadModal = ({onClose})=>{
   );
 };
 
+
+// ── Line icons (replace all emoji) ──────────────────────────────────────────
+function PiIcon({ name, size = 20, color = "currentColor", stroke = 1.8 }) {
+  const dot = (cx, cy) => <circle cx={cx} cy={cy} r="1.3" fill={color} stroke="none" />;
+  const P = {
+    home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5.5 9v12h4.5v-6h4v6h4.5V9" /></>,
+    match: <><circle cx="12" cy="12" r="8.5" />{dot(9, 9)}{dot(15, 9.5)}{dot(10, 14.5)}{dot(14.5, 15)}</>,
+    stats: <><path d="M5 20v-7" /><path d="M12 20V5" /><path d="M19 20v-10" /><path d="M3 20h18" /></>,
+    people: <><circle cx="9" cy="8" r="3.3" /><path d="M2.8 20c0-3.5 2.8-5.8 6.2-5.8s6.2 2.3 6.2 5.8" /><path d="M15.5 4.8a3.3 3.3 0 0 1 0 6.4" /><path d="M21.2 20c0-2.6-1.4-4.6-3.6-5.4" /></>,
+    train: <><path d="M6.5 6.5v11" /><path d="M17.5 6.5v11" /><path d="M3.5 9.5v5" /><path d="M20.5 9.5v5" /><path d="M6.5 12h11" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8" /></>,
+    admin: <><path d="M12 3l7.5 3v5.5c0 4.4-3.1 7.9-7.5 9.5-4.4-1.6-7.5-5.1-7.5-9.5V6z" /><path d="M9 12l2 2 4-4.5" /></>,
+    signout: <><path d="M14.5 4H19v16h-4.5" /><path d="M10 8l-4 4 4 4" /><path d="M6 12h10" /></>,
+    trophy: <><path d="M8 4h8v5a4 4 0 0 1-8 0z" /><path d="M8 6H5a3 3 0 0 0 3.2 4M16 6h3a3 3 0 0 1-3.2 4" /><path d="M12 13v4M9 20.5h6M10 17h4" /></>,
+    alert: <><path d="M12 3.8 2.8 20h18.4z" /><path d="M12 10v4.5" /><path d="M12 17.3v.2" /></>,
+    check: <><path d="M5 12.5l4.5 4.5L19 7.5" /></>,
+    help: <><circle cx="12" cy="12" r="8.5" /><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" /><path d="M12 17v.2" /></>,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={stroke}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      {P[name] || null}
+    </svg>
+  );
+}
+// Small marker for insight lines: filled green check for good news, red triangle for a problem
+const InsightMark = ({ good }) => good ? (
+  <span style={{ display: "inline-flex", width: 18, height: 18, borderRadius: 4, background: C.mint, alignItems: "center", justifyContent: "center" }}>
+    <PiIcon name="check" size={13} color={C.cardBg} stroke={2.6} />
+  </span>
+) : <PiIcon name="alert" size={18} color={C.rose} stroke={2} />;
+// Faint court-line drawing used as a background motif
+const CourtLines = ({ height = 170 }) => (
+  <svg viewBox="0 0 400 170" preserveAspectRatio="none" aria-hidden="true"
+    style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height, pointerEvents: "none", zIndex: 0 }}>
+    <g fill="none" stroke={C.sage} strokeWidth="1.4" opacity="0.7">
+      <path d="M0 50H110V170" /><path d="M0 105H110" /><path d="M110 120H400" /><path d="M255 120V170" />
+      <path d="M318 0L372 120" /><path d="M340 0L400 92" />
+    </g>
+  </svg>
+);
+
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
 const NAV=[
-  {id:"dashboard",label:"Home",short:"🏠"},
-  {id:"matches",label:"Matches",short:"Match"},
-  {id:"stats",label:"Stats",short:"Stats"},
-  {id:"people",label:"People",short:"People"},
-  {id:"train",label:"Train",short:"Train"},
+  {id:"dashboard",label:"Home",icon:"home"},
+  {id:"matches",label:"Match",icon:"match"},
+  {id:"stats",label:"Stats",icon:"stats"},
+  {id:"people",label:"People",icon:"people"},
+  {id:"train",label:"Train",icon:"train"},
 ];
 // Admin-only nav item — appended dynamically in TopNav
-const ADMIN_NAV = {id:"admin",label:"⚙️ Admin",short:"⚙️"};
+const ADMIN_NAV = {id:"admin",label:"Admin",short:""};
 
 const TopNav=({page,setPage,onSignOut,authUser})=>{
   const isMobile = useIsMobile();
+  const isAdmin = authUser?.id===ADMIN_USER_ID;
+  const tabs = [...NAV, {id:"profile",label:"Settings",icon:"settings"}];
+  const activeOf = (id) => page===id
+    || (id==="matches" && (page==="matches:partners"||page==="matches_review"))
+    || (id==="train" && (page==="drills"||page==="coach"))
+    || (id==="stats" && page==="shots");
+  const iconBtn = (on) => ({background:on?C.pickle:"transparent",border:"none",borderRadius:9,padding:6,cursor:"pointer",color:C.navy,display:"flex"});
   return(
-    <div style={{background:C.navy,position:"sticky",top:0,zIndex:100,
-      boxShadow:"0 2px 12px rgba(0,0,0,0.15)",width:"100%"}}>
-      <div style={{width:"100%",padding:isMobile?"0 8px":"0 16px",boxSizing:"border-box",
-        display:"flex",alignItems:"center",height:52,gap:0}}>
-
-        {/* Logo — icon only on mobile to save space */}
-        {isMobile ? (
-          <div style={{display:"flex",alignItems:"center",flexShrink:0,marginRight:4}}>
-            <svg width="26" height="26" viewBox="0 0 22 22">
-              <circle cx="11" cy="11" r="9" fill={C.pickle}/>
-              {[[11,7.2],[7.7,13.2],[14.3,13.2]].map(([hx,hy],i)=>(
-                <circle key={i} cx={hx} cy={hy} r={1.5} fill={C.navy}/>
-              ))}
-            </svg>
+    <div style={{background:C.pageBg,position:"sticky",top:0,zIndex:100,borderBottom:`1px solid ${C.border}`,width:"100%"}}>
+      <div style={{maxWidth:900,margin:"0 auto",padding:isMobile?"10px 14px 10px":"12px 28px 12px",boxSizing:"border-box"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontFamily:"'Outfit'",fontWeight:800,fontSize:22,color:C.navy,letterSpacing:"-0.01em"}}>PickleIntel</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {isAdmin&&<button onClick={()=>setPage("admin")} aria-label="Admin" title="Admin" style={iconBtn(page==="admin")}><PiIcon name="admin" size={21}/></button>}
+            <button onClick={onSignOut} aria-label="Sign out" title="Sign out" style={iconBtn(false)}><PiIcon name="signout" size={21}/></button>
           </div>
-        ) : (
-          <Logo/>
-        )}
-
-        {/* Nav — fills remaining space, all 5 tabs visible on mobile */}
-        <div style={{display:"flex",alignItems:"center",
-          flex:1,gap:isMobile?0:2,
-          marginLeft:isMobile?2:12,
-          justifyContent:isMobile?"space-between":"flex-start"}}>
-          {[...NAV, ...(authUser?.id===ADMIN_USER_ID?[ADMIN_NAV]:[])].map(n=>{
-            const a=page===n.id || (n.id==="matches" && page==="matches:partners") || (n.id==="matches" && page==="matches_review") || (n.id==="train" && (page==="drills"||page==="coach")) || (n.id==="stats" && page==="shots");
-            return(
-              <button key={n.id} className="nav-btn" onClick={()=>setPage(n.id==="matches"?"matches":n.id)} style={{
-                background:a?C.pickle:"transparent",
-                padding:isMobile?"6px 8px":"7px 14px",
-                borderRadius:8,
-                fontSize:isMobile?11:13,
-                fontWeight:a?700:500,
-                color:a?C.navy:"#94A3B8",
-                letterSpacing:0,
-                whiteSpace:"nowrap",
-                flex:isMobile?"1":"unset",
-                textAlign:"center",
-              }}>{isMobile?n.short:n.label}</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${tabs.length},minmax(0,1fr))`,gap:3,
+          background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:4}}>
+          {tabs.map(t=>{
+            const on = activeOf(t.id);
+            return (
+              <button key={t.id} onClick={()=>setPage(t.id)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+                padding:"7px 0 6px",border:"none",borderRadius:10,cursor:"pointer",background:on?C.pickle:"transparent",
+                color:C.navy,fontFamily:"'Outfit'",fontWeight:on?700:500,fontSize:isMobile?10.5:12,minWidth:0}}>
+                <PiIcon name={t.icon} size={19} stroke={on?2.1:1.7}/>
+                <span style={{whiteSpace:"nowrap"}}>{t.label}</span>
+              </button>
             );
           })}
-        </div>
-
-        {/* Avatar + sign out */}
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:8}}>
-          {/* User avatar with initial */}
-          <div style={{width:34,height:34,borderRadius:"50%",
-            background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            fontFamily:"'Bebas Neue'",fontSize:14,color:C.navy,fontWeight:700,
-            title:authUser?.email,cursor:"pointer",flexShrink:0,
-            boxShadow:page==="profile"?`0 0 0 2px ${C.navy}, 0 0 0 4px ${C.pickle}`:"none"}} onClick={()=>setPage("profile")}>
-            {(authUser?.email||"?")[0].toUpperCase()}
-          </div>
-          {/* Sign out button */}
-          {!isMobile&&(
-            <button onClick={onSignOut} style={{
-              background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",
-              borderRadius:8,padding:"6px 12px",cursor:"pointer",
-              fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:"#94A3B8",
-              transition:"all 0.15s"}}
-              onMouseEnter={e=>e.currentTarget.style.color="white"}
-              onMouseLeave={e=>e.currentTarget.style.color="#94A3B8"}>
-              Sign Out
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -822,7 +826,7 @@ const TopNav=({page,setPage,onSignOut,authUser})=>{
 // Single source of truth — used by both Dashboard and Profile
 const IDENTITY_STYLES = {
   Resetter: {
-    icon:"🔄", color:"#34D399", colorL:"#F0FDF4",
+    icon:"", color:"#34D399", colorL:"#F0FDF4",
     tagline:"Patient · NVZ-first · Outlast the opponent",
     description:"You win by controlling the kitchen, minimising errors, and forcing opponents into mistakes. Your 3rd/4th shot drops are a primary weapon — you get to the NVZ consistently and let the opponent self-destruct.",
     strengths:["Elite NVZ arrival rate","Low unforced errors","Strong reset game under pressure","Makes opponents impatient"],
@@ -831,7 +835,7 @@ const IDENTITY_STYLES = {
     strategy:"Stay patient at the kitchen. Your goal every rally is to arrive at the NVZ together and out-dink the opponent. Only speed up when the ball is above the net tape and you have a clear angle.",
   },
   Driver: {
-    icon:"💥", color:"#60A5FA", colorL:"#EFF6FF",
+    icon:"", color:"#60A5FA", colorL:"#EFF6FF",
     tagline:"Aggressive · Transition-focused · Apply pressure",
     description:"You impose pace from the baseline and transition zone. Your drive keeps opponents pinned back and disrupts their kitchen game. You prefer tempo over patience.",
     strengths:["Strong baseline driving game","Effective in transition","Controls rally pace","Puts opponents on defence early"],
@@ -840,7 +844,7 @@ const IDENTITY_STYLES = {
     strategy:"Push pace early, especially on the 4th shot. Use your drive to force weak pop-ups, then attack the high ball. Mix in drops occasionally to keep opponents guessing.",
   },
   Attacker: {
-    icon:"⚡", color:"#F87171", colorL:"#FFF5F5",
+    icon:"", color:"#F87171", colorL:"#FFF5F5",
     tagline:"Explosive · Speed-up specialist · Win at the net",
     description:"You're a net threat — your speed-ups and slams win rallies outright. You have elite attack shot selection and play best when dictating at the NVZ.",
     strengths:["High attack shot win rate","Explosive hands at the kitchen","Strong at ending rallies","Creates fear in opponents"],
@@ -849,7 +853,7 @@ const IDENTITY_STYLES = {
     strategy:"Wait for the high ball, then commit. Your best plays come from setting up the attack with a disciplined dink pattern, then finishing with a speed-up or slam when the ball is attackable.",
   },
   Balanced: {
-    icon:"⚖️", color:"#A78BFA", colorL:"#F5F3FF",
+    icon:"", color:"#A78BFA", colorL:"#F5F3FF",
     tagline:"Versatile · Adaptable · Hard to read",
     description:"You have a well-rounded game without an obvious pattern opponents can exploit. You can reset, drive, or attack depending on what the match demands — making you an unpredictable and dangerous partner.",
     strengths:["No obvious weakness for opponents to target","Can adapt to any partner's style","Effective in multiple game situations","Strong all-court awareness"],
@@ -1061,7 +1065,7 @@ const Dashboard=({setPage})=>{
       {/* Header */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}>
         <div>
-          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>{dbMatches.length===0?`Welcome to PickleIntel 👋`:`Good morning, ${firstName} 👋`}</h1>
+          <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>{dbMatches.length===0?`Welcome to PickleIntel `:`Good morning, ${firstName} `}</h1>
           <p style={{color:C.textMid,fontSize:14,marginTop:3}}>{totalMatches===0?(dbMatches.length>0?"No matches of this type yet":"Log your first match to get started"):`${totalMatches} matches · ${wins}W ${totalMatches-wins}L`}</p>
         </div>
 
@@ -1158,9 +1162,9 @@ const Dashboard=({setPage})=>{
           <SectionLabelInline>Shot Summary</SectionLabelInline>
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10,marginTop:6}}>
             {[
-              {label:"🏆 Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.pos||topWeapon?.wins||0} positive`,   color:C.mint,  bg:C.mintL},
-              {label:"⚠️ Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.neg||topWeakness?.misses||0} negative`, color:C.rose,  bg:C.roseL},
-              {label:"📈 Most Improved", shot:mostImproved, metric:(()=>{
+              {label:"Top Weapon",    shot:topWeapon,    metric:`${topWeapon?.pos||topWeapon?.wins||0} positive`,   color:C.mint,  bg:C.mintL},
+              {label:"Weakest Shot",  shot:topWeakness,  metric:`${topWeakness?.neg||topWeakness?.misses||0} negative`, color:C.rose,  bg:C.roseL},
+              {label:"Most Improved", shot:mostImproved, metric:(()=>{
                 const h=mostImproved?.winHistory||[0,0,0,0];
                 const nonZero=h.filter(v=>v>0);
                 if(nonZero.length<2) return "Need 2+ sessions";
@@ -1187,7 +1191,7 @@ const Dashboard=({setPage})=>{
 
         {/* Priority Drills — shows pinned shots first, then data-driven weak shots */}
         <Card style={{padding:"16px 18px"}}>
-          <SectionLabelInline>🎯 Priority Drills</SectionLabelInline>
+          <SectionLabelInline>Priority Drills</SectionLabelInline>
           {(()=>{
             // Combine pinned shots + top 2 data-driven weak shots (Bayesian)
             const PRIOR = 10;
@@ -1216,7 +1220,7 @@ const Dashboard=({setPage})=>{
 
             if (allDrillItems.length === 0) return (
               <div style={{textAlign:"center",padding:"20px 8px"}}>
-                <div style={{fontSize:24,marginBottom:8}}>📌</div>
+                
                 <div style={{fontSize:12,color:C.textMid,marginBottom:4,fontWeight:600}}>No drills yet</div>
                 <div style={{fontSize:11,color:C.textLight,lineHeight:1.5}}>Log matches to get personalized drill recommendations, or pin shots from Shot Analytics.</div>
               </div>
@@ -1234,7 +1238,7 @@ const Dashboard=({setPage})=>{
                         <div>
                           <div style={{fontSize:12,fontWeight:700,color:C.text}}>{item.name}</div>
                           {item.source==="pinned"
-                            ? <div style={{fontSize:10,color:C.pickle,fontWeight:600}}>📌 Pinned focus shot</div>
+                            ? <div style={{fontSize:10,color:C.pickle,fontWeight:600}}>Pinned focus shot</div>
                             : <div style={{fontSize:10,color:C.rose}}>{item.negRate}% negative rate · data-driven</div>
                           }
                         </div>
@@ -1260,7 +1264,7 @@ const Dashboard=({setPage})=>{
         <Card style={{padding:"16px 18px"}}>
           {!lastMatch ? (
             <div style={{textAlign:"center",padding:"24px 8px"}}>
-              <div style={{fontSize:24,marginBottom:8}}>🎾</div>
+              
               <div style={{fontSize:12,color:C.textMid,fontWeight:600}}>No matches yet</div>
               <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Log your first match to see stats here</div>
             </div>
@@ -1335,7 +1339,7 @@ const Dashboard=({setPage})=>{
             </div>
           ) : (
             <div style={{textAlign:"center",padding:"24px 8px"}}>
-              <div style={{fontSize:24,marginBottom:8}}>👥</div>
+              
               <div style={{fontSize:12,color:C.textMid,fontWeight:600}}>No partners yet</div>
               <div style={{fontSize:11,color:C.textLight,marginTop:4}}>Partners build from your match history</div>
             </div>
@@ -1453,8 +1457,8 @@ const MiniShotLogger = ({ matchId, onSaved }) => {
         <div style={{fontSize:11,color:C.textMid,fontWeight:700,alignSelf:"center"}}>Log:</div>
         <div style={{fontSize:11,color:C.textMid,lineHeight:1.6,flex:1,background:`${C.blue}08`,
           border:`1px solid ${C.blue}20`,borderRadius:9,padding:"8px 12px"}}>
-          🎯 <strong>Shot Tracker</strong> — log pos/neu/neg per shot · 
-          🏁 <strong>Rally Ender</strong> — mark the final shot won/lost
+          <strong>Shot Tracker</strong> — log pos/neu/neg per shot · 
+          <strong>Rally Ender</strong> — mark the final shot won/lost
         </div>
       </div>
 
@@ -1463,7 +1467,7 @@ const MiniShotLogger = ({ matchId, onSaved }) => {
         {/* Shot Tracker */}
         <div style={{background:`${C.blue}06`,border:`1.5px solid ${C.blue}30`,borderRadius:12,
           padding:"10px 12px",maxHeight:380,overflowY:"auto"}}>
-          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>🎯 Shot Tracker</div>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>Shot Tracker</div>
           {SHOT_BUTTONS.map(cat=>(
             <div key={cat.cat} style={{marginBottom:10}}>
               <div style={{fontSize:8,fontWeight:700,color:cat.color,textTransform:"uppercase",
@@ -1502,7 +1506,7 @@ const MiniShotLogger = ({ matchId, onSaved }) => {
         {/* Rally Ender */}
         <div style={{background:`${C.mint}06`,border:`1.5px solid ${C.mint}30`,borderRadius:12,
           padding:"10px 12px",maxHeight:380,overflowY:"auto"}}>
-          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>🏁 Rally Ender</div>
+          <div style={{fontFamily:"'Bebas Neue'",fontSize:15,color:C.navy,marginBottom:8}}>Rally Ender</div>
           {SHOT_BUTTONS.map(cat=>(
             <div key={cat.cat} style={{marginBottom:10}}>
               <div style={{fontSize:8,fontWeight:700,color:cat.color,textTransform:"uppercase",
@@ -1588,8 +1592,8 @@ const MiniShotLogger = ({ matchId, onSaved }) => {
       {/* Summary + save */}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{flex:1,fontSize:12,color:C.textMid}}>
-          {shotTotal>0&&<span style={{marginRight:10}}>🎯 {shotTotal} shot outcomes</span>}
-          {rallyTotal>0&&<span>🏁 {rallyTotal} rally enders</span>}
+          {shotTotal>0&&<span style={{marginRight:10}}>{shotTotal} shot outcomes</span>}
+          {rallyTotal>0&&<span>{rallyTotal} rally enders</span>}
           {shotTotal===0&&rallyTotal===0&&<span style={{color:C.textLight}}>Log shots above then save</span>}
         </div>
         <button onClick={saveShots} disabled={saving||saved||(!shotTotal&&!rallyTotal&&!errors&&!nvzArrived)} style={{
@@ -1598,7 +1602,7 @@ const MiniShotLogger = ({ matchId, onSaved }) => {
           fontFamily:"'Outfit'",fontWeight:700,fontSize:14,color:C.navy,
           cursor:(saving||saved||(!shotTotal&&!rallyTotal&&!errors&&!nvzArrived))?"not-allowed":"pointer",
           transition:"all 0.2s"}}>
-          {saved?"✓ Saved!":saving?"Saving...":"💾 Save My Shots"}
+          {saved?"✓ Saved!":saving?"Saving...":"Save My Shots"}
         </button>
       </div>
     </div>
@@ -1628,7 +1632,7 @@ const TeamShotAnalytics = ({ partnerName, partnerUserId, myUserId, myName }) => 
   if (loading) return <div style={{padding:"24px",textAlign:"center",color:C.textLight,fontSize:13}}>Loading team analytics…</div>;
   if (!myShots.length && !partnerShots.length) return (
     <div style={{padding:"24px",textAlign:"center",background:C.pageBg,borderRadius:12,border:`1px dashed ${C.border}`}}>
-      <div style={{fontSize:28,marginBottom:8}}>🎾</div>
+      
       <div style={{fontSize:13,color:C.textMid}}>Neither player has logged shot data yet.<br/>Use the video logger with Shot Tracker enabled to build team analytics.</div>
     </div>
   );
@@ -2031,7 +2035,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
             <div>
               <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                {[["W","Win "],["L","Loss"]].map(([v,lbl])=>(
                   <button key={v} onClick={()=>setResult(v)} style={{
                     padding:"9px",borderRadius:10,fontWeight:700,fontSize:13,cursor:"pointer",
                     fontFamily:"'Outfit'",border:`2px solid ${result===v?(v==="W"?C.mint:C.rose):C.border}`,
@@ -2129,7 +2133,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
   if(!selMatch) return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"60px 20px",textAlign:"center"}}>
-      <div style={{fontSize:48,marginBottom:16}}>🎾</div>
+      
       <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Matches Yet</div>
       <div style={{fontSize:14,color:C.textMid,maxWidth:380,lineHeight:1.6}}>Log your first match to see history and analytics here.</div>
     </div>
@@ -2148,7 +2152,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
           zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:400,
             boxShadow:"0 20px 60px rgba(0,0,0,0.25)",textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <div style={{fontSize:36,marginBottom:12}}>×</div>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>
               Delete Match?
             </div>
@@ -2176,7 +2180,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
         <div style={{marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
             <div style={{width:3,height:20,background:C.blue,borderRadius:2}}/>
-            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>🔗 Matches You Might Be In</span>
+            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>Matches You Might Be In</span>
             <span style={{fontSize:12,color:C.textLight}}>Logged by other players — claim them to update your stats</span>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2190,7 +2194,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                 <div style={{display:"flex",alignItems:"center",gap:14,flex:1}}>
                   <div style={{width:36,height:36,borderRadius:"50%",background:`${C.blue}15`,
                     display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>
-                    🎾
+                    
                   </div>
                   <div>
                     <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:2}}>
@@ -2245,7 +2249,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                 <span style={{fontSize:11,color:C.textLight}}>{m.date}</span>
                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                   {m.isClaimed && <span style={{fontSize:9,fontWeight:700,color:C.blue,background:`${C.blue}15`,
-                    padding:"1px 6px",borderRadius:8,letterSpacing:"0.04em"}}>🔗 claimed</span>}
+                    padding:"1px 6px",borderRadius:8,letterSpacing:"0.04em"}}>claimed</span>}
                   <Badge text={m.result} color={m.result==="W"?C.mint:C.rose}/>
                   <button onClick={e=>{e.stopPropagation();setDeleteId(m.id);}} style={{
                     width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,
@@ -2254,7 +2258,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                     lineHeight:1,transition:"all 0.15s",flexShrink:0}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;e.currentTarget.style.background=`${C.rose}10`;}}
                     onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textLight;e.currentTarget.style.background="transparent";}}>
-                    🗑
+                    ×
                   </button>
                 </div>
               </div>
@@ -2279,7 +2283,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                   display:"flex",alignItems:"center",gap:5,padding:"6px 12px",
                   borderRadius:8,border:`1px solid ${C.border}`,background:C.pageBg,
                   fontFamily:"'Outfit'",fontWeight:600,fontSize:12,color:C.textMid,
-                  cursor:"pointer"}}>✏️ Edit</button>
+                  cursor:"pointer"}}>Edit</button>
                 {selMatch?.isClaimed && setTab && setClaimPrefill && (
                   <button onClick={()=>{
                     // Pre-populate Log Match with this match's data, then redirect
@@ -2301,7 +2305,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                     display:"flex",alignItems:"center",gap:5,padding:"6px 12px",
                     borderRadius:8,border:`1px solid ${C.blue}`,background:`${C.blue}10`,
                     fontFamily:"'Outfit'",fontWeight:700,fontSize:12,color:C.blue,
-                    cursor:"pointer"}}>🎯 Log my shots</button>
+                    cursor:"pointer"}}>Log my shots</button>
                 )}
               </div>
             </div>
@@ -2457,7 +2461,7 @@ const PartnersContent=()=>{
   if(!safeAp) return(
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"60px 20px",textAlign:"center"}}>
-      <div style={{fontSize:48,marginBottom:16}}>👥</div>
+      
       <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Partners Yet</div>
       <div style={{fontSize:14,color:C.textMid,maxWidth:380,lineHeight:1.6}}>
         Partner analytics build automatically from your match history. Log a match with a partner name and they'll appear here.
@@ -2473,7 +2477,7 @@ const PartnersContent=()=>{
       <div style={{marginBottom:20,padding:"12px 16px",background:`${C.navy}08`,border:`1px solid ${C.navy}18`,borderRadius:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"}}
           onClick={()=>setShowMethodology(v=>!v)}>
-          <div style={{fontSize:12,fontWeight:700,color:C.navy}}>🤝 How the Synergy Score is calculated</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy}}>How the Synergy Score is calculated</div>
           <span style={{fontSize:11,color:C.textLight,transform:showMethodology?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s",display:"inline-block"}}>▼</span>
         </div>
         {showMethodology && (
@@ -2569,10 +2573,10 @@ const PartnersContent=()=>{
               <SLabel>Role Identification</SLabel>
               {(()=>{
                 const roleDescs = {
-                  Resetter:  {desc:"Patient kitchen player. Gets to NVZ consistently, keeps errors low.", icon:"🔄"},
-                  Driver:    {desc:"Transition player. Neutralizes opponents with serve & drive pressure.", icon:"💥"},
-                  Attacker:  {desc:"Aggressive finisher. Looks for speed-ups, slams, and erné opportunities.", icon:"⚡"},
-                  Balanced:  {desc:"All-around player. Adapts to situation rather than committing to one style.", icon:"⚖️"},
+                  Resetter:  {desc:"Patient kitchen player. Gets to NVZ consistently, keeps errors low.", icon:""},
+                  Driver:    {desc:"Transition player. Neutralizes opponents with serve & drive pressure.", icon:""},
+                  Attacker:  {desc:"Aggressive finisher. Looks for speed-ups, slams, and erné opportunities.", icon:""},
+                  Balanced:  {desc:"All-around player. Adapts to situation rather than committing to one style.", icon:""},
                 };
                 const yourRole = safeAp?.role || "Balanced";
                 const rd = roleDescs[yourRole] || roleDescs.Balanced;
@@ -2638,10 +2642,10 @@ const PartnersContent=()=>{
                   <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
                     <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,
                       background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
+                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>P</div>
                     <div>
                       <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:8}}>PICKL Team Insight</div>
-                      <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.7}}>{insight}</div>
+                      <div style={{fontSize:13,color:"#D6D9CC",lineHeight:1.7}}>{insight}</div>
                     </div>
                   </div>
                   {matches >= 3 && (
@@ -2670,10 +2674,10 @@ const PartnersContent=()=>{
         <div style={{marginTop:24}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
             <div style={{width:3,height:20,background:C.purple,borderRadius:2}}/>
-            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>🤝 Team Shot Analytics</span>
+            <span style={{fontSize:16,fontWeight:700,color:C.navy}}>Team Shot Analytics</span>
             {partnerUserId
               ? <span style={{fontSize:11,color:C.mint,fontWeight:600}}>✓ {safeAp.name} is on PickleIntel</span>
-              : <span style={{fontSize:11,color:C.amber}}>⚠ {safeAp.name} hasn't joined PickleIntel yet</span>
+              : <span style={{fontSize:11,color:C.amber}}>{safeAp.name} hasn't joined PickleIntel yet</span>
             }
             <button onClick={()=>setShowTeamAnalytics(v=>!v)}
               style={{marginLeft:"auto",padding:"6px 14px",borderRadius:9,
@@ -2888,7 +2892,7 @@ const Shots = () => {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:24 }}>
         <div>
           <h1 style={{ fontFamily:"'Bebas Neue'", fontSize:34, letterSpacing:"0.05em", color:C.navy }}>Shot Analytics</h1>
-          <p style={{ color:C.textMid, fontSize:14, marginTop:3 }}>4-week win & loss trends · {all.length} shot types tracked · 📌 pin up to 3 shots that need targeted focus and drilling</p>
+          <p style={{ color:C.textMid, fontSize:14, marginTop:3 }}>4-week win & loss trends · {all.length} shot types tracked · pin up to 3 shots that need targeted focus and drilling</p>
         </div>
       </div>
 
@@ -2896,7 +2900,7 @@ const Shots = () => {
       <div style={{marginBottom:20,padding:"14px 18px",background:`${C.navy}08`,border:`1px solid ${C.navy}18`,
         borderRadius:14,display:"flex",gap:16,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>📊 How Top Weapon & Biggest Weakness are calculated</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>How Top Weapon & Biggest Weakness are calculated</div>
           <div style={{fontSize:11,color:C.textMid,lineHeight:1.7}}>
             Shots are scored using a <strong>Bayesian weighted formula</strong> that combines two data sources: 
             Rally Ender outcomes (did the rally end on this shot?) and Shot Tracker outcomes (was this shot positive, neutral, or negative quality-wise?).
@@ -2906,7 +2910,7 @@ const Shots = () => {
           </div>
         </div>
         <div style={{flex:1,minWidth:240}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>📈 How Most Improved is calculated</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.navy,marginBottom:6}}>How Most Improved is calculated</div>
           <div style={{fontSize:11,color:C.textMid,lineHeight:1.7}}>
             Compares your win rate on a shot over the <strong>last 4 match windows</strong> (oldest → newest).
             The trend delta is weighted by log(attempts) — so genuine improvement on a frequently-hit shot 
@@ -3003,17 +3007,17 @@ const Shots = () => {
         return (
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:14,marginBottom:24}}>
             <InsightWidget
-              title="Biggest Weapons" icon="🏆" color={C.mint} borderColor={C.mint}
+              title="Biggest Weapons" icon="" color={C.mint} borderColor={C.mint}
               shots={top3Weapons}
               metricFn={s=>`${Math.round((s._posRate||0)*100)}% positive rate`}
               emptyMsg="Log 3+ shots to see weapons"/>
             <InsightWidget
-              title="Biggest Weaknesses" icon="⚠️" color={C.rose} borderColor={C.rose}
+              title="Biggest Weaknesses" icon="" color={C.rose} borderColor={C.rose}
               shots={top3Weak}
               metricFn={s=>`${Math.round((s._negRate||0)*100)}% negative rate`}
               emptyMsg="Log 3+ shots to see weaknesses"/>
             <InsightWidget
-              title="Most Improved (4wk)" icon="📈" color={C.blue} borderColor={C.blue}
+              title="Most Improved (4wk)" icon="" color={C.blue} borderColor={C.blue}
               shots={top3Improved}
               metricFn={s=>`${s._delta>=0?"+":""}${s._delta}% · now ${s._lastRate}%`}
               emptyMsg="Log across 2+ sessions to see trends"/>
@@ -3158,7 +3162,7 @@ const Shots = () => {
                   background:isPinned?`${C.pickle}20`:"transparent",
                   color:isPinned?C.pickleD:atMax?"#D1D5DB":C.textLight,
                   cursor:atMax&&!isPinned?"not-allowed":"pointer",fontSize:12,
-                  display:"flex",alignItems:"center",justifyContent:"center"}}>📌</button>
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>Pin</button>
               )}
 
               {/* Name */}
@@ -3169,7 +3173,7 @@ const Shots = () => {
                   </span>
                   {tipKey && <InfoTip text={TIPS[tipKey]} position="right"/>}
                   {isPinned && <span style={{fontSize:9,color:C.pickleD,fontWeight:700,
-                    background:`${C.pickle}20`,borderRadius:4,padding:"1px 5px"}}>📌</span>}
+                    background:`${C.pickle}20`,borderRadius:4,padding:"1px 5px"}}>Pinned</span>}
                   {hasTrend && winDelta>0 && <span style={{fontSize:9,color:C.mint,fontWeight:700}}>▲</span>}
                   {hasTrend && winDelta<0 && <span style={{fontSize:9,color:C.rose,fontWeight:700}}>▼</span>}
                 </div>
@@ -3268,18 +3272,18 @@ const Shots = () => {
 
 // ── AI COACH ──────────────────────────────────────────────────────────────────
 const SUGG=[
-  {icon:"📊",text:"What's my biggest weakness right now?"},
-  {icon:"🎯",text:"Give me a drill plan for this week"},
-  {icon:"🎯",text:"What should I work on before my next match?"},
-  {icon:"🏆",text:"Build me a 2-week tournament prep plan"},
-  {icon:"💡",text:"What would Ben Johns say about my game?"},
-  {icon:"🤝",text:"How can Sam and I improve our synergy?"},
+  {icon:"",text:"What's my biggest weakness right now?"},
+  {icon:"",text:"Give me a drill plan for this week"},
+  {icon:"",text:"What should I work on before my next match?"},
+  {icon:"",text:"Build me a 2-week tournament prep plan"},
+  {icon:"",text:"What would Ben Johns say about my game?"},
+  {icon:"",text:"How can Sam and I improve our synergy?"},
 ];
 
 const Coach=()=>{
   const isMobile = useIsMobile();
   const [msgs,setMsgs]=useState([{role:"assistant",ts:"Just now",
-    content:`Hey! I'm PICKL — your personal AI pickleball coach. 🎾\n\nI have full access to your match history and shot stats. Ask me anything — what to work on, drill plans, game strategy, or opponent preparation.\n\nWhat do you want to work on?`}]);
+    content:`Hey! I'm PICKL — your personal AI pickleball coach. \n\nI have full access to your match history and shot stats. Ask me anything — what to work on, drill plans, game strategy, or opponent preparation.\n\nWhat do you want to work on?`}]);
   const [input,setInput]=useState("");
   const [loading,setLoading]=useState(false);
   const [playerCtx,setPlayerCtx]=useState("");
@@ -3369,7 +3373,7 @@ Recent opponents: ${recentOpponents}
       const noKey = !e.message || e.message.includes("401") || e.message.includes("missing");
       setMsgs(prev=>[...prev.filter(m=>!m.typing),{role:"assistant",
         content: noKey
-          ? "⚠️ API key needed. In Vercel: Settings → Environment Variables → add ANTHROPIC_KEY (no VITE_ prefix) with your Anthropic API key, then redeploy."
+          ? "API key needed. In Vercel: Settings → Environment Variables → add ANTHROPIC_KEY (no VITE_ prefix) with your Anthropic API key, then redeploy."
           : "Connection issue — try again.",
         ts:""}]);
     }finally{setLoading(false);}
@@ -3401,7 +3405,7 @@ Recent opponents: ${recentOpponents}
         <p style={{color:C.textMid,fontSize:13,marginTop:4}}>Patient · NVZ-first · drill-driven coaching</p>
         <div style={{marginTop:10,padding:"9px 14px",background:`${C.blue}08`,border:`1px solid ${C.blue}20`,
           borderRadius:9,fontSize:11,color:C.textMid,lineHeight:1.6}}>
-          💡 <strong>How recommendations are generated:</strong> PICKL analyzes your actual stats — win rate, NVZ arrival, errors, serve neutralisation, shot positive/negative rates — then cross-references pro benchmarks (Ben Johns, Anna Leigh Waters, Tyson McGuffin, Simone Jardim) to give personalized advice. Every recommendation is grounded in your specific numbers, not generic tips.
+          <strong>How recommendations are generated:</strong> PICKL analyzes your actual stats — win rate, NVZ arrival, errors, serve neutralisation, shot positive/negative rates — then cross-references pro benchmarks (Ben Johns, Anna Leigh Waters, Tyson McGuffin, Simone Jardim) to give personalized advice. Every recommendation is grounded in your specific numbers, not generic tips.
         </div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"20px 32px",background:C.pageBg}}>
@@ -3411,7 +3415,7 @@ Recent opponents: ${recentOpponents}
             <div key={i} style={{display:"flex",gap:12,marginBottom:18,flexDirection:isU?"row-reverse":"row",animation:"fadeUp 0.3s ease both"}}>
               {!isU&&<div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,
                 background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-                display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>}
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>P</div>}
               <div style={{maxWidth:"76%",
                 background:isU?`linear-gradient(135deg,${C.navy},${C.navyMid})`:C.cardBg,
                 border:isU?"none":`1px solid ${C.border}`,
@@ -3603,7 +3607,7 @@ const Profile=({setPage})=>{
               display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:"white",letterSpacing:"0.05em"}}>Edit Profile</div>
-                <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>Changes are saved when you click Save</div>
+                <div style={{fontSize:12,color:"#B4C2A6",marginTop:2}}>Changes are saved when you click Save</div>
               </div>
               <button onClick={()=>setShowEditModal(false)}
                 style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,
@@ -3626,7 +3630,7 @@ const Profile=({setPage})=>{
                   <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:6}}>Profile Photo</div>
                   <label style={{display:"inline-block",background:C.navy,color:C.pickle,
                     borderRadius:9,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Outfit'"}}>
-                    📷 Choose Photo
+                    Choose Photo
                     <input type="file" accept="image/*" onChange={handlePhotoChange} style={{display:"none"}}/>
                   </label>
                   <div style={{fontSize:11,color:C.textLight,marginTop:5}}>JPG, PNG or GIF · max 5MB</div>
@@ -3749,7 +3753,7 @@ const Profile=({setPage})=>{
         </div>
         <button onClick={openEdit} style={{background:C.navy,border:"none",borderRadius:12,
           padding:"10px 20px",fontFamily:"'Outfit'",fontWeight:700,fontSize:13,color:C.pickle,cursor:"pointer"}}>
-          ✏️ Edit Profile
+          Edit Profile
         </button>
       </div>
 
@@ -3758,7 +3762,7 @@ const Profile=({setPage})=>{
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
           <SLabel>Player Identity</SLabel>
           <button onClick={openEdit} style={{fontSize:11,color:C.blue,background:"none",border:"none",
-            cursor:"pointer",fontFamily:"'Outfit'",fontWeight:600,marginTop:-8}}>✏️ Edit</button>
+            cursor:"pointer",fontFamily:"'Outfit'",fontWeight:600,marginTop:-8}}>Edit</button>
         </div>
         <div style={{display:"flex",gap:24,alignItems:"flex-start"}}>
 
@@ -3916,10 +3920,10 @@ const Profile=({setPage})=>{
                   <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:"white",letterSpacing:"0.04em",lineHeight:1}}>
                     Your Playing Style
                   </div>
-                  <div style={{fontSize:12,color:"#94A3B8",marginTop:4}}>
+                  <div style={{fontSize:12,color:"#B4C2A6",marginTop:4}}>
                     Derived from your shot data · updates automatically as you log more matches
                   </div>
-                  <div style={{fontSize:10,color:"#64748B",marginTop:5,lineHeight:1.5}}>
+                  <div style={{fontSize:10,color:"#8D968F",marginTop:5,lineHeight:1.5}}>
                     Scored across 4 styles using kitchen %, drive %, attack %, drop %, NVZ arrival &amp; errors. Needs 10+ shots logged.
                   </div>
                 </div>
@@ -3937,7 +3941,7 @@ const Profile=({setPage})=>{
               {!hasData ? (
                 <div style={{textAlign:"center",padding:"32px 16px",background:C.pageBg,borderRadius:12,
                   border:`2px dashed ${C.border}`}}>
-                  <div style={{fontSize:32,marginBottom:10}}>🎾</div>
+                  
                   <div style={{fontSize:14,fontWeight:700,color:C.textMid,marginBottom:6}}>Not enough data yet</div>
                   <div style={{fontSize:12,color:C.textLight,lineHeight:1.6,maxWidth:320,margin:"0 auto"}}>
                     Log at least 10 shots across a few matches and your playing identity will be automatically calculated here.
@@ -4026,17 +4030,17 @@ const Profile=({setPage})=>{
                     <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
                       <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,
                         background:`linear-gradient(135deg,${C.pickle},${C.mint})`,
-                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🥒</div>
+                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>P</div>
                       <div>
                         <div style={{fontSize:12,color:C.pickle,fontWeight:700,marginBottom:4}}>
                           Your Winning Strategy
                         </div>
-                        <div style={{fontSize:13,color:"#CBD5E1",lineHeight:1.7}}>{style.strategy}</div>
+                        <div style={{fontSize:13,color:"#D6D9CC",lineHeight:1.7}}>{style.strategy}</div>
                       </div>
                     </div>
                     <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,
-                      fontSize:11,color:"#64748B",fontStyle:"italic",lineHeight:1.6}}>
-                      💬 Pro principle: {style.proPrinciple}
+                      fontSize:11,color:"#8D968F",fontStyle:"italic",lineHeight:1.6}}>
+                      Pro principle: {style.proPrinciple}
                     </div>
                   </div>
 
@@ -4132,7 +4136,7 @@ const Profile=({setPage})=>{
                     {/* Pro guidance */}
                     <div style={{marginTop:6,marginLeft:18,padding:"6px 10px",background:`${m.color}0C`,
                       border:`1px solid ${m.color}25`,borderRadius:8,fontSize:11,color:C.textMid,lineHeight:1.5}}>
-                      💡 {m.guidance}
+                      {m.guidance}
                     </div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
@@ -4171,7 +4175,7 @@ const Profile=({setPage})=>{
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
           <SLabel>Priority Drills</SLabel>
           <span style={{fontSize:11,color:C.textLight,marginTop:-10}}>
-            📌 Pin shots from the <span style={{color:C.blue,fontWeight:600,cursor:"pointer"}} onClick={()=>{}}>Shots page</span>
+            Pin shots from the <span style={{color:C.blue,fontWeight:600,cursor:"pointer"}} onClick={()=>{}}>Shots page</span>
           </span>
         </div>
         <p style={{fontSize:13,color:C.textMid,marginBottom:18,marginTop:-4}}>
@@ -4180,7 +4184,7 @@ const Profile=({setPage})=>{
         {GOALS.priorityShots.length === 0 ? (
           <div style={{textAlign:"center",padding:"32px 16px",background:C.pageBg,borderRadius:12,
             border:`2px dashed ${C.border}`}}>
-            <div style={{fontSize:28,marginBottom:8}}>📌</div>
+            
             <div style={{fontSize:13,color:C.textMid,marginBottom:4}}>No priority drills set</div>
             <div style={{fontSize:11,color:C.textLight}}>Go to the Shots page and tap "+ Set as Priority Drill" on any shot card</div>
           </div>
@@ -4583,7 +4587,7 @@ const LogMatchContent=()=>{
 
   if(saved) return(
     <div style={{maxWidth:600,margin:"40px auto",textAlign:"center"}}>
-      <div style={{fontSize:64,marginBottom:16}}>✅</div>
+      
       <h2 style={{fontFamily:"'Bebas Neue'",fontSize:32,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>Match Logged!</h2>
       <p style={{color:C.textMid,fontSize:14,marginBottom:24}}>Your stats have been recorded and your charts updated.</p>
       <div style={{background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:16,padding:"20px",marginBottom:24,textAlign:"left"}}>
@@ -4592,7 +4596,7 @@ const LogMatchContent=()=>{
             {l:"Opponent",    v:opponent||"—"},
             {l:"Partner",     v:partner||"—"},
             {l:"Score",       v:score||"—"},
-            {l:"Result",      v:result==="W"?"Win 🏆":"Loss"},
+            {l:"Result",      v:result==="W"?"Win ":"Loss"},
             {l:"NVZ Arrival", v:nvzArrival>0?nvzArrival+"%":"—"},
             {l:"NVZ Win Rate",v:nvzWin>0?nvzWin+"%":"—"},
             ...(shotsLogged?[{l:"Pts Won",v:totalWins},{l:"Pts Lost",v:totalMisses}]:[]),
@@ -4644,7 +4648,7 @@ const LogMatchContent=()=>{
             <div style={{gridColumn:isMobile?"span 2":"auto"}}>
               <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:5}}>Result</div>
               <div style={{display:"flex",gap:8}}>
-                {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl])=>(
+                {[["W","Win "],["L","Loss"]].map(([v,lbl])=>(
                   <button key={v} onClick={()=>setResult(v)} style={{
                     flex:1,padding:"9px 8px",borderRadius:10,fontWeight:700,fontSize:13,
                     cursor:"pointer",fontFamily:"'Outfit'",transition:"all 0.15s",
@@ -4943,7 +4947,7 @@ const LogMatchContent=()=>{
                 miss_history: newMissH,
                 tip:   shotMeta?.tip   || "",
                 color: cat?.color      || C.blue,
-                icon:  cat?.icon       || "🎾",
+                icon:  cat?.icon       || "",
                 user_id: getCurrentUserId(),
               }, "user_id,name");
             }
@@ -5110,7 +5114,7 @@ function AIVideoUpload({ matchId, userId }) {
     <div style={{background:`${C.blue}08`,border:`1.5px solid ${C.blue}25`,borderRadius:12,padding:"16px 18px",marginBottom:16}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-        <div style={{fontSize:22}}>🎬</div>
+        
         <div style={{flex:1}}>
           <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
             Analyze with AI
@@ -5124,11 +5128,11 @@ function AIVideoUpload({ matchId, userId }) {
       </div>
 
       {/* How-to guide */}
-      <div style={{marginBottom:12,background:"white",border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden"}}>
+      <div style={{marginBottom:12,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden"}}>
         <div onClick={()=>setShowGuide(v=>!v)}
           style={{padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",
             cursor:"pointer",userSelect:"none"}}>
-          <span style={{fontSize:12,fontWeight:600,color:C.blue}}>📋 How to get your PlaySight URL</span>
+          <span style={{fontSize:12,fontWeight:600,color:C.blue}}>How to get your PlaySight URL</span>
           <span style={{fontSize:10,color:C.textLight,transform:showGuide?"rotate(180deg)":"rotate(0deg)",
             transition:"transform 0.2s",display:"inline-block"}}>▼</span>
         </div>
@@ -5162,14 +5166,14 @@ function AIVideoUpload({ matchId, userId }) {
           value={url}
           onChange={e=>{setUrl(e.target.value);setStatus("idle");setMessage("");}}
           placeholder="https://playsightproduction...mp4"
-          style={{width:"100%",background:"white",
+          style={{width:"100%",background:C.cardBg,
             border:`1.5px solid ${url.length>0?(isValid?C.mint:C.amber):C.border}`,
             borderRadius:9,padding:"10px 12px",fontSize:12,
             fontFamily:"'Outfit'",color:C.text,boxSizing:"border-box"}}
         />
         {url.length>0 && !isValid && (
           <div style={{fontSize:11,color:C.amber,marginTop:4}}>
-            ⚠ Must start with https://playsightproduction and end with .mp4
+            Must start with https://playsightproduction and end with .mp4
           </div>
         )}
         {isValid && (
@@ -5185,7 +5189,7 @@ function AIVideoUpload({ matchId, userId }) {
           fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
           color:status==="success"?"white":C.navy,
           cursor:(!isValid||status==="submitting"||status==="success")?"not-allowed":"pointer"}}>
-        {status==="submitting"?"Submitting…":status==="success"?"✓ Submitted — analysis in progress":"🎬 Analyze This Match"}
+        {status==="submitting"?"Submitting…":status==="success"?"✓ Submitted — analysis in progress":"Analyze This Match"}
       </button>
 
       {message && (
@@ -5571,7 +5575,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
                   style={{padding:"5px 8px",borderRadius:8,
                     border:`1.5px solid ${shot.corrected?C.mint:C.border}`,
                     fontFamily:"'Outfit'",fontSize:12,color:C.text,
-                    background:"white",cursor:"pointer",width:"100%"}}>
+                    background:C.cardBg,cursor:"pointer",width:"100%"}}>
                   {SHOT_BUTTONS.map(cat => (
                     <optgroup key={cat.cat} label={cat.cat}>
                       {cat.shots.flatMap(s => expandShot(s)).map(name => (
@@ -5588,7 +5592,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
                   style={{padding:"5px 8px",borderRadius:8,
                     border:`1.5px solid ${qColor}30`,
                     fontFamily:"'Outfit'",fontSize:12,color:qColor,
-                    background:"white",cursor:"pointer",fontWeight:600}}>
+                    background:C.cardBg,cursor:"pointer",fontWeight:600}}>
                   <option value="pos">Positive</option>
                   <option value="neu">Neutral</option>
                   <option value="neg">Negative</option>
@@ -5602,7 +5606,7 @@ function ShotCorrectionScreen({ pendingShots, videoUrl, onConfirm, onCancel }) {
                     border:`1.5px solid ${effectiveEnder?C.rose+"50":C.border}`,
                     fontFamily:"'Outfit'",fontSize:12,
                     color:effectiveEnder?C.rose:C.textMid,
-                    background:"white",cursor:"pointer"}}>
+                    background:C.cardBg,cursor:"pointer"}}>
                   <option value="no">Not ender</option>
                   <option value="yes">Rally ender</option>
                 </select>
@@ -6170,7 +6174,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
             neg_count: (ex?.neg_count || 0) + d.neg,
             win_history:  ex?.win_history  || [0,0,0,0],
             miss_history: ex?.miss_history || [0,0,0,0],
-            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+            color: cat?.color || C.blue, icon: cat?.icon || "", user_id: uid,
           }, "user_id,name");
         }
       }
@@ -6193,7 +6197,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
             neg_count: ex?.neg_count || 0,
             win_history:  [...((ex?.win_history)  || [0,0,0,0]).slice(1), winAdd  > 0 ? 100 : 0],
             miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), missAdd > 0 ? 100 : 0],
-            color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+            color: cat?.color || C.blue, icon: cat?.icon || "", user_id: uid,
           }, "user_id,name");
         }
       }
@@ -6251,7 +6255,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
       cursor: "pointer", transition: "all 0.18s", userSelect: "none", flexShrink: 0,
     }}>
       <div style={{ width: 36, height: 20, borderRadius: 10, background: active ? color : C.border, position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-        <div style={{ position: "absolute", top: 2, left: active ? 17 : 2, width: 16, height: 16, borderRadius: "50%", background: "white", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
+        <div style={{ position: "absolute", top: 2, left: active ? 17 : 2, width: 16, height: 16, borderRadius: "50%", background: C.cardBg, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
       </div>
       <span style={{ fontSize: 12, fontWeight: 700, color: active ? C.text : C.textMid, whiteSpace: "nowrap" }}>{label}</span>
     </div>
@@ -6481,7 +6485,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
           display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",
           boxShadow:`0 4px 20px rgba(37,99,235,0.2)`,marginBottom:0,
         }}>
-          <div style={{fontSize:24,flexShrink:0}}>🔗</div>
+          
           <div style={{flex:1}}>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:17,color:"white",letterSpacing:"0.04em",lineHeight:1,marginBottom:3}}>
               Logging Your Shots for a Claimed Match
@@ -6512,12 +6516,12 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
           boxShadow:`0 4px 20px rgba(0,0,0,0.15)`,
         }}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <div style={{fontSize:28,flexShrink:0}}>💾</div>
+            
             <div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:"white",letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
                 Resume Unfinished Session
               </div>
-              <div style={{fontSize:12,color:"#94A3B8",lineHeight:1.5}}>
+              <div style={{fontSize:12,color:"#B4C2A6",lineHeight:1.5}}>
                 {pendingRestore.shotTotal > 0 && `${pendingRestore.shotTotal} shots logged · `}
                 {pendingRestore.rallyTotal > 0 && `${pendingRestore.rallyTotal} rallies · `}
                 {pendingRestore.opponent && `vs ${pendingRestore.opponent} · `}
@@ -6532,12 +6536,12 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
               padding:"10px 22px", borderRadius:10, border:"none",
               background:C.pickle, fontFamily:"'Outfit'", fontWeight:700,
               fontSize:13, color:C.navy, cursor:"pointer",
-            }}>↩ Resume Session</button>
+            }}>Resume Session</button>
             <button onClick={clearSession} style={{
               padding:"10px 16px", borderRadius:10,
               border:"1px solid rgba(255,255,255,0.15)",
               background:"transparent", fontFamily:"'Outfit'", fontWeight:600,
-              fontSize:13, color:"#94A3B8", cursor:"pointer",
+              fontSize:13, color:"#B4C2A6", cursor:"pointer",
             }}>Start Fresh</button>
           </div>
         </div>
@@ -6592,9 +6596,9 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginRight: 4 }}>Track:</div>
           {/* Shot Tracker FIRST (left) */}
-          <Toggle label="🎯 Shot Tracker" active={trackShots} onToggle={toggleShots} color={C.blue} />
-          <Toggle label="🏁 Rally Ender"  active={trackRally} onToggle={toggleRally} color={C.mint} />
-          <Toggle label="🎙 Voice Logger" active={trackVoice} onToggle={toggleVoice} color={C.purple} />
+          <Toggle label="Shot Tracker" active={trackShots} onToggle={toggleShots} color={C.blue} />
+          <Toggle label="Rally Ender"  active={trackRally} onToggle={toggleRally} color={C.mint} />
+          <Toggle label="Voice Logger" active={trackVoice} onToggle={toggleVoice} color={C.purple} />
           <div style={{ fontSize: 11, color: C.textLight, marginLeft: "auto" }}>Saved automatically</div>
         </div>
 
@@ -6602,7 +6606,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
         <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
             padding: "9px 13px", background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 9 }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🎯</span>
+            
             <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
               <span style={{ fontWeight: 700, color: C.blue }}>Shot Tracker</span> — log every shot you hit during the rally.
               Rate each one <span style={{ color: C.mint, fontWeight: 600 }}>positive</span>, <span style={{ color: C.textMid, fontWeight: 600 }}>neutral</span>, or <span style={{ color: C.rose, fontWeight: 600 }}>negative</span> based on shot quality.
@@ -6610,7 +6614,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flex: 1, minWidth: 260,
             padding: "9px 13px", background: `${C.mint}08`, border: `1px solid ${C.mint}20`, borderRadius: 9 }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🏁</span>
+            
             <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
               <span style={{ fontWeight: 700, color: C.mint }}>Rally Ender</span> — log only the final shot that ended the rally.
               Mark it <span style={{ color: C.mint, fontWeight: 600 }}>Won</span> or <span style={{ color: C.rose, fontWeight: 600 }}>Lost</span>.
@@ -6622,7 +6626,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
         {trackShots && trackRally && (
           <div style={{ marginTop: 8, padding: "8px 13px", background: `${C.amber}12`, border: `1px solid ${C.amber}40`, borderRadius: 9,
             fontSize: 11, color: C.amber, lineHeight: 1.6 }}>
-            ⚠️ <span style={{ fontWeight: 700 }}>Both modes are on.</span> Do not log the same shot in both panels —
+            <span style={{ fontWeight: 700 }}>Both modes are on.</span> Do not log the same shot in both panels —
             use Shot Tracker for all shots during the rally, and Rally Ender only for the final shot that ends it.
             Logging the same shot twice will double-count it.
           </div>
@@ -6630,7 +6634,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
 
         {trackVoice && (
           <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.purple}10`, border: `1px solid ${C.purple}30`, borderRadius: 9, fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
-            <span style={{ fontWeight: 700, color: C.purple }}>🎙 Voice commands:</span>{" "}
+            <span style={{ fontWeight: 700, color: C.purple }}>Voice commands:</span>{" "}
             Say <strong>"positive/negative/neutral [shot]"</strong> for Shot Tracker · <strong>"won/lost [shot]"</strong> for Rally Ender ·{" "}
             <strong>"arrived"</strong> / <strong>"not arrived"</strong> · <strong>"error"</strong> · <strong>"undo"</strong> to remove last entry.
             Example: <em>"positive dink backhand"</em>, <em>"won drop forehand"</em>, <em>"arrived"</em>
@@ -6639,7 +6643,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
 
         {!anyTracking && !trackVoice && (
           <div style={{ marginTop: 8, padding: "9px 13px", background: `${C.amber}15`, border: `1px solid ${C.amber}40`, borderRadius: 9, fontSize: 12, color: C.amber, fontWeight: 600 }}>
-            ⚠️ Turn on at least one tracking mode above.
+            Turn on at least one tracking mode above.
           </div>
         )}
       </Card>
@@ -6669,7 +6673,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
         {!savedMatchId && !noVideo && (
           <div style={{padding:"10px 14px",background:`${C.amber}10`,border:`1px solid ${C.amber}30`,borderRadius:9,
             fontSize:12,color:C.amber,marginBottom:12}}>
-            💡 Save your match info first (above), then the video upload will appear here.
+            Save your match info first (above), then the video upload will appear here.
           </div>
         )}
 
@@ -6678,12 +6682,12 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
           <div>
             <div style={{ fontSize:12, color:C.textMid, marginBottom:14, padding:"10px 14px",
               background:`${C.amber}10`, border:`1px solid ${C.amber}30`, borderRadius:9 }}>
-              💡 Manual mode — use the Shot Tracker and Rally Ender below to log your shots. Hit <strong>Save Session</strong> when done.
+              Manual mode — use the Shot Tracker and Rally Ender below to log your shots. Hit <strong>Save Session</strong> when done.
             </div>
             <div style={{ display:"grid", gridTemplateColumns: trackShots&&trackRally?"1fr 1fr":trackShots||trackRally?"1fr":"1fr", gap:14 }}>
               {trackShots && (
                 <div style={{ background:`${C.blue}06`, border:`1.5px solid ${C.blue}30`, borderRadius:12, padding:"12px 14px" }}>
-                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>🎯 Shot Tracker</div>
+                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>Shot Tracker</div>
                   <ShotTrackerGrid/>
                   {shotTotal > 0 && (
                     <div style={{ marginTop:8, padding:"6px 10px", background:C.pageBg, borderRadius:8, fontSize:11, display:"flex", gap:10 }}>
@@ -6697,7 +6701,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
               )}
               {trackRally && (
                 <div style={{ background:`${C.mint}06`, border:`1.5px solid ${C.mint}30`, borderRadius:12, padding:"12px 14px" }}>
-                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>🏁 Rally Ender</div>
+                  <div style={{ fontFamily:"'Bebas Neue'", fontSize:17, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>Rally Ender</div>
                   <RallyGrid/>
                 </div>
               )}
@@ -6798,11 +6802,11 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                     background:voiceListening?C.purple:C.navy,display:"flex",alignItems:"center",
                     justifyContent:"center",fontSize:20,flexShrink:0,transition:"all 0.2s",
                     boxShadow:voiceListening?`0 0 0 4px ${C.purple}30`:"none" }}>
-                  {voiceListening ? "⏹" : "🎙"}
+                  {voiceListening ? "" : ""}
                 </button>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13,fontWeight:700,color:voiceListening?C.purple:C.textMid }}>
-                    {voiceListening ? "🔴 Listening…" : "Voice Logger"}
+                    {voiceListening ? "Listening…" : "Voice Logger"}
                   </div>
                   {voiceTranscript && <div style={{ fontSize:12,color:C.textLight,fontStyle:"italic",marginTop:2 }}>"{voiceTranscript}"</div>}
                   {!voiceListening && !voiceTranscript && <div style={{ fontSize:11,color:C.textLight }}>Tap mic to start · speak shot commands</div>}
@@ -6880,7 +6884,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
               transition:"all 0.2s",
               boxShadow: saved || saving ? "none" : "0 4px 14px rgba(180,220,0,0.25)",
             }}>
-            {saved ? "✓ Match Logged!" : saving ? "Saving..." : `💾 Save Session${totalLogged > 0 ? ` — ${totalLogged} logged` : ""}`}
+            {saved ? "✓ Match Logged!" : saving ? "Saving..." : `Save Session${totalLogged > 0 ? ` — ${totalLogged} logged` : ""}`}
           </button>
         </div>
         ) : !videoUrl ? (
@@ -6902,7 +6906,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                 onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.pickle; }}
                 onDragLeave={e => { e.currentTarget.style.borderColor = C.border; }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.border; processFile(e.dataTransfer.files[0]); }}>
-                <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
+                
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, color: C.navy, letterSpacing: "0.04em", marginBottom: 5 }}>Drop video here or click to browse</div>
                 <div style={{ fontSize: 12, color: C.textLight }}>MP4, MOV, AVI · Max 2GB</div>
                 {uploadErr && <div style={{ marginTop: 10, fontSize: 12, color: C.rose }}>{uploadErr}</div>}
@@ -6917,7 +6921,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
             {/* Column 1: Shot Tracker (only if active) */}
             {trackShots && (
               <div style={{ background: `${C.blue}06`, border: `1.5px solid ${C.blue}30`, borderRadius: 12, padding: "12px 14px", maxHeight: 580, overflowY: "auto" }}>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>🎯 Shot Tracker</div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>Shot Tracker</div>
                 <ShotTrackerGrid />
                 {shotTotal > 0 && (
                   <div style={{ marginTop: 8, padding: "6px 10px", background: C.pageBg, borderRadius: 8, fontSize: 11, display: "flex", gap: 10 }}>
@@ -6976,11 +6980,11 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                         fontSize:20, flexShrink:0, transition:"all 0.2s",
                         boxShadow: voiceListening ? `0 0 0 4px ${C.purple}30` : "none",
                       }}>
-                      {voiceListening ? "⏹" : "🎙"}
+                      {voiceListening ? "" : ""}
                     </button>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, fontWeight:700, color: voiceListening ? C.purple : C.textMid }}>
-                        {voiceListening ? "🔴 Listening…" : "Voice Logger"}
+                        {voiceListening ? "Listening…" : "Voice Logger"}
                       </div>
                       {voiceTranscript && (
                         <div style={{ fontSize:12, color:C.textLight, fontStyle:"italic", marginTop:2 }}>
@@ -7086,7 +7090,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                               </div>
                             )}
                             {isUnrecognized && (
-                              <div style={{ fontSize:11, color:C.amber, marginTop:2 }}>⚠ Not recognized</div>
+                              <div style={{ fontSize:11, color:C.amber, marginTop:2 }}>Not recognized</div>
                             )}
                           </div>
 
@@ -7129,7 +7133,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                   <div style={{flex:1, background:colorL, border:`1.5px solid ${color}30`, borderRadius:10, padding:"10px 12px"}}>
                     <div style={{fontSize:10, fontWeight:700, color, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6}}>{label}</div>
                     <div style={{display:"flex", alignItems:"center", gap:6}}>
-                      <button onClick={onDec} style={{width:26,height:26,borderRadius:6,border:`1px solid ${color}40`,background:"white",fontSize:15,color:color,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>−</button>
+                      <button onClick={onDec} style={{width:26,height:26,borderRadius:6,border:`1px solid ${color}40`,background:C.cardBg,fontSize:15,color:color,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>−</button>
                       <span style={{fontFamily:"'DM Mono'",fontSize:18,fontWeight:700,color,minWidth:28,textAlign:"center"}}>{val}</span>
                       <button onClick={onInc} style={{width:26,height:26,borderRadius:6,border:`1.5px solid ${color}`,background:color,fontSize:15,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontWeight:700}}>+</button>
                       {total !== undefined && <span style={{fontSize:10,color,fontWeight:600,marginLeft:2}}>/ {total}</span>}
@@ -7167,7 +7171,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                                   ✓ Arrived{nvzArrived>0?` (${nvzArrived})`:""}
                                 </button>
                                 <button onClick={()=>setNvzArrived(Math.max(0,nvzArrived-1))}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:C.cardBg,fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
                               </div>
                               {/* Did not arrive row */}
                               <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
@@ -7178,7 +7182,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                                   ✕ Not Arrived{nvzMissed>0?` (${nvzMissed})`:""}
                                 </button>
                                 <button onClick={()=>{ if(nvzTotal>nvzArrived) setNvzTotal(nvzTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:C.cardBg,fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
                               </div>
                             </div>
                             <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.mint}}>{nvzArr !== null ? nvzArr+"%" : "—"}</div>
@@ -7209,7 +7213,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                                   ✓ Won{nvzWon>0?` (${nvzWon})`:""}
                                 </button>
                                 <button onClick={()=>{ setNvzWon(Math.max(0,nvzWon-1)); if(nvzWonTotal>0) setNvzWonTotal(nvzWonTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:"white",fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.mint}40`,background:C.cardBg,fontSize:13,color:C.mint,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
                               </div>
                               {/* Lost row */}
                               <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:4,alignItems:"center"}}>
@@ -7220,7 +7224,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                                   ✕ Lost{nvzLost>0?` (${nvzLost})`:""}
                                 </button>
                                 <button onClick={()=>{ if(nvzWonTotal>nvzWon) setNvzWonTotal(nvzWonTotal-1); }}
-                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                                  style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:C.cardBg,fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
                               </div>
                             </div>
                             <div style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.blue}}>{nvzWinR !== null ? nvzWinR+"%" : "—"}</div>
@@ -7235,7 +7239,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                         <div style={{background:C.roseL, border:`1.5px solid ${C.rose}30`, borderRadius:10, padding:"10px 12px",flex:1}}>
                           <div style={{fontSize:10,fontWeight:700,color:C.rose,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Errors</div>
                           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                            <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:"white",fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
+                            <button onClick={()=>setErrors(Math.max(0,errors-1))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.rose}40`,background:C.cardBg,fontSize:13,color:C.rose,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>−</button>
                             <span style={{fontFamily:"'DM Mono'",fontSize:22,fontWeight:700,color:C.rose,minWidth:28,textAlign:"center"}}>{errors}</span>
                             <button onClick={()=>setErrors(errors+1)} style={{width:22,height:22,borderRadius:5,border:`1.5px solid ${C.rose}`,background:C.rose,fontSize:13,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
                           </div>
@@ -7259,7 +7263,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                   <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {trackShots && shotTotal > 0 && (
                       <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ color: C.textMid, fontWeight: 600 }}>🎯</span>
+                        
                         <span style={{ color: C.mint,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.pos,0)}+</span>
                         <span style={{ color: C.textMid, fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neu,0)}–</span>
                         <span style={{ color: C.rose,    fontWeight: 700 }}>{Object.values(shotData).reduce((a,d)=>a+d.neg,0)}✕</span>
@@ -7267,7 +7271,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
                     )}
                     {trackRally && rallyTotal > 0 && (
                       <div style={{ padding: "7px 12px", background: C.pageBg, borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ color: C.textMid, fontWeight: 600 }}>🏁</span>
+                        
                         <span style={{ color: C.mint, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.won,0)}W</span>
                         <span style={{ color: C.rose, fontWeight: 700 }}>{Object.values(rallyData).reduce((a,d)=>a+d.lost,0)}L</span>
                       </div>
@@ -7288,7 +7292,7 @@ function VideoLoggerContent({ setPage, setTab, prefill, onPrefillConsumed }) {
             {/* Column 3: Rally Ender (only if active) */}
             {trackRally && (
               <div style={{ background: `${C.mint}06`, border: `1.5px solid ${C.mint}30`, borderRadius: 12, padding: "12px 14px", maxHeight: 580, overflowY: "auto" }}>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>🏁 Rally Ender</div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 17, color: C.navy, letterSpacing: "0.05em", marginBottom: 8 }}>Rally Ender</div>
                 <RallyGrid />
                 {rallyTotal > 0 && (
                   <div style={{ marginTop: 8, padding: "6px 10px", background: C.pageBg, borderRadius: 8, fontSize: 11, display: "flex", gap: 10 }}>
@@ -7439,7 +7443,7 @@ const PlayersContent = () => {
           zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.cardBg,borderRadius:18,padding:"28px 32px",width:"100%",maxWidth:380,
             textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
-            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <div style={{fontSize:36,marginBottom:12}}>×</div>
             <div style={{fontFamily:"'Bebas Neue'",fontSize:22,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>Remove Player?</div>
             <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,marginBottom:24}}>
               This removes them from the shared player directory. Matches where they appear are not affected.
@@ -7497,7 +7501,7 @@ const PlayersContent = () => {
       ) : filtered.length === 0 ? (
         <div style={{padding:"40px",textAlign:"center",background:C.cardBg,borderRadius:16,
           border:`2px dashed ${C.border}`}}>
-          <div style={{fontSize:32,marginBottom:10}}>👥</div>
+          
           <div style={{fontSize:14,fontWeight:700,color:C.textMid,marginBottom:6}}>
             {search ? `No players matching "${search}"` : "No players yet"}
           </div>
@@ -7534,7 +7538,7 @@ const PlayersContent = () => {
                   alignItems:"center",justifyContent:"center",color:C.textMid,transition:"all 0.15s"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.color=C.blue;e.currentTarget.style.background=`${C.blue}10`;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textMid;e.currentTarget.style.background=C.pageBg;}}>
-                ✏️
+                
               </button>
               <button onClick={()=>setDeleteId(p.id)}
                 title="Remove player"
@@ -7543,7 +7547,7 @@ const PlayersContent = () => {
                   alignItems:"center",justifyContent:"center",color:C.textLight,transition:"all 0.15s"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rose;e.currentTarget.style.color=C.rose;e.currentTarget.style.background=`${C.rose}10`;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.textLight;e.currentTarget.style.background=C.pageBg;}}>
-                🗑
+                ×
               </button>
             </div>
           ))}
@@ -7633,7 +7637,7 @@ function PostSaveMatchDetails({ matchId, uid, gameResult, selectedPlayerId, onDo
     <div className="fade-up" style={{width:"100%",maxWidth:560,margin:"0 auto",paddingTop:8}}>
       {/* Success header */}
       <div style={{textAlign:"center",marginBottom:28}}>
-        <div style={{fontSize:48,marginBottom:8}}>🎉</div>
+        
         <div style={{fontFamily:"'Bebas Neue'",fontSize:28,color:C.navy,letterSpacing:"0.04em"}}>
           Shots saved!
         </div>
@@ -7644,7 +7648,7 @@ function PostSaveMatchDetails({ matchId, uid, gameResult, selectedPlayerId, onDo
           <div style={{marginTop:10,padding:"8px 16px",background:`${C.mint}15`,
             borderRadius:10,border:`1px solid ${C.mint}30`,
             fontSize:12,color:C.textMid,display:"inline-block"}}>
-            📊 Based on rally data: <strong style={{color:autoResult.result==="W"?C.mint:C.rose}}>
+            Based on rally data: <strong style={{color:autoResult.result==="W"?C.mint:C.rose}}>
               {autoResult.result==="W"?"Win":"Loss"} {autoResult.score}
             </strong> — adjust below if incorrect
           </div>
@@ -7659,7 +7663,7 @@ function PostSaveMatchDetails({ matchId, uid, gameResult, selectedPlayerId, onDo
           <div style={{fontSize:12,fontWeight:700,color:C.textMid,
             textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Result</div>
           <div style={{display:"flex",gap:10}}>
-            {[["W","Win 🏆"],["L","Loss"]].map(([v,lbl]) => (
+            {[["W","Win "],["L","Loss"]].map(([v,lbl]) => (
               <button key={v} onClick={() => setResult(v)}
                 style={{flex:1,padding:"12px",borderRadius:10,cursor:"pointer",
                   fontFamily:"'Outfit'",fontWeight:700,fontSize:14,
@@ -7835,7 +7839,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
                 display:"flex",flexDirection:"column",gap:10}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.background=`${C.blue}12`;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.blue}30`;e.currentTarget.style.background=`${C.blue}08`;}}>
-              <div style={{fontSize:32}}>🎬</div>
+              
               <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
                 Log Match — Automated
               </div>
@@ -7858,7 +7862,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
                 display:"flex",flexDirection:"column",gap:10}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=C.mint;e.currentTarget.style.background=`${C.mint}12`;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=`${C.mint}30`;e.currentTarget.style.background=`${C.mint}08`;}}>
-              <div style={{fontSize:32}}>✏️</div>
+              
               <div style={{fontFamily:"'Bebas Neue'",fontSize:20,color:C.navy,letterSpacing:"0.04em",lineHeight:1}}>
                 Log Match — Manual
               </div>
@@ -7921,7 +7925,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
                 display:"flex",alignItems:"center",gap:16}}
               onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
               onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-              <div style={{fontSize:28,flexShrink:0}}>🔗</div>
+              
               <div>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
                   letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
@@ -7941,7 +7945,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
                 display:"flex",alignItems:"center",gap:16}}
               onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
               onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
-              <div style={{fontSize:28,flexShrink:0}}>📁</div>
+              
               <div>
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,
                   letterSpacing:"0.04em",lineHeight:1,marginBottom:4}}>
@@ -8034,7 +8038,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
               style={{padding:"12px 16px",display:"flex",alignItems:"center",
                 justifyContent:"space-between",cursor:"pointer",userSelect:"none"}}>
               <span style={{fontSize:13,fontWeight:600,color:C.blue}}>
-                📋 How to get your PlaySight URL
+                How to get your PlaySight URL
               </span>
               <span style={{fontSize:11,color:C.textLight,
                 transform:showGuide?"rotate(180deg)":"rotate(0deg)",
@@ -8073,14 +8077,14 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
               value={videoUrl}
               onChange={e=>{setVideoUrl(e.target.value);setUrlStatus("idle");setUrlMessage("");}}
               placeholder="https://playsightproductionusw2.playsight.com/files/...mp4"
-              style={{width:"100%",background:"white",
+              style={{width:"100%",background:C.cardBg,
                 border:`1.5px solid ${videoUrl.length>0?(isValidUrl?C.mint:C.amber):C.border}`,
                 borderRadius:10,padding:"12px 14px",fontSize:13,
                 fontFamily:"'Outfit'",color:C.text,boxSizing:"border-box"}}
             />
             {videoUrl.length>0 && !isValidUrl && (
               <div style={{fontSize:11,color:C.amber,marginTop:5}}>
-                ⚠ URL must start with https://playsightproduction and end with .mp4
+                URL must start with https://playsightproduction and end with .mp4
               </div>
             )}
             {isValidUrl && (
@@ -8098,7 +8102,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
               fontFamily:"'Outfit'",fontWeight:700,fontSize:15,
               color:C.navy,cursor:(!isValidUrl||urlStatus==="submitting")?"not-allowed":"pointer",
               transition:"all 0.15s"}}>
-            {urlStatus==="submitting" ? "Submitting to PB Vision…" : "🎬 Analyze This Match"}
+            {urlStatus==="submitting" ? "Submitting to PB Vision…" : "Analyze This Match"}
           </button>
 
           {urlMessage && (
@@ -8133,7 +8137,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
           </div>
           <div style={{padding:"32px",background:`${C.blue}06`,border:`2px dashed ${C.blue}30`,
             borderRadius:14,textAlign:"center"}}>
-            <div style={{fontSize:40,marginBottom:12}}>📁</div>
+            
             <div style={{fontFamily:"'Bebas Neue'",fontSize:18,color:C.navy,letterSpacing:"0.04em",
               marginBottom:6}}>File Upload Coming Soon</div>
             <div style={{fontSize:12,color:C.textMid,lineHeight:1.6,maxWidth:360,margin:"0 auto"}}>
@@ -8157,7 +8161,7 @@ function LogMatchGateway({ setPage, setTab, prefill, onPrefillConsumed, pendingR
     return (
       <div className="fade-up" style={{maxWidth:560,margin:"0 auto",paddingTop:8}}>
         <div style={{textAlign:"center",padding:"40px 20px"}}>
-          <div style={{fontSize:48,marginBottom:16}}>⏳</div>
+          
           <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:C.navy,letterSpacing:"0.04em",
             marginBottom:8}}>Analysis in Progress</div>
           <div style={{fontSize:13,color:C.textMid,lineHeight:1.7,marginBottom:24}}>
@@ -8372,10 +8376,10 @@ const MatchCenter=({defaultTab="log", setPage, pendingReviewJob=null, onReviewCo
   const [claimPrefill, setClaimPrefill] = useState(null);
 
   const TABS=[
-    {id:"log",      label:"🎬 Log Match"},
-    {id:"partners", label:"👥 Partners"},
-    {id:"players",  label:"📋 Players"},
-    {id:"history",  label:"🏆 Match History"},
+    {id:"log",      label:"Log Match"},
+    {id:"partners", label:"Partners"},
+    {id:"players",  label:"Players"},
+    {id:"history",  label:"Match History"},
   ];
 
   return(
@@ -8607,7 +8611,7 @@ const DRILL_LIBRARY = {
 const METRIC_DRILLS = {
   nvzArrival: {
     title:"NVZ Arrival Rate",
-    icon:"🏃",
+    icon:"",
     color:C.mint,
     drills:[
       { name:"Drop Shot & Advance", duration:"15 min", difficulty:"Intermediate", focus:"Transition",
@@ -8620,7 +8624,7 @@ const METRIC_DRILLS = {
   },
   nvzWin: {
     title:"NVZ Win Rate",
-    icon:"🎯",
+    icon:"",
     color:C.blue,
     drills:[
       { name:"Sustained Dink Rally with Intent", duration:"12 min", difficulty:"Intermediate", focus:"Patience",
@@ -8633,7 +8637,7 @@ const METRIC_DRILLS = {
   },
   errors: {
     title:"Unforced Errors",
-    icon:"⚠️",
+    icon:"",
     color:C.rose,
     drills:[
       { name:"Error Tracking Rally", duration:"15 min", difficulty:"Beginner", focus:"Consistency",
@@ -8646,7 +8650,7 @@ const METRIC_DRILLS = {
   },
   serveNeut: {
     title:"Serve Neutralization",
-    icon:"🔄",
+    icon:"",
     color:C.amber,
     drills:[
       { name:"Return Deep Consistency", duration:"10 min", difficulty:"Beginner", focus:"Depth",
@@ -8744,7 +8748,7 @@ const Drills = ({ setPage }) => {
               {done && <span style={{ fontSize:10, fontWeight:700, color:C.mint, background:`${C.mint}15`, padding:"2px 7px", borderRadius:20 }}>✓ Done today</span>}
             </div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              <span style={{ fontSize:11, color:C.textLight }}>⏱ {drill.duration}</span>
+              <span style={{ fontSize:11, color:C.textLight }}>{drill.duration}</span>
               <span style={{ fontSize:11, fontWeight:700, color:diffColor }}>● {drill.difficulty}</span>
               <span style={{ fontSize:11, color:C.textLight }}>Focus: {drill.focus}</span>
             </div>
@@ -8831,15 +8835,15 @@ const Drills = ({ setPage }) => {
         <button onClick={() => setPage("shots")} style={{
           background:C.navy, border:"none", borderRadius:12, padding:"10px 18px",
           fontFamily:"'Outfit'", fontWeight:700, fontSize:13, color:C.pickle, cursor:"pointer",
-        }}>📌 Pin shots from Shots page</button>
+        }}>Pin shots from Shots page</button>
       </div>
 
       {/* Tab bar */}
       <div style={{ display:"flex", gap:4, marginBottom:28, background:C.cardBg, border:`1px solid ${C.border}`,
         borderRadius:14, padding:5 }}>
         {[
-          { id:"focus",    label:"🎯 My Focus Areas" },
-          { id:"library",  label:"📚 Full Drill Library" },
+          { id:"focus",    label:"My Focus Areas" },
+          { id:"library",  label:"Full Drill Library" },
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
             background: activeTab===t.id ? C.navy : "transparent",
@@ -8856,7 +8860,7 @@ const Drills = ({ setPage }) => {
           {!hasFocusData ? (
             <div style={{ textAlign:"center", padding:"60px 20px", background:C.cardBg, borderRadius:20,
               border:`2px dashed ${C.border}` }}>
-              <div style={{ fontSize:48, marginBottom:16 }}>🎯</div>
+              
               <div style={{ fontFamily:"'Bebas Neue'", fontSize:28, color:C.navy, letterSpacing:"0.05em", marginBottom:8 }}>
                 No Focus Areas Yet
               </div>
@@ -8883,12 +8887,12 @@ const Drills = ({ setPage }) => {
                 <div style={{ marginBottom:28 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
                     <div style={{ width:3, height:20, background:C.pickle, borderRadius:2 }}/>
-                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>📌 Pinned Focus Shots</span>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>Pinned Focus Shots</span>
                     <span style={{ fontSize:12, color:C.textLight }}>({pinnedShots.length} pinned)</span>
                   </div>
                   {pinnedShots.map(p => (
                     <ShotDrillSection key={p.name+pinVer} shotName={p.name} source="pinned"
-                      badge={{ label:"📌 Pinned", color:C.pickle }}/>
+                      badge={{ label:"Pinned", color:C.pickle }}/>
                   ))}
                 </div>
               )}
@@ -8898,7 +8902,7 @@ const Drills = ({ setPage }) => {
                 <div style={{ marginBottom:28 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
                     <div style={{ width:3, height:20, background:C.rose, borderRadius:2 }}/>
-                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>⚠️ Shots to Improve</span>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>Shots to Improve</span>
                     <span style={{ fontSize:12, color:C.textLight }}>Based on your logged data</span>
                   </div>
                   {scoredShots.slice(0, 3).map(s => (
@@ -8913,7 +8917,7 @@ const Drills = ({ setPage }) => {
                 <div style={{ marginBottom:28 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
                     <div style={{ width:3, height:20, background:C.blue, borderRadius:2 }}/>
-                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>📊 Metric Improvement Drills</span>
+                    <span style={{ fontSize:16, fontWeight:700, color:C.navy }}>Metric Improvement Drills</span>
                     <span style={{ fontSize:12, color:C.textLight }}>Based on your gaps to target</span>
                   </div>
                   {weakMetrics.map(m => {
@@ -9050,7 +9054,8 @@ const statsName = (shot_type, shot_side) => {
 const REVIEW_OUTCOME = [
   { id:"ongoing", label:"Rally continues", color:C.textMid },
   { id:"winner",  label:"Winner",          color:C.mint },
-  { id:"error",   label:"Error",           color:C.rose },
+  { id:"error",   label:"Unforced error",  color:C.rose },
+  { id:"forced",  label:"Forced error",    color:C.amber },
 ];
 // Match types: every match gets one so stats can be split by format
 const MATCH_TYPES = [
@@ -9144,7 +9149,7 @@ function NvzRows({ singles, server, derived, us, them, onChange, short, length }
     </div>
   );
 }
-const isRallyEnd = (outcome) => outcome === "winner" || outcome === "error";
+const isRallyEnd = (outcome) => outcome === "winner" || outcome === "error" || outcome === "forced";
 
 // Builds the match-level numbers from individual reviews. NVZ numbers are per SERVING team.
 function computeMatchMetrics(reviewsMap) {
@@ -9166,7 +9171,7 @@ function computeMatchMetrics(reviewsMap) {
     if (!isRallyEnd(out)) return;
     rallies++;
     const ours = r.player_role === "me" || r.player_role === "partner";
-    const weWon = (ours && out === "winner") || (!ours && out === "error");
+    const weWon = (ours && out === "winner") || (!ours && (out === "error" || out === "forced"));
     if (weWon) usWon++;
     if (r.player_role === "me" && out === "error") myErrors++;
     const sv = r.serving_team || server;
@@ -9306,7 +9311,7 @@ function PeopleScoutTool() {
   };
 
   const ghostBtn = {
-    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cardBg,
     fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer",
   };
 
@@ -9328,7 +9333,7 @@ function PeopleScoutTool() {
           const negP = total ? Math.round((r.neg_count || 0) / total * 100) : 0;
           const rallyTotal = (r.wins || 0) + (r.misses || 0);
           return (
-            <div key={r.name} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12,
+            <div key={r.name} style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12,
               padding: "12px 14px", marginBottom: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                 <strong style={{ color: C.navy, fontSize: 14 }}>{r.name}</strong>
@@ -9356,7 +9361,7 @@ function PeopleScoutTool() {
       {loading ? (
         <div style={{ fontSize: 13, color: C.textMid }}>Loading…</div>
       ) : (people || []).length === 0 ? (
-        <div style={{ padding: 20, background: "white", borderRadius: 12, border: `1px solid ${C.border}`,
+        <div style={{ padding: 20, background: C.cardBg, borderRadius: 12, border: `1px solid ${C.border}`,
           fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
           No one logged yet. In Shot Review, sync a match with a partner or opponent's name entered and
           they'll show up here.
@@ -9364,7 +9369,7 @@ function PeopleScoutTool() {
       ) : people.map(p => (
         <button key={p.name} onClick={() => openPerson(p.name)} style={{
           width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "14px 16px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`,
+          padding: "14px 16px", marginBottom: 8, background: C.cardBg, border: `1px solid ${C.border}`,
           borderRadius: 12, cursor: "pointer",
         }}>
           <strong style={{ color: C.navy, fontSize: 15 }}>{p.name}</strong>
@@ -9610,7 +9615,7 @@ function ShotReviewTool() {
       const q = r.hit_quality || "neutral";
       if (q === "positive") t.pos += 1; else if (q === "negative") t.neg += 1; else t.neu += 1;
       const outcome = toHitterOutcome(r.rally_outcome, r.player_role);
-      if (outcome === "winner") t.wins += 1; else if (outcome === "error") t.misses += 1;
+      if (outcome === "winner") t.wins += 1; else if (outcome === "error" || outcome === "forced") t.misses += 1;
       totals[name] = t;
     });
     return { totals, skippedNoSide, skippedUnmapped };
@@ -9670,7 +9675,7 @@ function ShotReviewTool() {
       });
       setSession(s => ({ ...s, match_id: matchId, people_names, match_type: matchForm.matchType || null }));
       setSyncPreview(null); setStage("review");
-      alert("Match linked. Tap 📊 Sync to my stats again to review and confirm.");
+      alert("Match linked. Tap Sync to my stats again to review and confirm.");
     } catch (e) { setSyncError(e.message); }
     setBusy(false);
   };
@@ -9698,7 +9703,7 @@ function ShotReviewTool() {
           neg_count: (ex?.neg_count || 0) + d.neg,
           win_history: [...((ex?.win_history) || [0,0,0,0]).slice(1), d.wins > 0 ? 100 : 0],
           miss_history: [...((ex?.miss_history) || [0,0,0,0]).slice(1), d.misses > 0 ? 100 : 0],
-          color: cat?.color || C.blue, icon: cat?.icon || "🎾", user_id: uid,
+          color: cat?.color || C.blue, icon: cat?.icon || "", user_id: uid,
         }, "user_id,name");
       }
       const meTotals = syncPreview.roles.me.totals;
@@ -9952,12 +9957,12 @@ function ShotReviewTool() {
     opacity: busy ? 0.6 : 1,
   });
   const ghostBtn = {
-    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+    padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cardBg,
     fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer",
   };
   const inputStyle = {
     width: "100%", padding: "11px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`,
-    fontSize: 14, color: C.text, background: "white", boxSizing: "border-box",
+    fontSize: 14, color: C.text, background: C.cardBg, boxSizing: "border-box",
   };
   const errorBox = error && (
     <div style={{ margin: "10px 0", padding: "10px 12px", borderRadius: 9, background: C.roseL,
@@ -9995,7 +10000,7 @@ function ShotReviewTool() {
       </div>
       {errorBox}
       {sessions.length === 0 && !error && (
-        <div style={{ padding: 20, background: "white", borderRadius: 12, border: `1px solid ${C.border}`,
+        <div style={{ padding: 20, background: C.cardBg, borderRadius: 12, border: `1px solid ${C.border}`,
           fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>
           No matches loaded yet. Tap <strong>New match</strong> and pick a SHOT_LOG file from Colab.
         </div>
@@ -10003,7 +10008,7 @@ function ShotReviewTool() {
       {sessions.map(s => (
         <button key={s.id} onClick={() => openSession(s.id)} style={{
           width: "100%", textAlign: "left", display: "block", padding: "14px 16px", marginBottom: 8,
-          background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer",
+          background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer",
         }}>
           <div style={{ fontWeight: 700, fontSize: 15, color: C.navy }}>{s.video_name}</div>
           <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>
@@ -10123,7 +10128,7 @@ function ShotReviewTool() {
               <button onClick={() => stepScratchFrame(5)} style={ghostBtn}>5 ▶▶</button>
             </div>
             <button onClick={startMarkingScratchShot} style={{ ...btn(C.purple, "white"), width: "100%", marginBottom: 12 }}>
-              ✋ Mark a shot here
+              Mark a shot here
             </button>
           </>
         ) : (
@@ -10180,7 +10185,7 @@ function ShotReviewTool() {
             </ReviewSection>
 
             <ReviewSection title="Did this shot end the rally?">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
                 {REVIEW_OUTCOME.map(o => (
                   <ReviewChip key={o.id} color={o.color} active={scratchDraft.rally_outcome === o.id}
                     onClick={() => setScratchDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
@@ -10304,7 +10309,7 @@ function ShotReviewTool() {
         </ReviewSection>
 
         {p.metrics && (
-          <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+          <div style={{ padding: "12px 14px", borderRadius: 10, background: C.cardBg, border: `1px solid ${C.border}`,
             fontSize: 13, color: C.text, marginBottom: 14, lineHeight: 1.7 }}>
             <div style={{ fontWeight: 700, color: C.navy, marginBottom: 4 }}>Match stats</div>
             <div>{p.metrics.rallies} rallies · we won {p.metrics.usWon}</div>
@@ -10324,15 +10329,15 @@ function ShotReviewTool() {
             )}
             {p.metrics.untagged > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: C.amber }}>
-                ⚠️ {p.metrics.untagged} of {p.metrics.rallies} rallies are missing the serving team or its kitchen
-                answer — use 🏃 Tag kitchen arrival to fill them in. NVZ numbers only count tagged rallies.
+                {p.metrics.untagged} of {p.metrics.rallies} rallies are missing the serving team or its kitchen
+                answer — use Tag kitchen arrival to fill them in. NVZ numbers only count tagged rallies.
               </div>
             )}
           </div>
         )}
 
         {!p.anyDelta ? (
-          <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+          <div style={{ padding: "12px 14px", borderRadius: 10, background: C.cardBg, border: `1px solid ${C.border}`,
             fontSize: 13, color: C.textMid, marginBottom: 14 }}>
             No new shots since last time — confirming will just update the match stats above.
           </div>
@@ -10369,7 +10374,7 @@ function ShotReviewTool() {
               const label = role === "me" ? "Your" : `${r.personName}'s`;
               return (
                 <div key={role}>
-                  {r.skippedNoSide > 0 && <>⚠️ {r.skippedNoSide} of {label} shots have no forehand/backhand tag and can't be counted yet.</>}
+                  {r.skippedNoSide > 0 && <>{r.skippedNoSide} of {label} shots have no forehand/backhand tag and can't be counted yet.</>}
                   {r.skippedUnmapped > 0 && <> {r.skippedUnmapped} don't have a matching category and were skipped.</>}
                 </div>
               );
@@ -10381,7 +10386,7 @@ function ShotReviewTool() {
           Object.keys(syncPreview.roles[role].totals).length > 0) && (
           <div style={{ padding: "10px 12px", borderRadius: 10, background: `${C.blue}12`, fontSize: 12,
             color: C.text, marginBottom: 14, lineHeight: 1.6 }}>
-            ℹ️ You've logged Partner or opponent shots but left that name blank when linking this match —
+            ℹ You've logged Partner or opponent shots but left that name blank when linking this match —
             those shots stay as training data only. Go to <strong>← Back</strong>, tap this again, and you'll
             be able to add names without losing anything.
           </div>
@@ -10451,7 +10456,7 @@ function ShotReviewTool() {
         </div>
         {videoEl}
         {!cur ? (
-          <div style={{ padding: 16, background: "white", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, color: C.textMid }}>
+          <div style={{ padding: 16, background: C.cardBg, borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, color: C.textMid }}>
             No rally-ending shots yet. Mark shots as Winner or Error while logging, then come back here.
           </div>
         ) : (
@@ -10463,7 +10468,7 @@ function ShotReviewTool() {
                   Rally {rallyIdx + 1} of {ends.length}
                 </div>
                 <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>
-                  Ended at {fmtClock(tOf(cur), true)} — {roleLabel} hit {cur.shot_type || "a shot"} for {outcome === "winner" ? "a winner" : "an error"}
+                  Ended at {fmtClock(tOf(cur), true)} — {roleLabel} hit {cur.shot_type || "a shot"} for {outcome === "winner" ? "a winner" : outcome === "forced" ? "a forced error" : "an unforced error"}
                 </div>
               </div>
               <button onClick={() => rallyIdx < ends.length - 1 && goTo(rallyIdx + 1)} style={ghostBtn} aria-label="Next rally">›</button>
@@ -10504,7 +10509,7 @@ function ShotReviewTool() {
       </div>
       <input type="file" accept=".csv,text/csv" onChange={onUpgradeFile} style={{ fontSize: 13, marginBottom: 12 }} />
       {upgradeSummary && (
-        <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+        <div style={{ padding: "12px 14px", borderRadius: 10, background: C.cardBg, border: `1px solid ${C.border}`,
           fontSize: 13, color: C.text, lineHeight: 1.7, marginBottom: 12 }}>
           New list has <strong>{upgradeParsed.length}</strong> shots (was {shots.length}).<br />
           <strong style={{ color: C.mint }}>{upgradeSummary.matched}</strong> of your reviews carried over
@@ -10548,11 +10553,11 @@ function ShotReviewTool() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
         <button onClick={() => { setUpgradeError(""); setUpgradeParsed(null); setUpgradeSummary(null); setStage("upgrade"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.blue, fontFamily: "'Outfit'",
-            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬆ Load improved shot list</button>
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Load improved shot list</button>
         <button onClick={() => { setError(""); setScratchRange({ startMin: "", endMin: "" }); setScratchLogged([]);
           setScratchActive(false); setScratchDone(false); setScratchDraft(null); setStage("scratch"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.purple, fontFamily: "'Outfit'",
-            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🔬 Log a range from scratch</button>
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Log a range from scratch</button>
         <button onClick={() => {
             setError("");
             const ends = Object.values(reviews)
@@ -10565,15 +10570,15 @@ function ShotReviewTool() {
             setStage("rallies");
           }}
           style={{ background: "none", border: "none", padding: 0, color: C.mint, fontFamily: "'Outfit'",
-            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🏃 Tag kitchen arrival</button>
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Tag kitchen arrival</button>
         <button onClick={openSyncPreview}
           style={{ background: "none", border: "none", padding: 0, color: C.pickleD, fontFamily: "'Outfit'",
-            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>📊 Sync to my stats</button>
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Sync to my stats</button>
         <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
           <strong style={{ color: C.navy }}>{session.video_name}</strong><br />
           {reviewedCount} of {shots.length} reviewed<br />
           <button onClick={exportLabels} style={{ background: "none", border: "none", padding: 0, marginTop: 2,
-            color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>⬇ Export labels</button>
+            color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Export labels</button>
         </div>
         </div>
       </div>
@@ -10682,7 +10687,7 @@ function ShotReviewTool() {
       </ReviewSection>
 
       <ReviewSection title="Did this shot end the rally? (for the person who hit it)">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
           {REVIEW_OUTCOME.map(o => (
             <ReviewChip key={o.id} color={o.color} active={draft.rally_outcome === o.id}
               onClick={() => setDraft(d => ({ ...d, rally_outcome: o.id }))}>{o.label}</ReviewChip>
@@ -10730,7 +10735,7 @@ function PlayerMapStep({ keys, counts, first, initial, videoEl, playShot, busy, 
       </div>
       {videoEl}
       {keys.map(k => (
-        <div key={k} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12,
+        <div key={k} style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12,
           padding: 12, marginBottom: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div>
@@ -10850,11 +10855,11 @@ const Admin = () => {
   };
 
   const typeColor  = { bug:C.rose, feature:C.blue, general:C.mint };
-  const typeLabel  = { bug:"🐛 Bug", feature:"💡 Feature", general:"👋 General" };
+  const typeLabel  = { bug:"Bug", feature:"Feature", general:"General" };
 
   if (loading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,flexDirection:"column",gap:12}}>
-      <div style={{fontSize:24,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+      
       <div style={{fontSize:14,color:C.textMid}}>Loading admin data…</div>
     </div>
   );
@@ -10866,7 +10871,7 @@ const Admin = () => {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24}}>
         <div>
           <div style={{fontSize:11,color:C.rose,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>
-            🔒 Admin Only
+            Admin Only
           </div>
           <h1 style={{fontFamily:"'Bebas Neue'",fontSize:34,letterSpacing:"0.05em",color:C.navy}}>PickleIntel Admin</h1>
           <p style={{color:C.textMid,fontSize:14,marginTop:3}}>
@@ -10902,11 +10907,11 @@ const Admin = () => {
       {/* Tab bar */}
       <div style={{display:"flex",gap:4,marginBottom:24,background:C.cardBg,border:`1px solid ${C.border}`,borderRadius:14,padding:5,flexWrap:"wrap"}}>
         {[
-          {id:"overview",  label:"👥 Users"},
-          {id:"feedback",  label:"💬 Feedback"},
-          {id:"activity",  label:"📊 Activity"},
-          {id:"review",    label:"🎾 Shot Review"},
-          {id:"people",     label:"👥 People"},
+          {id:"overview",  label:"Users"},
+          {id:"feedback",  label:"Feedback"},
+          {id:"activity",  label:"Activity"},
+          {id:"review",    label:"Shot Review"},
+          {id:"people",     label:"People"},
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: tab===t.id ? C.navy : "transparent",
@@ -10972,7 +10977,7 @@ const Admin = () => {
         <div>
           {feedback.length === 0 ? (
             <div style={{textAlign:"center",padding:"60px 20px",background:C.cardBg,borderRadius:20,border:`2px dashed ${C.border}`}}>
-              <div style={{fontSize:40,marginBottom:12}}>💬</div>
+              
               <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>No Feedback Yet</div>
               <div style={{fontSize:13,color:C.textMid}}>Feedback submitted by users will appear here.</div>
             </div>
@@ -11165,11 +11170,13 @@ function aggShots(rows) {
 const topBy = (agg, key) => [...agg.types].filter(t => t[key] > 0).sort((x, y) => y[key] - x[key])[0] || null;
 
 // ── Shared UI pieces for the analysis pages ─────────────────────────────────
-function APage({ children }) {
+function APage({ children, court }) {
   const isMobile = useIsMobile();
   return (
-    <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto", padding: isMobile ? "14px 14px 28px" : "28px", boxSizing: "border-box", width: "100%" }}>
-      {children}
+    <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto", padding: isMobile ? "16px 14px 28px" : "28px",
+      paddingBottom: court ? 150 : (isMobile ? 28 : 28), boxSizing: "border-box", width: "100%", position: "relative" }}>
+      {court && <CourtLines />}
+      <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
     </div>
   );
 }
@@ -11191,7 +11198,7 @@ const ATabs = ({ tabs, value, onChange }) => (
   </div>
 );
 const ATile = ({ label, value, color = C.navy, sub }) => (
-  <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+  <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
     <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>{label}</div>
     <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color, lineHeight: 1.1 }}>{value}</div>
     {sub && <div style={{ fontSize: 11, color: C.textMid }}>{sub}</div>}
@@ -11201,10 +11208,13 @@ const ALoading = ({ err }) => (
   <div style={{ padding: 24, textAlign: "center", color: err ? C.rose : C.textMid, fontSize: 13 }}>{err || "Loading…"}</div>
 );
 const AEmpty = ({ children }) => (
-  <div style={{ padding: 16, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>{children}</div>
+  <div style={{ padding: 16, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, fontSize: 13, color: C.textMid, lineHeight: 1.6 }}>{children}</div>
 );
 const ASection = ({ children }) => (
-  <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, textTransform: "uppercase", letterSpacing: "0.06em", margin: "18px 0 8px" }}>{children}</div>
+  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "22px 0 10px" }}>
+    <span style={{ fontSize: 12.5, fontWeight: 800, color: C.navy, textTransform: "uppercase", letterSpacing: "0.1em", flexShrink: 0 }}>{children}</span>
+    <span style={{ flex: 1, height: 1, background: C.navy, opacity: 0.3 }} />
+  </div>
 );
 const linkBtn = { background: "none", border: "none", padding: 0, color: C.blue, fontFamily: "'Outfit'", fontWeight: 600, fontSize: 12, cursor: "pointer" };
 
@@ -11215,7 +11225,7 @@ function AggTiles({ agg }) {
       <ATile label="Positive" value={agg.rated ? fmtPct(pctOf(agg.pos, agg.rated)) : "—"} color={C.mint}
         sub={agg.rated ? `${pctOf(agg.neg, agg.rated)}% negative` : null} />
       <ATile label="Winners" value={agg.winners} color={C.mint} />
-      <ATile label="Errors" value={agg.errors} color={C.rose} />
+      <ATile label="Unforced errors" value={agg.errors} color={C.rose} />
     </div>
   );
 }
@@ -11227,7 +11237,7 @@ function ShotTypeList({ agg, empty }) {
       {agg.types.map(t => {
         const rated = t.pos + t.neu + t.neg;
         return (
-          <div key={t.type} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
+          <div key={t.type} style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <strong style={{ color: C.navy, fontSize: 14 }}>{t.type}</strong>
               <span style={{ fontSize: 12, color: C.textMid, flexShrink: 0 }}>{t.n} shot{t.n !== 1 ? "s" : ""} · {pctOf(t.n, agg.total)}%</span>
@@ -11235,7 +11245,7 @@ function ShotTypeList({ agg, empty }) {
             {rated > 0 && (
               <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: C.border, margin: "6px 0 4px" }}>
                 <div style={{ width: `${(t.pos / rated) * 100}%`, background: C.mint }} />
-                <div style={{ width: `${(t.neu / rated) * 100}%`, background: "#CBD5E1" }} />
+                <div style={{ width: `${(t.neu / rated) * 100}%`, background: "#D6D9CC" }} />
                 <div style={{ width: `${(t.neg / rated) * 100}%`, background: C.rose }} />
               </div>
             )}
@@ -11258,13 +11268,13 @@ function WeaponLeak({ agg, who = "your" }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 4 }}>
       <div style={{ background: C.mintL, border: `1px solid ${C.mint}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.06em" }}>🏆 Top weapon</div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>{weapon ? weapon.type : "—"}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: C.mint, textTransform: "uppercase", letterSpacing: "0.07em" }}><PiIcon name="trophy" size={15} color={C.amber} />Top weapon</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.navy, marginTop: 4 }}>{weapon ? weapon.type : "—"}</div>
         <div style={{ fontSize: 11, color: C.textMid }}>{weapon ? `${weapon.winners} winner${weapon.winners !== 1 ? "s" : ""}` : `No winners logged`}</div>
       </div>
       <div style={{ background: C.roseL, border: `1px solid ${C.rose}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: C.rose, textTransform: "uppercase", letterSpacing: "0.06em" }}>⚠️ Biggest leak</div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>{leak ? leak.type : "—"}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: C.rose, textTransform: "uppercase", letterSpacing: "0.07em" }}><PiIcon name="alert" size={15} color={C.rose} stroke={2} />Biggest leak</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.navy, marginTop: 4 }}>{leak ? leak.type : "—"}</div>
         <div style={{ fontSize: 11, color: C.textMid }}>{leak ? `${leak.errors} error${leak.errors !== 1 ? "s" : ""}` : `No errors logged`}</div>
       </div>
     </div>
@@ -11335,8 +11345,8 @@ function buildInsights({ m, us, them, won, perPlayer }) {
   const ins = [];
   const errDiff = them.errors - us.errors;
   if (Math.abs(errDiff) >= 3) ins.push({ good: errDiff > 0, w: Math.abs(errDiff) * 2,
-    text: errDiff > 0 ? `They made ${them.errors} errors to our ${us.errors} — ${errDiff} more free points for us.`
-                      : `We made ${us.errors} errors to their ${them.errors} — ${-errDiff} more free points for them.` });
+    text: errDiff > 0 ? `They made ${them.errors} unforced errors to our ${us.errors} — ${errDiff} more free points for us.`
+                      : `We made ${us.errors} unforced errors to their ${them.errors} — ${-errDiff} more free points for them.` });
   const winDiff = us.winners - them.winners;
   if (Math.abs(winDiff) >= 3) ins.push({ good: winDiff > 0, w: Math.abs(winDiff) * 2,
     text: winDiff > 0 ? `We hit ${us.winners} winners to their ${them.winners}.`
@@ -11396,7 +11406,7 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
   const won = match.result === "W";
   const header = (
     <>
-      <button onClick={onBack} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+      <button onClick={onBack} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cardBg,
         fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer", marginBottom: 12 }}>← Matches</button>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
@@ -11429,7 +11439,7 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
           catch (e) { alert("Couldn't update: " + e.message); }
           setSaving(false);
         }} style={{ ...linkBtn, color: C.textLight, marginBottom: 4 }}>
-        {match.archived ? "↩ Restore this match to your stats" : "🗄 Archive this match (hide it from stats, keep the data)"}
+        {match.archived ? "Restore this match to your stats" : "Archive this match (hide it from stats, keep the data)"}
       </button>
       {!match.match_type && <div style={{ fontSize: 11, color: C.amber }}>Tap a match type so this match shows up in the right filter.</div>}
     </>
@@ -11481,11 +11491,11 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
     <>
       <ASection>{title}</ASection>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 4 }}>US</div>
           <ErrList agg={us} keyName={keyName} color={usColor} />
         </div>
-        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 4 }}>THEM</div>
           <ErrList agg={them} keyName={keyName} color={themColor} />
         </div>
@@ -11499,17 +11509,17 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
 
       <ASection>{won ? "Why we won" : "Why we lost"}</ASection>
       {insights.length ? (
-        <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "6px 12px" }}>
+        <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "6px 12px" }}>
           {insights.map((i, k) => (
             <div key={k} style={{ display: "flex", gap: 8, padding: "7px 0", borderTop: k ? `1px solid ${C.border}` : "none", fontSize: 13, lineHeight: 1.5 }}>
-              <span style={{ flexShrink: 0 }}>{i.good ? "✅" : "⚠️"}</span><span style={{ color: C.text }}>{i.text}</span>
+              <span style={{ flexShrink: 0, marginTop: 1 }}><InsightMark good={i.good} /></span><span style={{ color: C.text }}>{i.text}</span>
             </div>
           ))}
         </div>
       ) : <AEmpty>No big gaps between the teams — this one came down to small margins.</AEmpty>}
 
       <ASection>Us vs them</ASection>
-      <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "4px 12px 6px" }}>
+      <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "4px 12px 6px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 76px 76px", gap: 6, padding: "6px 0", fontSize: 11, fontWeight: 700, color: C.textLight }}>
           <span /><span style={{ textAlign: "center" }}>US</span><span style={{ textAlign: "center" }}>THEM</span>
         </div>
@@ -11518,16 +11528,16 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
         <CompareRow label="Kitchen arrival on serve" us={fmtPct(m.usArrival)} them={fmtPct(m.themArrival)} better={cmpSide(m.usArrival, m.themArrival)} />
         <CompareRow label="Won once at kitchen" us={fmtPct(m.usNvzWin)} them={fmtPct(m.themNvzWin)} better={cmpSide(m.usNvzWin, m.themNvzWin)} />
         <CompareRow label="Winners" us={us.winners} them={them.winners} better={cmpSide(us.winners, them.winners)} />
-        <CompareRow label="Errors" us={us.errors} them={them.errors} better={cmpSide(us.errors, them.errors, false)} />
+        <CompareRow label="Unforced errors" us={us.errors} them={them.errors} better={cmpSide(us.errors, them.errors, false)} />
         <CompareRow label="Positive shots" us={fmtPct(usPos)} them={fmtPct(themPos)} better={cmpSide(usPos, themPos)} />
       </div>
       {m.untagged > 0 && (
         <div style={{ fontSize: 11, color: C.amber, marginTop: 6, lineHeight: 1.5 }}>
-          {m.untagged} rall{m.untagged !== 1 ? "ies are" : "y is"} missing a kitchen tag — finish them with 🏃 Tag kitchen arrival in Log a match.
+          {m.untagged} rall{m.untagged !== 1 ? "ies are" : "y is"} missing a kitchen tag — finish them with Tag kitchen arrival in Log a match.
         </div>
       )}
 
-      <TwoCol title="Where the errors came from" keyName="errors" usColor={C.rose} themColor={C.mint} />
+      <TwoCol title="Where the unforced errors came from" keyName="errors" usColor={C.rose} themColor={C.mint} />
       <TwoCol title="Where the winners came from" keyName="winners" usColor={C.mint} themColor={C.rose} />
 
       <ASection>Each player</ASection>
@@ -11535,18 +11545,18 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
         {perPlayer.map(p => {
           const leak = topBy(p.agg, "errors");
           return (
-            <div key={p.role} style={{ background: "white", border: `1px solid ${C.border}`, borderLeft: `4px solid ${p.ours ? C.mint : C.rose}`, borderRadius: 12, padding: "10px 12px" }}>
+            <div key={p.role} style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderLeft: `4px solid ${p.ours ? C.mint : C.rose}`, borderRadius: 12, padding: "10px 12px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <strong style={{ color: C.navy, fontSize: 14 }}>{p.name}</strong>
                 <span style={{ fontSize: 11, color: C.textLight }}>{(REVIEW_ROLES.find(r => r.id === p.role) || {}).label}</span>
               </div>
               <div style={{ fontSize: 12, color: C.textMid, marginTop: 2, lineHeight: 1.5 }}>
-                {p.agg.total} shots{p.agg.rated ? ` · ${pctOf(p.agg.pos, p.agg.rated)}% positive` : ""} · {p.agg.winners} winner{p.agg.winners !== 1 ? "s" : ""} · {p.agg.errors} error{p.agg.errors !== 1 ? "s" : ""}
+                {p.agg.total} shots{p.agg.rated ? ` · ${pctOf(p.agg.pos, p.agg.rated)}% positive` : ""} · {p.agg.winners} winner{p.agg.winners !== 1 ? "s" : ""} · {p.agg.errors} unforced error{p.agg.errors !== 1 ? "s" : ""}
               </div>
               <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5 }}>
                 Most used: {p.agg.types.slice(0, 3).map(t => `${t.type} (${t.n})`).join(", ")}
               </div>
-              {leak && <div style={{ fontSize: 12, color: C.rose, lineHeight: 1.5 }}>Most errors: {leak.type} ({leak.errors})</div>}
+              {leak && <div style={{ fontSize: 12, color: C.rose, lineHeight: 1.5 }}>Most unforced errors: {leak.type} ({leak.errors})</div>}
             </div>
           );
         })}
@@ -11592,7 +11602,7 @@ function MatchesPage({ setPage }) {
           <TypeFilterBar untagged={data.matches.filter(x => !x.match_type).length} />
           {!list.length ? <AEmpty>No matches here yet. Log one under <strong>Log a match</strong>.</AEmpty> : list.map(x => (
             <button key={x.id} onClick={() => setSelId(x.id)} style={{ width: "100%", textAlign: "left", display: "block",
-              padding: "12px 14px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+              padding: "12px 14px", marginBottom: 8, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 12, color: C.textLight }}>{x.date}{x.score ? ` · ${x.score}` : ""}</span>
                 <span style={pill(x.result === "W" ? C.mintL : C.roseL, x.result === "W" ? C.mint : C.rose)}>{x.result === "W" ? "WIN" : "LOSS"}</span>
@@ -11602,7 +11612,7 @@ function MatchesPage({ setPage }) {
               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                 {x.match_type ? <span style={pill(C.pageBg, C.textMid)}>{matchTypeLabel(x.match_type)}</span>
                   : <span style={pill(C.amberL, C.amber)}>Set match type</span>}
-                {data.sessionByMatch[x.id] && <span style={pill(C.blueL, C.blue)}>📊 Full report</span>}
+                {data.sessionByMatch[x.id] && <span style={pill(C.blueL, C.blue)}>Full report</span>}
               </div>
             </button>
           ))}
@@ -11629,6 +11639,90 @@ function MatchesPage({ setPage }) {
   );
 }
 
+// Number tile used on Home and People: big value, goal line, optional per-player breakdown
+function NumTile({ label, value, sub, ok, lines }) {
+  return (
+    <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+      <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>{label}</div>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 40, lineHeight: 1.05, color: ok == null ? C.navy : ok ? C.mint : C.rose }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: C.textMid }}>{sub}</div>}
+      {lines && lines.length > 0 && (
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.border}` }}>
+          {lines.map(([name, v]) => (
+            <div key={name} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 12, lineHeight: 1.6 }}>
+              <span style={{ color: C.textMid, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+              <strong style={{ color: C.navy, flexShrink: 0 }}>{v}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The Home-page numbers for a team that includes `person`: with you as partner, or their team as opponents
+function TeamNumbers({ sessions, person, lens, myName }) {
+  const side = lens === "with" ? "us" : "them";
+  const blank = () => ({ srvTotal: 0, srvNeut: 0, errors: 0 });
+  const t = { team: blank(), person: blank(), mate: blank(), arr: 0, tagged: 0, kitchenWon: 0, n: 0 };
+  const mateNames = new Set();
+  const add = (b, r) => {
+    if ((r.shot_type === "Serve" || r.shot_type === "Return of Serve") && r.hit_quality) {
+      b.srvTotal++;
+      if (r.hit_quality !== "negative") b.srvNeut++;
+    }
+    if (toHitterOutcome(r.rally_outcome, r.player_role) === "error") b.errors++;
+  };
+  sessions.forEach(s => {
+    if (!s.reviews.length) return;
+    const role = person.roleIn[s.id];
+    const mateRole = lens === "with" ? "me" : (role === "opp1" ? "opp2" : "opp1");
+    if (lens !== "with") mateNames.add(roleName(s, mateRole, myName));
+    s.reviews.forEach(r => {
+      if (r.player_role === role) { add(t.person, r); add(t.team, r); }
+      else if (r.player_role === mateRole) { add(t.mate, r); add(t.team, r); }
+    });
+    const map = {}; s.reviews.forEach(r => { map[r.frame] = r; });
+    const m = computeMatchMetrics(map);
+    if (side === "us") { t.arr += m.usArr; t.tagged += m.usTagged; t.kitchenWon += m.usKitchenWon; }
+    else { t.arr += m.themArr; t.tagged += m.themTagged; t.kitchenWon += m.themKitchenWon; }
+    t.n++;
+  });
+  if (!t.n) return null;
+
+  const first = person.name.split(" ")[0];
+  const mateLabel = lens === "with" ? "You" : (mateNames.size === 1 ? [...mateNames][0].split(" ")[0] : "Their partners");
+  const perMatch = (x) => Math.round((x / t.n) * 10) / 10;
+  const ours = lens === "with";
+  const goal = (v, target) => (!ours || v == null) ? null : v >= target;
+  const serve = pctOf(t.team.srvNeut, t.team.srvTotal);
+  const arrive = pctOf(t.arr, t.tagged), kitchen = pctOf(t.kitchenWon, t.arr);
+  const teamWord = ours ? "Us" : "Their team";
+
+  return (
+    <>
+      <ASection>{ours ? `Our numbers together` : `Their team's numbers`}</ASection>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, alignItems: "start" }}>
+        <NumTile label="Serve & return neut." value={fmtPct(serve)} ok={goal(serve, GOALS.targets.serveNeut)}
+          sub={ours ? `${teamWord} · goal ${GOALS.targets.serveNeut}%+` : teamWord}
+          lines={[[ours ? "You" : first, fmtPct(pctOf(ours ? t.mate.srvNeut : t.person.srvNeut, ours ? t.mate.srvTotal : t.person.srvTotal))],
+                  [ours ? first : mateLabel, fmtPct(pctOf(ours ? t.person.srvNeut : t.mate.srvNeut, ours ? t.person.srvTotal : t.mate.srvTotal))]]} />
+        <NumTile label="Unforced errors / match" value={perMatch(t.team.errors)} ok={null}
+          sub={`${teamWord} · lower is better`}
+          lines={[[ours ? "You" : first, perMatch(ours ? t.mate.errors : t.person.errors)],
+                  [ours ? first : mateLabel, perMatch(ours ? t.person.errors : t.mate.errors)]]} />
+        <NumTile label={ours ? "Kitchen on our serve" : "Kitchen on their serve"} value={fmtPct(arrive)}
+          ok={goal(arrive, GOALS.targets.nvzArrival)} sub={ours ? `Goal ${GOALS.targets.nvzArrival}%+` : "How often they got in"} />
+        <NumTile label="Won once at kitchen" value={fmtPct(kitchen)}
+          ok={goal(kitchen, GOALS.targets.nvzWin)} sub={ours ? `Goal ${GOALS.targets.nvzWin}%+` : "Their kitchen win rate"} />
+      </div>
+      <div style={{ fontSize: 11, color: C.textLight, marginTop: 6 }}>
+        Across {t.n} match{t.n !== 1 ? "es" : ""}.
+      </div>
+    </>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ── PEOPLE PAGE ── partners and opponents, filtered by match type ─────────────
 // ══════════════════════════════════════════════════════════════════════════════
@@ -11646,7 +11740,8 @@ function PeoplePage() {
     [["partner", pn.partnerName], ["opp1", pn.opp1Name], ["opp2", pn.opp2Name]].forEach(([role, raw]) => {
       const name = (raw || "").trim();
       if (!name) return;
-      const p = people[name] || (people[name] = { name, withS: [], againstS: [], withRows: [], againstRows: [] });
+      const p = people[name] || (people[name] = { name, withS: [], againstS: [], withRows: [], againstRows: [], roleIn: {} });
+      p.roleIn[s.id] = role;
       const rows = s.reviews.filter(r => r.player_role === role);
       if (role === "partner") { p.withS.push(s); p.withRows.push(...rows); }
       else { p.againstS.push(s); p.againstRows.push(...rows); }
@@ -11664,7 +11759,7 @@ function PeoplePage() {
     const decided = ss.filter(s => s.match).length;
     return (
       <APage>
-        <button onClick={() => setSel(null)} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white",
+        <button onClick={() => setSel(null)} style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cardBg,
           fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.textMid, cursor: "pointer", marginBottom: 12 }}>← People</button>
         <ATitle title={p.name} sub={`Partner ${p.withS.length}× · Opponent ${p.againstS.length}×`} />
         <TypeFilterBar untagged={untagged} />
@@ -11675,9 +11770,11 @@ function PeoplePage() {
             {effLens === "with" ? "Together" : "Against them"}: <strong>{ourWins}W {decided - ourWins}L</strong>
           </div>
         )}
+        <TeamNumbers sessions={ss} person={p} lens={effLens} myName={data.myName} />
+        <ASection>{p.name.split(" ")[0]}'s shots</ASection>
         <AggTiles agg={agg} />
         <WeaponLeak agg={agg} />
-        <ASection>Their shots</ASection>
+        <div style={{ height: 8 }} />
         <ShotTypeList agg={agg} empty={`No shots logged for ${p.name} in this view.`} />
         <ASection>Matches</ASection>
         {ss.map(s => (
@@ -11699,7 +11796,7 @@ function PeoplePage() {
       ) : list.map(p => (
         <button key={p.name} onClick={() => { setSel(p.name); setLens(p.againstS.length ? "against" : "with"); }} style={{
           width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
-          padding: "12px 14px", marginBottom: 8, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+          padding: "12px 14px", marginBottom: 8, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>{p.name}</div>
             <div style={{ fontSize: 12, color: C.textMid }}>
@@ -11749,9 +11846,9 @@ function HomePage({ setPage }) {
   const openMatch = (id) => { _openMatchId = id; setPage("matches"); };
   const goal = (v, target, lower) => v == null ? null : (lower ? v <= target : v >= target);
   const Num = ({ label, value, sub, ok }) => (
-    <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+    <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
       <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>{label}</div>
-      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, lineHeight: 1.1, color: ok == null ? C.navy : ok ? C.mint : C.rose }}>{value}</div>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 40, lineHeight: 1.05, color: ok == null ? C.navy : ok ? C.mint : C.rose }}>{value}</div>
       <div style={{ fontSize: 11, color: C.textMid }}>{sub}</div>
     </div>
   );
@@ -11759,10 +11856,10 @@ function HomePage({ setPage }) {
   const errs = tot.n ? Math.round((tot.myErrors / tot.n) * 10) / 10 : null;
 
   return (
-    <APage>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
-        <h1 style={{ fontFamily: "'Bebas Neue'", fontSize: 30, letterSpacing: "0.05em", color: C.navy, lineHeight: 1 }}>
-          Hi{data.myName && data.myName !== "Me" ? `, ${data.myName}` : ""} 👋
+    <APage court>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+        <h1 style={{ fontFamily: "'Bebas Neue'", fontSize: 42, letterSpacing: "0.03em", color: C.navy, lineHeight: 1 }}>
+          Hi{data.myName && data.myName !== "Me" ? `, ${data.myName}` : ""}
         </h1>
         <span style={{ fontSize: 13, color: C.textMid, flexShrink: 0 }}>{matches.length} match{matches.length !== 1 ? "es" : ""} · <strong style={{ color: C.navy }}>{wins}W {matches.length - wins}L</strong></span>
       </div>
@@ -11774,13 +11871,14 @@ function HomePage({ setPage }) {
         <>
           <ASection>Last match</ASection>
           <button onClick={() => openMatch(last.id)} style={{ width: "100%", textAlign: "left", display: "block", padding: "12px 14px",
-            background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+            background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
               <span style={{ fontSize: 12, color: C.textLight }}>{last.date}{last.score ? ` · ${last.score}` : ""}</span>
               <span style={pill(last.result === "W" ? C.mintL : C.roseL, last.result === "W" ? C.mint : C.rose)}>{last.result === "W" ? "WIN" : "LOSS"}</span>
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.navy, marginTop: 2 }}>vs {last.opponent || "—"}</div>
-            {lastInsight && <div style={{ fontSize: 13, color: C.text, marginTop: 6, lineHeight: 1.5 }}>{lastInsight.good ? "✅" : "⚠️"} {lastInsight.text}</div>}
+            {lastInsight && <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14, color: C.text, marginTop: 8, lineHeight: 1.45 }}>
+              <span style={{ marginTop: 1 }}><InsightMark good={lastInsight.good} /></span><span>{lastInsight.text}</span></div>}
             <div style={{ fontSize: 12, color: C.blue, fontWeight: 600, marginTop: 6 }}>See full report →</div>
           </button>
 
@@ -11789,12 +11887,14 @@ function HomePage({ setPage }) {
             <Num label="Serve & return neut." value={fmtPct(serve)} sub={`Goal ${GOALS.targets.serveNeut}%+`} ok={goal(serve, GOALS.targets.serveNeut)} />
             <Num label="Kitchen on our serve" value={fmtPct(arrive)} sub={`Goal ${GOALS.targets.nvzArrival}%+`} ok={goal(arrive, GOALS.targets.nvzArrival)} />
             <Num label="Won once at kitchen" value={fmtPct(kitchen)} sub={`Goal ${GOALS.targets.nvzWin}%+`} ok={goal(kitchen, GOALS.targets.nvzWin)} />
-            <Num label="My errors / match" value={errs == null ? "—" : errs} sub="Lower is better" ok={null} />
+            <Num label="Unforced errors" value={errs == null ? "—" : errs} sub="Per match · lower is better" ok={null} />
           </div>
 
           <ASection>Your game</ASection>
           <WeaponLeak agg={me} />
-          <button onClick={() => setPage("stats")} style={{ ...linkBtn, marginTop: 10 }}>See all your stats →</button>
+          <div style={{ textAlign: "center", marginTop: 28 }}>
+            <button onClick={() => setPage("stats")} style={{ ...linkBtn, fontSize: 14, color: C.navy, fontWeight: 700 }}>See all your stats →</button>
+          </div>
         </>
       )}
     </APage>
@@ -11811,7 +11911,7 @@ function TrainPage({ setPage, initialTab = "plan" }) {
   return (
     <div style={{ width: "100%" }}>
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: isMobile ? "14px 14px 0" : "24px 32px 0", boxSizing: "border-box" }}>
-        <ATabs tabs={[{ id: "plan", label: "🎯 My plan & drills" }, { id: "coach", label: "🥒 Ask the coach" }]} value={tab} onChange={setTab} />
+        <ATabs tabs={[{ id: "plan", label: "My plan & drills" }, { id: "coach", label: "Ask the coach" }]} value={tab} onChange={setTab} />
       </div>
       {tab === "plan" ? <Drills setPage={setPage} /> : <Coach />}
     </div>
@@ -11830,7 +11930,7 @@ const FAQS = [
   { q:"What does Serve Neutralization mean?",
     a:"Serve Neutralization measures the percentage of YOUR serves and returns where the opponent cannot attack. It's tracked individually — not as a team stat — so it reflects your personal serving and return quality." },
   { q:"How do I pin Priority Drills?",
-    a:"Go to the Shot Analytics page and click the 📌 Focus button on any shot row. You can pin up to 3 shots. They'll appear on your Dashboard and Profile with target sliders to track progress." },
+    a:"Go to the Shot Analytics page and click the Focus button on any shot row. You can pin up to 3 shots. They'll appear on your Dashboard and Profile with target sliders to track progress." },
   { q:"What is the Synergy Score?",
     a:"Synergy Score (0–100) measures how well you and a partner perform together. It's built from 5 equally weighted components: Joint NVZ Arrival, NVZ Win Rate, Role Clarity, Error Avoidance, and DUPR-Adjusted Win Rate." },
   { q:"Who can see my stats and match data?",
@@ -11851,9 +11951,9 @@ const HelpModal = ({onClose}) => {
   const [feedType, setFeedType]     = useState("bug");
   const [feedSent, setFeedSent]     = useState(false);
   const TABS = [
-    {id:"faq",      label:"❓ FAQs"},
-    {id:"feedback", label:"💬 Feedback"},
-    {id:"contact",  label:"✉️ Contact"},
+    {id:"faq",      label:"FAQs"},
+    {id:"feedback", label:"Feedback"},
+    {id:"contact",  label:"Contact"},
   ];
 
   return(
@@ -11869,7 +11969,7 @@ const HelpModal = ({onClose}) => {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div>
               <div style={{fontFamily:"'Bebas Neue'",fontSize:26,color:"white",letterSpacing:"0.05em"}}>Help & Support</div>
-              <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>FAQs · Send feedback · Contact support</div>
+              <div style={{fontSize:12,color:"#B4C2A6",marginTop:2}}>FAQs · Send feedback · Contact support</div>
             </div>
             <button onClick={onClose} style={{background:"rgba(255,255,255,0.1)",border:"none",
               borderRadius:8,width:34,height:34,fontSize:18,color:"white",cursor:"pointer",
@@ -11882,7 +11982,7 @@ const HelpModal = ({onClose}) => {
                 background:tab===t.id?"rgba(255,255,255,0.15)":"transparent",
                 border:`1px solid ${tab===t.id?"rgba(255,255,255,0.3)":"transparent"}`,
                 borderRadius:8,padding:"7px 16px",fontSize:12,fontWeight:600,
-                color:tab===t.id?"white":"#94A3B8",cursor:"pointer",
+                color:tab===t.id?"white":"#B4C2A6",cursor:"pointer",
                 fontFamily:"'Outfit'",transition:"all 0.15s"}}>
                 {t.label}
               </button>
@@ -11921,7 +12021,7 @@ const HelpModal = ({onClose}) => {
           <div style={{flex:1,overflowY:"auto",padding:"24px 26px"}}>
             {feedSent ? (
               <div style={{textAlign:"center",padding:"48px 16px"}}>
-                <div style={{fontSize:40,marginBottom:12}}>🎉</div>
+                
                 <div style={{fontFamily:"'Bebas Neue'",fontSize:24,color:C.navy,letterSpacing:"0.05em",marginBottom:8}}>
                   Thanks for the feedback!
                 </div>
@@ -11945,9 +12045,9 @@ const HelpModal = ({onClose}) => {
                     letterSpacing:"0.07em",fontWeight:600,marginBottom:8}}>Type</div>
                   <div style={{display:"flex",gap:8}}>
                     {[
-                      {id:"bug",     label:"🐛 Bug Report"},
-                      {id:"feature", label:"💡 Feature Idea"},
-                      {id:"general", label:"👋 General"},
+                      {id:"bug",     label:"Bug Report"},
+                      {id:"feature", label:"Feature Idea"},
+                      {id:"general", label:"General"},
                     ].map(t=>(
                       <button key={t.id} onClick={()=>setFeedType(t.id)} style={{
                         background:feedType===t.id?C.navy:C.pageBg,
@@ -12023,7 +12123,7 @@ const HelpModal = ({onClose}) => {
             {/* Tip: try FAQs first */}
             <div style={{background:`${C.pickle}12`,border:`1px solid ${C.pickle}30`,
               borderRadius:12,padding:"14px 16px",display:"flex",gap:10,alignItems:"flex-start"}}>
-              <span style={{fontSize:16,flexShrink:0}}>💡</span>
+              
               <div style={{fontSize:12,color:C.textMid,lineHeight:1.6}}>
                 Before reaching out, check the <button onClick={()=>setTab("faq")} style={{
                   background:"none",border:"none",color:C.blue,fontWeight:700,fontSize:12,
@@ -12091,7 +12191,7 @@ function LoginScreen({ onAuth }) {
   };
 
   return (
-    <div style={{minHeight:"100vh", background:`linear-gradient(135deg, #0A1628 0%, #162440 60%, #0A1628 100%)`,
+    <div style={{minHeight:"100vh", background:`linear-gradient(135deg, #1B3A26 0%, #2A4D36 60%, #1B3A26 100%)`,
       display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
       padding:20, fontFamily:"'Outfit', sans-serif"}}>
 
@@ -12101,13 +12201,13 @@ function LoginScreen({ onAuth }) {
           <span style={{color:"white"}}>PICKLE</span>
           <span style={{color:C.pickle}}>INTEL</span>
         </div>
-        <div style={{color:"#64748B", fontSize:14, marginTop:6, letterSpacing:"0.04em"}}>
+        <div style={{color:"#8D968F", fontSize:14, marginTop:6, letterSpacing:"0.04em"}}>
           Patient · NVZ-first · data-driven
         </div>
       </div>
 
       {/* Card */}
-      <div style={{background:"white", borderRadius:24, padding:"36px 32px", width:"100%",
+      <div style={{background:C.cardBg, borderRadius:24, padding:"36px 32px", width:"100%",
         maxWidth:420, boxShadow:"0 24px 60px rgba(0,0,0,0.4)"}}>
 
         {/* Tab switcher */}
@@ -12199,7 +12299,7 @@ function LoginScreen({ onAuth }) {
         </div>
       </div>
 
-      <div style={{color:"#334155", fontSize:12, marginTop:24, textAlign:"center", lineHeight:1.8}}>
+      <div style={{color:"#56625A", fontSize:12, marginTop:24, textAlign:"center", lineHeight:1.8}}>
         By signing up you agree to our Terms of Service<br/>
         Your data is private and never shared
       </div>
@@ -12281,13 +12381,13 @@ export default function App(){
 
   // Loading state while checking session
   if (authLoading) return (
-    <div style={{minHeight:"100vh",background:"#0A1628",display:"flex",
+    <div style={{minHeight:"100vh",background:"#1B3A26",display:"flex",
       alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
       <div style={{fontFamily:"'Bebas Neue'",fontSize:42,letterSpacing:"0.08em"}}>
         <span style={{color:"white"}}>PICKLE</span>
         <span style={{color:C.pickle}}>INTEL</span>
       </div>
-      <div style={{color:"#64748B",fontSize:14}}>Loading…</div>
+      <div style={{color:"#8D968F",fontSize:14}}>Loading…</div>
     </div>
   );
 
@@ -12317,7 +12417,7 @@ export default function App(){
             gap: 12, flexWrap: "wrap",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 20 }}>✅</span>
+              
               <div>
                 <div style={{ fontFamily: "'Outfit'", fontWeight: 700, fontSize: 14, color: C.navy }}>
                   Your match analysis is ready!
@@ -12362,7 +12462,7 @@ export default function App(){
           <div style={{display:"flex",alignItems:"center",gap:0,lineHeight:1}}>
             <span style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:"0.06em",color:"white"}}>PICKLE</span>
             <span style={{fontFamily:"'Bebas Neue'",fontSize:16,letterSpacing:"0.06em",color:C.pickle}}>INTEL</span>
-            <span style={{fontSize:11,color:"#475569",marginLeft:8}}>© 2026</span>
+            <span style={{fontSize:11,color:"#8D968F",marginLeft:8}}>© 2026</span>
           </div>
           <button onClick={()=>setShowHelp(true)} style={{
             display:"flex",alignItems:"center",gap:8,
@@ -12370,12 +12470,12 @@ export default function App(){
             border:"1px solid rgba(255,255,255,0.12)",
             borderRadius:10,padding:"8px 16px",cursor:"pointer",
             fontFamily:"'Outfit'",transition:"all 0.15s"}}>
-            <span style={{fontSize:14}}>❓</span>
+            <PiIcon name="help" size={16} color="white"/>
             <span style={{fontSize:13,fontWeight:600,color:"white"}}>Help & Support</span>
           </button>
           <div style={{display:"flex",gap:16}}>
             {["Privacy","Terms","Contact"].map(l=>(
-              <span key={l} style={{fontSize:11,color:"#475569",cursor:"pointer"}}>{l}</span>
+              <span key={l} style={{fontSize:11,color:"#8D968F",cursor:"pointer"}}>{l}</span>
             ))}
           </div>
         </footer>
