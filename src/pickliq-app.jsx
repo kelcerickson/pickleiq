@@ -1888,6 +1888,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
     serve_neut:  m.serve_neut  || 0,
     errors:      m.errors      || 0,
     partner_role: m.partner_role || "Balanced",
+    match_type: m.match_type || "",
     isClaimed,
     stats: {
       nvzArrival: m.nvz_arrival || 0,
@@ -1954,6 +1955,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
     const [serveNeut, setServeNeut]   = useState(m.serve_neut||0);
     const [errors, setErrors]         = useState(m.errors||0);
     const [role, setRole]             = useState(m.partner_role||"Balanced");
+    const [matchType, setMatchType]   = useState(m.match_type||"");
     const [saving, setSaving]         = useState(false);
     const [error, setError]           = useState("");
 
@@ -1968,6 +1970,7 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
           serve_neut:  Number(serveNeut),
           errors:      Number(errors),
           partner_role: role,
+          match_type: matchType || null,
         }, "id");
         loadMatches();
         onClose();
@@ -2065,6 +2068,20 @@ const MatchHistoryContent=({setTab, setClaimPrefill})=>{
                     <span style={{fontSize:12,color:C.textMid}}>{label}</span>
                     <CtrBtn val={val} setVal={set} color={color}/>
                   </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Match type */}
+            <div>
+              <div style={{fontSize:10,color:C.textLight,textTransform:"uppercase",letterSpacing:"0.07em",fontWeight:600,marginBottom:6}}>Match Type</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {MATCH_TYPES.map(t=>(
+                  <button key={t.id} onClick={()=>setMatchType(t.id)} style={{
+                    padding:"8px 4px",borderRadius:8,fontWeight:600,fontSize:12,cursor:"pointer",
+                    fontFamily:"'Outfit'",background:matchType===t.id?C.navy:C.pageBg,
+                    border:`2px solid ${matchType===t.id?C.navy:C.border}`,
+                    color:matchType===t.id?"white":C.textMid}}>{t.label}</button>
                 ))}
               </div>
             </div>
@@ -9030,6 +9047,82 @@ const REVIEW_OUTCOME = [
   { id:"winner",  label:"Winner",          color:C.mint },
   { id:"error",   label:"Error",           color:C.rose },
 ];
+// Match types: every match gets one so stats can be split by format
+const MATCH_TYPES = [
+  { id:"singles",        label:"Singles" },
+  { id:"mens_doubles",   label:"Men's Doubles" },
+  { id:"womens_doubles", label:"Women's Doubles" },
+  { id:"mixed",          label:"Mixed" },
+];
+const matchTypeLabel = (id) => (MATCH_TYPES.find(t => t.id === id) || {}).label || "Not set";
+
+// Kitchen (NVZ) arrival, tagged once per rally on the shot that ended it
+const NVZ_DOUBLES = [
+  { id:"both",    label:"Both",    color:C.mint },
+  { id:"one",     label:"One",     color:C.amber },
+  { id:"neither", label:"Neither", color:C.rose },
+];
+const NVZ_SINGLES = [
+  { id:"both",    label:"Yes", color:C.mint },
+  { id:"neither", label:"No",  color:C.rose },
+];
+function NvzRows({ singles, us, them, onChange }) {
+  const opts = singles ? NVZ_SINGLES : NVZ_DOUBLES;
+  const cols = `repeat(${opts.length},minmax(0,1fr))`;
+  return (
+    <div style={{ padding:"10px 12px", borderRadius:10, background:`${C.mint}10`, border:`1.5px solid ${C.mint}50`, marginBottom:14 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>
+        {singles ? "Did I get to the kitchen this rally?" : "Did we get to the kitchen this rally?"}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:cols, gap:6, marginBottom:10 }}>
+        {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={us === o.id}
+          onClick={() => onChange("nvz_us", us === o.id ? null : o.id)}>{o.label}</ReviewChip>)}
+      </div>
+      <div style={{ fontSize:12, fontWeight:700, color:C.textMid, marginBottom:6 }}>
+        {singles ? "Did my opponent get to the kitchen?" : "Did they get to the kitchen?"}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:cols, gap:6 }}>
+        {opts.map(o => <ReviewChip key={o.id} small color={o.color} active={them === o.id}
+          onClick={() => onChange("nvz_them", them === o.id ? null : o.id)}>{o.label}</ReviewChip>)}
+      </div>
+    </div>
+  );
+}
+const isRallyEnd = (outcome) => outcome === "winner" || outcome === "error";
+
+// Builds the match-level numbers (serve neut, NVZ arrival / win rate, rallies) from individual reviews
+function computeMatchMetrics(reviewsMap) {
+  const rows = Object.values(reviewsMap || {}).filter(r => r && r.status === "reviewed")
+    .sort((a, b) => a.frame - b.frame);
+  let srvTotal = 0, srvNeut = 0, myErrors = 0;
+  let rallies = 0, usWon = 0;
+  let usTagged = 0, usArr = 0, usKitchenWon = 0;
+  let themTagged = 0, themArr = 0, themKitchenWon = 0;
+  rows.forEach(r => {
+    if (r.player_role === "me" && (r.shot_type === "Serve" || r.shot_type === "Return of Serve") && r.hit_quality) {
+      srvTotal++;
+      if (r.hit_quality !== "negative") srvNeut++;
+    }
+    const out = toHitterOutcome(r.rally_outcome, r.player_role);
+    if (!isRallyEnd(out)) return;
+    rallies++;
+    const ours = r.player_role === "me" || r.player_role === "partner";
+    const weWon = (ours && out === "winner") || (!ours && out === "error");
+    if (weWon) usWon++;
+    if (r.player_role === "me" && out === "error") myErrors++;
+    if (r.nvz_us) { usTagged++; if (r.nvz_us === "both") { usArr++; if (weWon) usKitchenWon++; } }
+    if (r.nvz_them) { themTagged++; if (r.nvz_them === "both") { themArr++; if (!weWon) themKitchenWon++; } }
+  });
+  const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : null;
+  return {
+    rallies, usWon, myErrors, srvTotal, srvNeut,
+    serveNeut: pct(srvNeut, srvTotal),
+    usTagged, themTagged, untagged: rallies - Math.min(usTagged, themTagged),
+    usArrival: pct(usArr, usTagged), usNvzWin: pct(usKitchenWon, usArr),
+    themArrival: pct(themArr, themTagged), themNvzWin: pct(themKitchenWon, themArr),
+  };
+}
+
 const REVIEW_SIDE = [
   { id:"forehand", label:"Forehand", color:C.blue },
   { id:"backhand", label:"Backhand", color:C.purple },
@@ -9235,10 +9328,14 @@ function ShotReviewTool() {
   // Sync-to-my-stats state
   const [syncPreview, setSyncPreview] = useState(null); // computed delta, null until opened
   const [syncError, setSyncError] = useState("");
-  const [matchForm, setMatchForm] = useState({ date: "", partnerName: "", opp1Name: "", opp2Name: "", score: "", result: "" });
+  const [matchForm, setMatchForm] = useState({ date: "", partnerName: "", opp1Name: "", opp2Name: "", score: "", result: "", matchType: "" });
+  const [syncMatchType, setSyncMatchType] = useState("");
+  const [rallyIdx, setRallyIdx] = useState(0);
+  const [rallyDraft, setRallyDraft] = useState({});
 
   // New-session form
   const [newName, setNewName]   = useState("");
+  const [newType, setNewType]   = useState("");
   const [newUrl, setNewUrl]     = useState("");
   const [parsed, setParsed]     = useState(null);
 
@@ -9305,6 +9402,7 @@ function ShotReviewTool() {
         auto_player_index: r.auto_player_index, auto_shot_type: r.auto_shot_type, source: r.source || "detected",
         player_role: r.player_role, shot_type: r.shot_type, shot_side: r.shot_side || null,
         hit_quality: r.hit_quality, rally_outcome: r.rally_outcome, status: r.status,
+        nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null,
         updated_at: new Date().toISOString(),
       }));
       for (let i = 0; i < rows.length; i += 50) {
@@ -9328,7 +9426,7 @@ function ShotReviewTool() {
     setBusy(true); setError("");
     try {
       const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
-      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source,nvz_us,nvz_them`);
       const map = {};
       (rows || []).forEach(r => { map[r.frame] = r; });
       setSession(s); setReviews(map);
@@ -9359,11 +9457,11 @@ function ShotReviewTool() {
         method: "POST", headers: { Prefer: "return=representation" },
         body: JSON.stringify({
           user_id: getCurrentUserId(), video_name: newName.trim(), video_url: newUrl.trim(),
-          shots: shotsToSave, shot_count: shotsToSave.length, player_map: {},
+          shots: shotsToSave, shot_count: shotsToSave.length, player_map: {}, match_type: newType || null,
         }),
       });
       setSession(s); setReviews({}); setIdx(0);
-      setNewName(""); setNewUrl(""); setParsed(null);
+      setNewName(""); setNewUrl(""); setParsed(null); setNewType("");
       if (shotsToSave.length === 0) {
         setScratchRange({ startMin: "", endMin: "" }); setScratchLogged([]); setScratchActive(false);
         setScratchDone(false); setScratchDraft(null);
@@ -9406,7 +9504,7 @@ function ShotReviewTool() {
   // Download every shot with its review as a CSV (for training in Colab)
   const exportLabels = () => {
     const cols = ["frame","time_sec","ball_x","ball_y","auto_player_index","auto_shot_type","status",
-      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome"];
+      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome","nvz_us","nvz_them"];
     const esc = (v) => v == null ? "" : String(v).includes(",") ? `"${v}"` : String(v);
     const lines = [cols.join(",")];
     (session?.shots || []).forEach(sh => {
@@ -9416,7 +9514,7 @@ function ShotReviewTool() {
       const source = r.source || (sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected");
       lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
         source, r.player_role, r.shot_side, r.shot_type, r.hit_quality,
-        toHitterOutcome(r.rally_outcome, r.player_role)].map(esc).join(","));
+        toHitterOutcome(r.rally_outcome, r.player_role), r.nvz_us, r.nvz_them].map(esc).join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -9474,7 +9572,9 @@ function ShotReviewTool() {
       });
       roles[role] = { totals, delta, skippedNoSide, skippedUnmapped, personName: personNameFor(role) };
     });
-    setSyncPreview({ roles, anyDelta });
+    setSyncPreview({ roles, anyDelta, metrics: computeMatchMetrics(reviews) });
+    setSyncMatchType(session?.match_type || "");
+    setMatchForm(f => ({ ...f, matchType: f.matchType || session?.match_type || "" }));
     setStage("sync");
   };
 
@@ -9488,15 +9588,16 @@ function ShotReviewTool() {
         opponent: opponentText, partner: matchForm.partnerName,
         result: matchForm.result === "Win" ? "W" : "L", score: matchForm.score, notes: "Logged via Shot Review",
         nvz_arrival: 0, nvz_win: 0, serve_neut: 0, errors: 0, partner_role: "Balanced", user_id: uid,
+        match_type: matchForm.matchType || null,
       });
       const matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
       if (!matchId) throw new Error("Could not create the match record.");
       const people_names = { partnerName: matchForm.partnerName.trim(), opp1Name: matchForm.opp1Name.trim(), opp2Name: matchForm.opp2Name.trim() };
       await reviewApi(`review_sessions?id=eq.${session.id}`, {
         method: "PATCH", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ match_id: matchId, people_names }),
+        body: JSON.stringify({ match_id: matchId, people_names, match_type: matchForm.matchType || null }),
       });
-      setSession(s => ({ ...s, match_id: matchId, people_names }));
+      setSession(s => ({ ...s, match_id: matchId, people_names, match_type: matchForm.matchType || null }));
       setSyncPreview(null); setStage("review");
       alert("Match linked. Tap 📊 Sync to my stats again to review and confirm.");
     } catch (e) { setSyncError(e.message); }
@@ -9577,13 +9678,22 @@ function ShotReviewTool() {
         }
       }
 
+      // Match-level stats are recalculated in full every sync (not added), so re-syncing is always safe
+      const m = syncPreview.metrics || computeMatchMetrics(reviews);
+      const matchUpdate = { errors: m.myErrors };
+      if (m.serveNeut != null) matchUpdate.serve_neut = m.serveNeut;
+      if (m.usArrival != null) matchUpdate.nvz_arrival = m.usArrival;
+      if (m.usNvzWin != null) matchUpdate.nvz_win = m.usNvzWin;
+      if (syncMatchType) matchUpdate.match_type = syncMatchType;
+      await sb.update("matches", matchUpdate, `id=eq.${session.match_id}`);
+
       const synced_totals = {};
       ["me", "partner", "opp1", "opp2"].forEach(role => { synced_totals[role] = syncPreview.roles[role].totals; });
       await reviewApi(`review_sessions?id=eq.${session.id}`, {
         method: "PATCH", headers: { Prefer: "return=minimal" },
-        body: JSON.stringify({ synced_totals }),
+        body: JSON.stringify({ synced_totals, match_type: syncMatchType || session.match_type || null }),
       });
-      setSession(s => ({ ...s, synced_totals }));
+      setSession(s => ({ ...s, synced_totals, match_type: syncMatchType || s.match_type }));
       setSyncPreview(null);
       setStage("review");
     } catch (e) { setSyncError(e.message); }
@@ -9642,6 +9752,8 @@ function ShotReviewTool() {
         player_role: scratchDraft.player_role, shot_type: scratchDraft.shot_type,
         shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
         rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
+        nvz_us: isRallyEnd(scratchDraft.rally_outcome) ? (scratchDraft.nvz_us || null) : null,
+        nvz_them: isRallyEnd(scratchDraft.rally_outcome) ? (scratchDraft.nvz_them || null) : null,
         updated_at: new Date().toISOString(),
       };
       await reviewApi("shot_reviews?on_conflict=session_id,frame", {
@@ -9725,6 +9837,8 @@ function ShotReviewTool() {
       shot_side:   status === "reviewed" ? (draft.shot_side || null) : null,
       hit_quality: status === "reviewed" ? draft.hit_quality : null,
       rally_outcome: status === "reviewed" ? draft.rally_outcome : null,
+      nvz_us: status === "reviewed" && isRallyEnd(draft.rally_outcome) ? (draft.nvz_us || null) : null,
+      nvz_them: status === "reviewed" && isRallyEnd(draft.rally_outcome) ? (draft.nvz_them || null) : null,
       status, updated_at: new Date().toISOString(),
     };
     try {
@@ -9841,15 +9955,23 @@ function ShotReviewTool() {
           Skip this to log the whole match yourself from scratch — no detection step needed.
         </div>
       </ReviewSection>
-      <ReviewSection title="2. Match name">
+      <ReviewSection title="2. Match type">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+          {MATCH_TYPES.map(t => (
+            <ReviewChip key={t.id} color={C.navy} active={newType === t.id}
+              onClick={() => setNewType(t.id)}>{t.label}</ReviewChip>
+          ))}
+        </div>
+      </ReviewSection>
+      <ReviewSection title="3. Match name">
         <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Match1" style={inputStyle} />
       </ReviewSection>
-      <ReviewSection title="3. PlaySight video URL (the same .mp4 link you download)">
+      <ReviewSection title="4. PlaySight video URL (the same .mp4 link you download)">
         <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="https://playsightproduction…mp4" style={inputStyle} />
       </ReviewSection>
       {errorBox}
-      <button disabled={!newName.trim() || !newUrl.trim() || busy} onClick={createSession}
-        style={{ ...btn(newName.trim() && newUrl.trim() ? C.pickle : C.border), width: "100%" }}>
+      <button disabled={!newName.trim() || !newUrl.trim() || !newType || busy} onClick={createSession}
+        style={{ ...btn(newName.trim() && newUrl.trim() && newType ? C.pickle : C.border), width: "100%" }}>
         {busy ? "Saving…" : "Load match"}
       </button>
     </div>
@@ -9992,6 +10114,10 @@ function ShotReviewTool() {
                 ))}
               </div>
             </ReviewSection>
+            {isRallyEnd(scratchDraft.rally_outcome) && (
+              <NvzRows singles={session?.match_type === "singles"} us={scratchDraft.nvz_us} them={scratchDraft.nvz_them}
+                onChange={(k, v) => setScratchDraft(d => ({ ...d, [k]: v }))} />
+            )}
 
             {errorBox}
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
@@ -10059,6 +10185,14 @@ function ShotReviewTool() {
             ))}
           </div>
         </ReviewSection>
+        <ReviewSection title="Match type">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+            {MATCH_TYPES.map(t => (
+              <ReviewChip key={t.id} color={C.navy} active={matchForm.matchType === t.id}
+                onClick={() => setMatchForm(f => ({ ...f, matchType: t.id }))}>{t.label}</ReviewChip>
+            ))}
+          </div>
+        </ReviewSection>
         {syncError && errorBox}
         <button disabled={busy} onClick={createLinkedMatch} style={{ ...btn(C.pickle), width: "100%" }}>
           {busy ? "Creating…" : "Create match and continue"}
@@ -10082,10 +10216,40 @@ function ShotReviewTool() {
           again later only adds what's new.
         </div>
 
+        <ReviewSection title="Match type">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+            {MATCH_TYPES.map(t => (
+              <ReviewChip key={t.id} color={C.navy} active={syncMatchType === t.id}
+                onClick={() => setSyncMatchType(t.id)}>{t.label}</ReviewChip>
+            ))}
+          </div>
+        </ReviewSection>
+
+        {p.metrics && (
+          <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
+            fontSize: 13, color: C.text, marginBottom: 14, lineHeight: 1.7 }}>
+            <div style={{ fontWeight: 700, color: C.navy, marginBottom: 4 }}>Match stats</div>
+            <div>{p.metrics.rallies} rallies · we won {p.metrics.usWon}</div>
+            <div>My serve neutralization: <strong>{p.metrics.serveNeut != null ? p.metrics.serveNeut + "%" : "—"}</strong>
+              {p.metrics.srvTotal > 0 && ` (${p.metrics.srvNeut} of ${p.metrics.srvTotal} serves & returns)`}</div>
+            <div>NVZ arrival — us <strong>{p.metrics.usArrival != null ? p.metrics.usArrival + "%" : "—"}</strong>,
+              them <strong>{p.metrics.themArrival != null ? p.metrics.themArrival + "%" : "—"}</strong></div>
+            <div>NVZ win rate — us <strong>{p.metrics.usNvzWin != null ? p.metrics.usNvzWin + "%" : "—"}</strong>,
+              them <strong>{p.metrics.themNvzWin != null ? p.metrics.themNvzWin + "%" : "—"}</strong></div>
+            <div>My errors: <strong>{p.metrics.myErrors}</strong></div>
+            {p.metrics.untagged > 0 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: C.amber }}>
+                ⚠️ {p.metrics.untagged} of {p.metrics.rallies} rallies have no kitchen tag yet — use
+                🏃 Tag kitchen arrival to fill them in. NVZ numbers only count tagged rallies.
+              </div>
+            )}
+          </div>
+        )}
+
         {!p.anyDelta ? (
           <div style={{ padding: "12px 14px", borderRadius: 10, background: "white", border: `1px solid ${C.border}`,
             fontSize: 13, color: C.textMid, marginBottom: 14 }}>
-            Nothing new to sync since last time — every reviewed shot is already counted.
+            No new shots since last time — confirming will just update the match stats above.
           </div>
         ) : visibleRoles.map(role => {
           const r = p.roles[role];
@@ -10139,10 +10303,97 @@ function ShotReviewTool() {
         )}
 
         {syncError && errorBox}
-        <button disabled={!p.anyDelta || busy} onClick={confirmSync}
-          style={{ ...btn(p.anyDelta ? C.pickle : C.border), width: "100%" }}>
-          {busy ? "Syncing…" : p.anyDelta ? "Confirm and add to my database" : "Nothing to sync"}
+        <button disabled={busy} onClick={confirmSync}
+          style={{ ...btn(C.pickle), width: "100%" }}>
+          {busy ? "Syncing…" : p.anyDelta ? "Confirm and add to my database" : "Update match stats"}
         </button>
+      </div>
+    );
+  }
+
+  if (stage === "rallies") {
+    const ends = Object.values(reviews)
+      .filter(r => r && r.status === "reviewed" && isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role)))
+      .sort((a, b) => a.frame - b.frame);
+    const tagged = ends.filter(r => r.nvz_us && r.nvz_them).length;
+    const cur = ends[rallyIdx];
+    const tOf = (r) => r.time_sec ?? (shots.find(sh => sh.frame === r.frame) || {}).t;
+    const playRally = (r) => {
+      const v = videoRef.current, t = tOf(r);
+      if (!v || t == null) return;
+      v.playbackRate = slow ? 0.5 : 1;
+      v.currentTime = Math.max(0, t - 8);
+      stopAt.current = t + 1.5; hitAt.current = null;
+      v.play().catch(() => {});
+    };
+    const goTo = (i) => {
+      setRallyIdx(i);
+      const r = ends[i];
+      setRallyDraft(r ? { nvz_us: r.nvz_us || null, nvz_them: r.nvz_them || null } : {});
+      if (r) setTimeout(() => playRally(r), 150);
+    };
+    const saveRally = async () => {
+      if (!cur) return;
+      setBusy(true); setError("");
+      try {
+        await reviewApi(`shot_reviews?session_id=eq.${session.id}&frame=eq.${cur.frame}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ nvz_us: rallyDraft.nvz_us || null, nvz_them: rallyDraft.nvz_them || null,
+            updated_at: new Date().toISOString() }),
+        });
+        setReviews(rv => ({ ...rv, [cur.frame]: { ...rv[cur.frame], nvz_us: rallyDraft.nvz_us || null, nvz_them: rallyDraft.nvz_them || null } }));
+        if (rallyIdx < ends.length - 1) goTo(rallyIdx + 1);
+      } catch (e) { setError(e.message); }
+      setBusy(false);
+    };
+    const outcome = cur ? toHitterOutcome(cur.rally_outcome, cur.player_role) : null;
+    const roleLabel = cur ? (REVIEW_ROLES.find(r => r.id === cur.player_role) || {}).label : "";
+    return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+          <button onClick={() => setStage("review")} style={ghostBtn}>← Back</button>
+          <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
+            <strong style={{ color: C.mint }}>{tagged}</strong> of {ends.length} rallies tagged
+          </div>
+        </div>
+        <div style={{ height: 4, background: C.border, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(tagged / Math.max(1, ends.length)) * 100}%`, background: C.mint }} />
+        </div>
+        {videoEl}
+        {!cur ? (
+          <div style={{ padding: 16, background: "white", borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, color: C.textMid }}>
+            No rally-ending shots yet. Mark shots as Winner or Error while logging, then come back here.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <button onClick={() => rallyIdx > 0 && goTo(rallyIdx - 1)} style={ghostBtn} aria-label="Previous rally">‹</button>
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: C.navy, letterSpacing: "0.04em", lineHeight: 1 }}>
+                  Rally {rallyIdx + 1} of {ends.length}
+                </div>
+                <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>
+                  Ended at {fmtClock(tOf(cur), true)} — {roleLabel} hit {cur.shot_type || "a shot"} for {outcome === "winner" ? "a winner" : "an error"}
+                </div>
+              </div>
+              <button onClick={() => rallyIdx < ends.length - 1 && goTo(rallyIdx + 1)} style={ghostBtn} aria-label="Next rally">›</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 14 }}>
+              <button onClick={() => playRally(cur)} style={ghostBtn}>↺ Replay rally</button>
+              <button onClick={() => setSlow(v => !v)} style={{ ...ghostBtn,
+                borderColor: slow ? C.blue : C.border, color: slow ? C.blue : C.textMid }}>
+                {slow ? "Slow-mo on" : "Slow-mo off"}
+              </button>
+            </div>
+            <NvzRows singles={session?.match_type === "singles"} us={rallyDraft.nvz_us} them={rallyDraft.nvz_them}
+              onChange={(k, v) => setRallyDraft(d => ({ ...d, [k]: v }))} />
+            {errorBox}
+            <button onClick={saveRally} disabled={busy || !rallyDraft.nvz_us || !rallyDraft.nvz_them}
+              style={{ ...btn(rallyDraft.nvz_us && rallyDraft.nvz_them ? C.pickle : C.border), width: "100%" }}>
+              {busy ? "Saving…" : rallyIdx < ends.length - 1 ? "Save & next rally" : "Save"}
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -10209,6 +10460,19 @@ function ShotReviewTool() {
           setScratchActive(false); setScratchDone(false); setScratchDraft(null); setStage("scratch"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.purple, fontFamily: "'Outfit'",
             fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🔬 Log a range from scratch</button>
+        <button onClick={() => {
+            setError("");
+            const ends = Object.values(reviews)
+              .filter(r => r && r.status === "reviewed" && isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role)))
+              .sort((a, b) => a.frame - b.frame);
+            const first = ends.findIndex(r => !r.nvz_us || !r.nvz_them);
+            const i = first < 0 ? 0 : first;
+            setRallyIdx(i);
+            setRallyDraft(ends[i] ? { nvz_us: ends[i].nvz_us || null, nvz_them: ends[i].nvz_them || null } : {});
+            setStage("rallies");
+          }}
+          style={{ background: "none", border: "none", padding: 0, color: C.mint, fontFamily: "'Outfit'",
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>🏃 Tag kitchen arrival</button>
         <button onClick={openSyncPreview}
           style={{ background: "none", border: "none", padding: 0, color: C.pickleD, fontFamily: "'Outfit'",
             fontWeight: 600, fontSize: 12, cursor: "pointer" }}>📊 Sync to my stats</button>
@@ -10332,6 +10596,10 @@ function ShotReviewTool() {
           ))}
         </div>
       </ReviewSection>
+      {isRallyEnd(draft.rally_outcome) && (
+        <NvzRows singles={session?.match_type === "singles"} us={draft.nvz_us} them={draft.nvz_them}
+          onChange={(k, v) => setDraft(d => ({ ...d, [k]: v }))} />
+      )}
 
       {errorBox}
       <div style={{ height: 96 }} />
