@@ -3293,9 +3293,9 @@ const Coach=()=>{
     (async()=>{
       try{
         const [matches, shots, profile] = await Promise.all([
-          sb.query("matches",{order:"created_at.desc"}),
-          sb.query("shots"),
-          sb.query("profile",{single:true}),
+          sb.query("matches",{filter:`user_id=eq.${getCurrentUserId()}&archived=is.false`,order:"created_at.desc"}),
+          sb.query("shots",{filter:`user_id=eq.${getCurrentUserId()}`}),
+          sb.query("profile",{filter:`user_id=eq.${getCurrentUserId()}`,single:true}),
         ]);
         const m = Array.isArray(matches)?matches:[];
         const s = Array.isArray(shots)?shots:[];
@@ -9188,6 +9188,7 @@ function computeMatchMetrics(reviewsMap) {
     rallies, usWon, myErrors, srvTotal, srvNeut, serveNeut: pct(srvNeut, srvTotal),
     usServe, usServeWon, themServe, themServeWon, noServer,
     usTagged, themTagged, shortRallies, untagged: usMissing + themMissing + noServer,
+    usArr, usKitchenWon, themArr, themKitchenWon,
     usArrival: pct(usArr, usTagged), usNvzWin: pct(usKitchenWon, usArr),
     themArrival: pct(themArr, themTagged), themNvzWin: pct(themKitchenWon, themArr),
   };
@@ -11106,7 +11107,11 @@ function loadAnalytics() {
     const sessionByMatch = {};
     all.forEach(s => { if (s.match_id) sessionByMatch[s.match_id] = s; });
     const firstName = (profile?.player_name || "").trim().split(" ")[0];
-    const data = { matches: ms, sessions: all, sessionByMatch, myName: firstName || "Me" };
+    const isArchived = (s) => !!(s.match && s.match.archived);
+    const data = {
+      matches: ms.filter(m => !m.archived), archivedMatches: ms.filter(m => m.archived),
+      sessions: all.filter(s => !isArchived(s)), sessionByMatch, myName: firstName || "Me",
+    };
     _analyticsData = data;
     return data;
   })();
@@ -11373,9 +11378,18 @@ function buildInsights({ m, us, them, won, perPlayer }) {
 
 function MatchReport({ match, session, myName, onBack, onChanged }) {
   const [saving, setSaving] = useState(false);
+  const [editingType, setEditingType] = useState(false);
   const setType = async (id) => {
     setSaving(true);
-    try { await sb.update("matches", { match_type: id }, `id=eq.${match.id}`); onChanged && onChanged(); }
+    try {
+      await sb.update("matches", { match_type: id }, `id=eq.${match.id}`);
+      // Keep the logging session in step so kitchen tagging uses the right format (singles vs doubles)
+      await reviewApi(`review_sessions?match_id=eq.${match.id}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ match_type: id }),
+      }).catch(() => {});
+      setEditingType(false);
+      onChanged && onChanged();
+    }
     catch (e) { alert("Couldn't save the match type: " + e.message); }
     setSaving(false);
   };
@@ -11393,6 +11407,12 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
         <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 999,
           background: won ? C.mintL : C.roseL, color: won ? C.mint : C.rose }}>{won ? "WIN" : "LOSS"}</span>
       </div>
+      {match.match_type && !editingType ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0 4px" }}>
+          <span style={pill(C.pageBg, C.navy)}>{matchTypeLabel(match.match_type)}</span>
+          <button onClick={() => setEditingType(true)} style={linkBtn}>Change</button>
+        </div>
+      ) : (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 4, margin: "12px 0 4px" }}>
         {MATCH_TYPES.map(t => (
           <button key={t.id} disabled={saving} onClick={() => setType(t.id)} style={{
@@ -11402,6 +11422,15 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
           }}>{t.label}</button>
         ))}
       </div>
+      )}
+      <button onClick={async () => {
+          setSaving(true);
+          try { await sb.update("matches", { archived: !match.archived }, `id=eq.${match.id}`); onChanged && onChanged(); onBack(); }
+          catch (e) { alert("Couldn't update: " + e.message); }
+          setSaving(false);
+        }} style={{ ...linkBtn, color: C.textLight, marginBottom: 4 }}>
+        {match.archived ? "↩ Restore this match to your stats" : "🗄 Archive this match (hide it from stats, keep the data)"}
+      </button>
       {!match.match_type && <div style={{ fontSize: 11, color: C.amber }}>Tap a match type so this match shows up in the right filter.</div>}
     </>
   );
@@ -11529,16 +11558,18 @@ function MatchReport({ match, session, myName, onBack, onChanged }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ── MATCHES PAGE ── list → report, plus logging ───────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
+let _openMatchId = null; // lets Home open a specific match report
 const pill = (bg, color) => ({ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: bg, color, whiteSpace: "nowrap" });
 
 function MatchesPage({ setPage }) {
   const [tab, setTab] = useState("list");
   const [f] = useTypeFilter();
   const { data, err, refresh } = useAnalytics();
-  const [selId, setSelId] = useState(null);
+  const [selId, setSelId] = useState(() => { const v = _openMatchId; _openMatchId = null; return v; });
+  const [showArchived, setShowArchived] = useState(false);
 
   if (tab === "list" && selId && data) {
-    const match = data.matches.find(x => x.id === selId);
+    const match = data.matches.find(x => x.id === selId) || (data.archivedMatches || []).find(x => x.id === selId);
     if (match) return (
       <APage>
         <MatchReport match={match} session={data.sessionByMatch[match.id]} myName={data.myName}
@@ -11575,6 +11606,21 @@ function MatchesPage({ setPage }) {
               </div>
             </button>
           ))}
+          {(data.archivedMatches || []).length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <button onClick={() => setShowArchived(v => !v)} style={linkBtn}>
+                {showArchived ? "Hide" : "Show"} archived matches ({data.archivedMatches.length})
+              </button>
+              {showArchived && data.archivedMatches.map(x => (
+                <button key={x.id} onClick={() => setSelId(x.id)} style={{ width: "100%", textAlign: "left", display: "flex",
+                  justifyContent: "space-between", gap: 8, padding: "10px 12px", marginTop: 6, background: C.pageBg,
+                  border: `1px dashed ${C.border}`, borderRadius: 10, cursor: "pointer", fontSize: 12, color: C.textMid }}>
+                  <span style={{ minWidth: 0 }}>{x.date} · vs {x.opponent || "—"}</span>
+                  <strong style={{ color: x.result === "W" ? C.mint : C.rose, flexShrink: 0 }}>{x.result === "W" ? "W" : "L"}</strong>
+                </button>
+              ))}
+            </div>
+          )}
         </>
       ))}
       {tab === "log" && <ShotReviewTool />}
@@ -11663,6 +11709,94 @@ function PeoplePage() {
           <span style={{ fontSize: 12, color: C.textMid, flexShrink: 0 }}>{p.withRows.length + p.againstRows.length} shots →</span>
         </button>
       ))}
+    </APage>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── HOME ── one screen: record, last match, four numbers, one weapon, one leak ─
+// ══════════════════════════════════════════════════════════════════════════════
+function HomePage({ setPage }) {
+  const [f] = useTypeFilter();
+  const { data, err } = useAnalytics();
+  if (!data) return <APage><ALoading err={err} /></APage>;
+
+  const matches = data.matches.filter(m => matchPassesFilter(m, f));
+  const sess = data.sessions.filter(s => f === "all" || s.type === f);
+  const wins = matches.filter(m => m.result === "W").length;
+  const untagged = data.matches.filter(m => !m.match_type).length;
+
+  // Combine every shot-by-shot match into one set of numbers
+  const tot = { srvNeut: 0, srvTotal: 0, usArr: 0, usTagged: 0, usKitchenWon: 0, myErrors: 0, n: 0 };
+  sess.forEach(s => {
+    if (!s.reviews.length) return;
+    const map = {}; s.reviews.forEach(r => { map[r.frame] = r; });
+    const m = computeMatchMetrics(map);
+    tot.srvNeut += m.srvNeut; tot.srvTotal += m.srvTotal; tot.usArr += m.usArr; tot.usTagged += m.usTagged;
+    tot.usKitchenWon += m.usKitchenWon; tot.myErrors += m.myErrors; tot.n++;
+  });
+  const me = aggShots(sess.flatMap(s => s.reviews.filter(r => r.player_role === "me")));
+
+  const last = matches[0] || null;
+  const lastSess = last ? data.sessionByMatch[last.id] : null;
+  let lastInsight = null;
+  if (lastSess && lastSess.reviews.length) {
+    const map = {}; lastSess.reviews.forEach(r => { map[r.frame] = r; });
+    const us = aggShots(lastSess.reviews.filter(r => r.player_role === "me" || r.player_role === "partner"));
+    const them = aggShots(lastSess.reviews.filter(r => r.player_role === "opp1" || r.player_role === "opp2"));
+    lastInsight = buildInsights({ m: computeMatchMetrics(map), us, them, won: last.result === "W", perPlayer: [] })[0] || null;
+  }
+  const openMatch = (id) => { _openMatchId = id; setPage("matches"); };
+  const goal = (v, target, lower) => v == null ? null : (lower ? v <= target : v >= target);
+  const Num = ({ label, value, sub, ok }) => (
+    <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+      <div style={{ fontSize: 10, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 700 }}>{label}</div>
+      <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, lineHeight: 1.1, color: ok == null ? C.navy : ok ? C.mint : C.rose }}>{value}</div>
+      <div style={{ fontSize: 11, color: C.textMid }}>{sub}</div>
+    </div>
+  );
+  const serve = pctOf(tot.srvNeut, tot.srvTotal), arrive = pctOf(tot.usArr, tot.usTagged), kitchen = pctOf(tot.usKitchenWon, tot.usArr);
+  const errs = tot.n ? Math.round((tot.myErrors / tot.n) * 10) / 10 : null;
+
+  return (
+    <APage>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
+        <h1 style={{ fontFamily: "'Bebas Neue'", fontSize: 30, letterSpacing: "0.05em", color: C.navy, lineHeight: 1 }}>
+          Hi{data.myName && data.myName !== "Me" ? `, ${data.myName}` : ""} 👋
+        </h1>
+        <span style={{ fontSize: 13, color: C.textMid, flexShrink: 0 }}>{matches.length} match{matches.length !== 1 ? "es" : ""} · <strong style={{ color: C.navy }}>{wins}W {matches.length - wins}L</strong></span>
+      </div>
+      <TypeFilterBar untagged={untagged} />
+
+      {!matches.length ? (
+        <AEmpty>No matches here yet. Go to <strong>Matches → Log a match</strong> to log one shot by shot.</AEmpty>
+      ) : (
+        <>
+          <ASection>Last match</ASection>
+          <button onClick={() => openMatch(last.id)} style={{ width: "100%", textAlign: "left", display: "block", padding: "12px 14px",
+            background: "white", border: `1px solid ${C.border}`, borderRadius: 12, cursor: "pointer" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: C.textLight }}>{last.date}{last.score ? ` · ${last.score}` : ""}</span>
+              <span style={pill(last.result === "W" ? C.mintL : C.roseL, last.result === "W" ? C.mint : C.rose)}>{last.result === "W" ? "WIN" : "LOSS"}</span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.navy, marginTop: 2 }}>vs {last.opponent || "—"}</div>
+            {lastInsight && <div style={{ fontSize: 13, color: C.text, marginTop: 6, lineHeight: 1.5 }}>{lastInsight.good ? "✅" : "⚠️"} {lastInsight.text}</div>}
+            <div style={{ fontSize: 12, color: C.blue, fontWeight: 600, marginTop: 6 }}>See full report →</div>
+          </button>
+
+          <ASection>Your numbers</ASection>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
+            <Num label="Serve & return neut." value={fmtPct(serve)} sub={`Goal ${GOALS.targets.serveNeut}%+`} ok={goal(serve, GOALS.targets.serveNeut)} />
+            <Num label="Kitchen on our serve" value={fmtPct(arrive)} sub={`Goal ${GOALS.targets.nvzArrival}%+`} ok={goal(arrive, GOALS.targets.nvzArrival)} />
+            <Num label="Won once at kitchen" value={fmtPct(kitchen)} sub={`Goal ${GOALS.targets.nvzWin}%+`} ok={goal(kitchen, GOALS.targets.nvzWin)} />
+            <Num label="My errors / match" value={errs == null ? "—" : errs} sub="Lower is better" ok={null} />
+          </div>
+
+          <ASection>Your game</ASection>
+          <WeaponLeak agg={me} />
+          <button onClick={() => setPage("stats")} style={{ ...linkBtn, marginTop: 10 }}>See all your stats →</button>
+        </>
+      )}
     </APage>
   );
 }
@@ -12208,7 +12342,7 @@ export default function App(){
         )}
 
         <main style={{flex:1}}>
-          {page==="dashboard"&&<Dashboard setPage={setPage}/>}
+          {page==="dashboard"&&<HomePage setPage={setPage}/>}
           {page==="shots"    &&<Shots/>}
           {page==="stats"    &&<StatsPage setPage={setPage}/>}
           {page==="people"   &&<PeoplePage/>}
