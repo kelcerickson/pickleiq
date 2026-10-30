@@ -4024,7 +4024,7 @@ const Profile=({setPage})=>{
                       Not quite right? Override your style manually:
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
-                      {Object.entries(STYLES).map(([key,s])=>(
+                      {Object.entries(IDENTITY_STYLES).map(([key,s])=>(
                         <div key={key} style={{
                           padding:"10px 8px",borderRadius:10,textAlign:"center",cursor:"default",
                           border:`2px solid ${identity===key?s.color:C.border}`,
@@ -9486,7 +9486,7 @@ function ShotReviewTool() {
       const rows = await sb.insert("matches", {
         date: matchForm.date || new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }),
         opponent: opponentText, partner: matchForm.partnerName,
-        result: matchForm.result, score: matchForm.score, notes: "Logged via Shot Review",
+        result: matchForm.result === "Win" ? "W" : "L", score: matchForm.score, notes: "Logged via Shot Review",
         nvz_arrival: 0, nvz_win: 0, serve_neut: 0, errors: 0, partner_role: "Balanced", user_id: uid,
       });
       const matchId = Array.isArray(rows) ? rows[0]?.id : rows?.id;
@@ -9497,6 +9497,8 @@ function ShotReviewTool() {
         body: JSON.stringify({ match_id: matchId, people_names }),
       });
       setSession(s => ({ ...s, match_id: matchId, people_names }));
+      setSyncPreview(null); setStage("review");
+      alert("Match linked. Tap 📊 Sync to my stats again to review and confirm.");
     } catch (e) { setSyncError(e.message); }
     setBusy(false);
   };
