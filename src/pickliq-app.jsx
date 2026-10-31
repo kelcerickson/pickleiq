@@ -11205,6 +11205,11 @@ function useAnalytics() {
     return () => { alive = false; };
   }, [ver]);
   const refresh = () => { invalidateAnalytics(); setVer(v => v + 1); };
+  useEffect(() => {
+    const h = () => setVer(v => v + 1); // cache is already cleared by whoever fired the event
+    window.addEventListener("pi-analytics-changed", h);
+    return () => window.removeEventListener("pi-analytics-changed", h);
+  }, []);
   return { data, err, refresh };
 }
 
@@ -11742,7 +11747,7 @@ function buildClips(sessions, roles, type) {
     s.reviews.forEach(r => {
       if (!rs.includes(r.player_role) || (type && r.shot_type !== type) || r.time_sec == null) return;
       out.push({
-        key: `${s.id}-${r.frame}`, url: s.video_url, t: Number(r.time_sec), type: r.shot_type, side: r.shot_side,
+        key: `${s.id}-${r.frame}`, sid: s.id, frame: r.frame, url: s.video_url, t: Number(r.time_sec), type: r.shot_type, side: r.shot_side,
         quality: r.hit_quality, outcome: toHitterOutcome(r.rally_outcome, r.player_role), role: r.player_role,
         matchLabel: s.match ? `${s.match.date} · vs ${s.match.opponent || "—"}` : s.video_name,
       });
@@ -11759,7 +11764,17 @@ function ClipHost() {
   return cfg ? <ClipViewer {...cfg} onClose={() => setCfg(null)} /> : null;
 }
 
-function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
+function ClipViewer({ title, clips: initialClips, initialFilter = "all", onClose: closeViewer }) {
+  const [clips, setClips] = useState(initialClips);
+  const [editing, setEditing] = useState(false);
+  const [edit, setEdit] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  const editedRef = useRef(false);
+  const onClose = () => {
+    if (editedRef.current) { invalidateAnalytics(); window.dispatchEvent(new Event("pi-analytics-changed")); }
+    closeViewer();
+  };
   const startFilter = clips.some(c => (CLIP_FILTERS.find(f => f.id === initialFilter) || CLIP_FILTERS[0]).test(c)) ? initialFilter : "all";
   const [filter, setFilter] = useState(startFilter);
   const [idx, setIdx] = useState(0);
@@ -11767,7 +11782,9 @@ function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
   const [auto, setAuto] = useState(false);
   const vref = useRef(null);
   const stopAt = useRef(null);
-  const list = clips.filter((CLIP_FILTERS.find(f => f.id === filter) || CLIP_FILTERS[0]).test);
+  const [keepKey, setKeepKey] = useState(null); // an edited clip stays in view even if it no longer matches the filter
+  const fTest = (CLIP_FILTERS.find(f => f.id === filter) || CLIP_FILTERS[0]).test;
+  const list = clips.filter(c => fTest(c) || c.key === keepKey);
   const cur = list[idx];
   const multiMatch = new Set(clips.map(c => c.url)).size > 1;
 
@@ -11786,7 +11803,30 @@ function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
       v.load();
     } else go();
   };
-  useEffect(() => { if (cur) play(cur); }, [filter, idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (cur) play(cur); setEditing(false); setSaveErr(""); }, [filter, idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openEdit = () => {
+    if (!cur) return;
+    setEdit({ player_role: cur.role, shot_type: cur.type, shot_side: cur.side || null,
+      hit_quality: cur.quality || null, rally_outcome: cur.outcome || "ongoing" });
+    setSaveErr(""); setEditing(true);
+  };
+  const saveEdit = async () => {
+    if (!cur) return;
+    setSaving(true); setSaveErr("");
+    const patch = { ...edit, updated_at: new Date().toISOString() };
+    if (!isRallyEnd(edit.rally_outcome)) Object.assign(patch, { serving_team: null, nvz_us: null, nvz_them: null });
+    try {
+      await reviewApi(`shot_reviews?session_id=eq.${cur.sid}&frame=eq.${cur.frame}`, {
+        method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch),
+      });
+      editedRef.current = true;
+      setKeepKey(cur.key);
+      setClips(cs => cs.map(c => c.key !== cur.key ? c : { ...c, role: edit.player_role, type: edit.shot_type,
+        side: edit.shot_side, quality: edit.hit_quality, outcome: edit.rally_outcome }));
+      setEditing(false);
+    } catch (e) { setSaveErr(e.message || "Couldn't save."); }
+    setSaving(false);
+  };
   useEffect(() => { if (vref.current) vref.current.playbackRate = slow ? 0.5 : 1; }, [slow]);
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -11826,6 +11866,54 @@ function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
             {CLIP_OUTCOME[cur.outcome] && <span style={{ color: cur.outcome === "winner" ? C.mint : C.rose }}> · {CLIP_OUTCOME[cur.outcome]}</span>}
             {cur.quality && <span style={{ color: C.textMid }}> · {cur.quality}</span>}
             {multiMatch && <div style={{ fontSize: 12, color: C.textMid }}>{cur.matchLabel}</div>}
+            {!editing && (
+              <div style={{ marginTop: 6 }}>
+                <button onClick={openEdit} style={{ ...linkBtn, fontSize: 13 }}>Edit this shot</button>
+                {editedRef.current && <span style={{ fontSize: 11, color: C.textLight, marginLeft: 10 }}>Changes saved</span>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {cur && editing && (
+          <div style={{ background: C.cardBg, border: `1.5px solid ${C.navy}`, borderRadius: 12, padding: "12px 12px 4px", marginBottom: 14 }}>
+            <ReviewSection title="Who hit it?">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_ROLES.map(r => <ReviewChip key={r.id} small color={r.color} active={edit.player_role === r.id}
+                  onClick={() => setEdit(e => ({ ...e, player_role: r.id }))}>{r.label}</ReviewChip>)}
+              </div>
+            </ReviewSection>
+            <ReviewSection title="Forehand or backhand?">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_SIDE.map(o => <ReviewChip key={o.id} small color={o.color} active={edit.shot_side === o.id}
+                  onClick={() => setEdit(e => ({ ...e, shot_side: e.shot_side === o.id ? null : o.id }))}>{o.label}</ReviewChip>)}
+              </div>
+            </ReviewSection>
+            <ReviewSection title="Shot type">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
+                {REVIEW_SHOT_TYPES.flatMap(g => g.types).map(t => <ReviewChip key={t} small color={C.blue} active={edit.shot_type === t}
+                  onClick={() => setEdit(e => ({ ...e, shot_type: t }))}>{t}</ReviewChip>)}
+              </div>
+            </ReviewSection>
+            <ReviewSection title="Hit quality">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_QUALITY.map(q => <ReviewChip key={q.id} small color={q.color} active={edit.hit_quality === q.id}
+                  onClick={() => setEdit(e => ({ ...e, hit_quality: q.id }))}>{q.label}</ReviewChip>)}
+              </div>
+            </ReviewSection>
+            <ReviewSection title="Did this shot end the rally?">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+                {REVIEW_OUTCOME.map(o => <ReviewChip key={o.id} small color={o.color} active={edit.rally_outcome === o.id}
+                  onClick={() => setEdit(e => ({ ...e, rally_outcome: o.id }))}>{o.label}</ReviewChip>)}
+              </div>
+            </ReviewSection>
+            {saveErr && <div style={{ padding: "8px 10px", borderRadius: 8, background: C.roseL, color: C.rose, fontSize: 12, marginBottom: 10 }}>{saveErr}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8, marginBottom: 8 }}>
+              <button style={ctl} disabled={saving} onClick={() => setEditing(false)}>Cancel</button>
+              <button style={{ ...ctl, background: C.pickle, border: "none", fontWeight: 700 }} disabled={saving} onClick={saveEdit}>
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -11845,7 +11933,7 @@ function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
             if (f.id !== "all" && !n) return null;
             const on = filter === f.id;
             return (
-              <button key={f.id} onClick={() => { setFilter(f.id); setIdx(0); }} style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999,
+              <button key={f.id} onClick={() => { setFilter(f.id); setIdx(0); setKeepKey(null); }} style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999,
                 border: `1.5px solid ${on ? C.navy : C.border}`, background: on ? C.navy : C.cardBg, color: on ? "white" : C.textMid,
                 fontFamily: "'Outfit'", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{f.label} ({n})</button>
             );
