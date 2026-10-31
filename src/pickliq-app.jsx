@@ -11184,7 +11184,9 @@ function loadAnalytics() {
     const isArchived = (s) => !!(s.match && s.match.archived);
     const data = {
       matches: ms.filter(m => !m.archived), archivedMatches: ms.filter(m => m.archived),
-      sessions: all.filter(s => !isArchived(s)), sessionByMatch, myName: firstName || "Me",
+      // Only logging sessions that are linked to an active match count as matches. An unlinked session
+      // (e.g. the original detection-training video) is training data, not a match result.
+      sessions: all.filter(s => s.match && !isArchived(s)), sessionByMatch, myName: firstName || "Me",
     };
     _analyticsData = data;
     return data;
