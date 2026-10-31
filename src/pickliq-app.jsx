@@ -9149,6 +9149,8 @@ function NvzRows({ singles, server, derived, us, them, onChange, short, length }
     </div>
   );
 }
+// Typical gap between contact and your tap: logging rewinds this much so you start just before the hit
+const REACTION_REWIND = 0.7;
 const isRallyEnd = (outcome) => outcome === "winner" || outcome === "error" || outcome === "forced";
 
 // Builds the match-level numbers from individual reviews. NVZ numbers are per SERVING team.
@@ -9414,6 +9416,9 @@ function ShotReviewTool() {
   const [syncMatchType, setSyncMatchType] = useState("");
   const [rallyIdx, setRallyIdx] = useState(0);
   const [rallyDraft, setRallyDraft] = useState({});
+  const [timingIdx, setTimingIdx] = useState(0);
+  const [vt, setVt] = useState(0);           // current video time, shown while setting contact
+  const [slowPlay, setSlowPlay] = useState(false);
 
   // New-session form
   const [newName, setNewName]   = useState("");
@@ -9508,7 +9513,7 @@ function ShotReviewTool() {
     setBusy(true); setError("");
     try {
       const [s] = await reviewApi(`review_sessions?id=eq.${id}&select=*`);
-      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source,nvz_us,nvz_them,serving_team`);
+      const rows = await reviewApi(`shot_reviews?session_id=eq.${id}&select=frame,time_sec,player_role,shot_type,shot_side,hit_quality,rally_outcome,status,source,nvz_us,nvz_them,serving_team,time_confirmed`);
       const map = {};
       (rows || []).forEach(r => { map[r.frame] = r; });
       setSession(s); setReviews(map);
@@ -9586,7 +9591,7 @@ function ShotReviewTool() {
   // Download every shot with its review as a CSV (for training in Colab)
   const exportLabels = () => {
     const cols = ["frame","time_sec","ball_x","ball_y","auto_player_index","auto_shot_type","status",
-      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome","serving_team","nvz_us","nvz_them"];
+      "source","player_role","shot_side","shot_type","hit_quality","rally_outcome","serving_team","nvz_us","nvz_them","time_confirmed"];
     const esc = (v) => v == null ? "" : String(v).includes(",") ? `"${v}"` : String(v);
     const lines = [cols.join(",")];
     (session?.shots || []).forEach(sh => {
@@ -9594,9 +9599,9 @@ function ShotReviewTool() {
       // Prefer the source saved in the database at review time; only fall back to the (unreliable)
       // in-memory flag for older rows saved before this was persisted
       const source = r.source || (sh.scratch ? "scratch_ground_truth" : sh.manual ? "manual_missed" : "detected");
-      lines.push([sh.frame, sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
+      lines.push([sh.frame, r.time_sec ?? sh.t, sh.bx, sh.by, sh.p, sh.auto_type, r.status || "unreviewed",
         source, r.player_role, r.shot_side, r.shot_type, r.hit_quality,
-        toHitterOutcome(r.rally_outcome, r.player_role), r.serving_team, r.nvz_us, r.nvz_them].map(esc).join(","));
+        toHitterOutcome(r.rally_outcome, r.player_role), r.serving_team, r.nvz_us, r.nvz_them, r.time_confirmed ? "true" : "false"].map(esc).join(","));
     });
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -9834,7 +9839,7 @@ function ShotReviewTool() {
         auto_player_index: null, auto_shot_type: null, source: "scratch_ground_truth",
         player_role: scratchDraft.player_role, shot_type: scratchDraft.shot_type,
         shot_side: scratchDraft.shot_side || null, hit_quality: scratchDraft.hit_quality || null,
-        rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed",
+        rally_outcome: scratchDraft.rally_outcome || "ongoing", status: "reviewed", time_confirmed: true,
         ...nvzFields(scratchDraft, scratchDraft.serving_team || deriveServer(reviews, scratchDraft.frame, scratchDraft),
           isRallyEnd(scratchDraft.rally_outcome), rallyIsShort(reviews, scratchDraft.frame, scratchDraft)),
         updated_at: new Date().toISOString(),
@@ -9857,7 +9862,8 @@ function ShotReviewTool() {
     const v = scratchVideoRef.current;
     if (!v) return;
     v.pause();
-    const t = v.currentTime;
+    const t = Math.max(0, v.currentTime - REACTION_REWIND);
+    v.currentTime = t;
     const fps = getFps();
     setScratchDraft({ t, frame: Math.round(t * fps), player_role: null, shot_type: null, shot_side: null,
       hit_quality: null, rally_outcome: "ongoing" });
@@ -9869,6 +9875,21 @@ function ShotReviewTool() {
     v.pause();
     v.currentTime = Math.max(0, v.currentTime + dir / getFps());
   };
+
+  // Shots in match order, for the Fix timing pass
+  const timingList = () => (session?.shots || [])
+    .map(sh => ({ sh, r: reviews[sh.frame], t: reviews[sh.frame]?.time_sec ?? sh.t }))
+    .filter(x => x.r && x.r.status === "reviewed" && x.t != null)
+    .sort((a, b) => a.sh.frame - b.sh.frame);
+  useEffect(() => {
+    if (stage !== "timing") return;
+    const cur = timingList()[timingIdx];
+    const v = videoRef.current;
+    if (!cur || !v) return;
+    const target = cur.r.time_confirmed ? cur.t : Math.max(0, cur.t - REACTION_REWIND);
+    const go = () => { v.pause(); v.playbackRate = 1; stopAt.current = null; hitAt.current = null; v.currentTime = target; };
+    if (v.readyState >= 1) go(); else v.addEventListener("loadedmetadata", go, { once: true });
+  }, [stage, timingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onTimeUpdate = () => {
     const v = videoRef.current;
@@ -9979,7 +10000,10 @@ function ShotReviewTool() {
   const videoEl = session?.video_url ? (
     <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
       <video ref={videoRef} src={session.video_url} controls playsInline preload="metadata"
-        onTimeUpdate={onTimeUpdate} onPlay={() => setAtHit(false)} onSeeking={() => { if (hitAt.current == null && stopAt.current == null) setAtHit(false); }}
+        onTimeUpdate={() => { onTimeUpdate(); setVt(videoRef.current?.currentTime || 0); }}
+        onSeeked={() => setVt(videoRef.current?.currentTime || 0)}
+        onPause={() => { setSlowPlay(false); setVt(videoRef.current?.currentTime || 0); }}
+        onPlay={() => setAtHit(false)} onSeeking={() => { if (hitAt.current == null && stopAt.current == null) setAtHit(false); }}
         style={{ width: "100%", maxWidth: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
       {showMarker && (
         <div aria-hidden="true" style={{
@@ -10112,6 +10136,8 @@ function ShotReviewTool() {
           <div style={{ borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 12 }}>
             <video ref={scratchVideoRef} src={session.video_url} controls playsInline preload="metadata"
               onLoadedMetadata={e => { e.currentTarget.currentTime = startS; }}
+              onSeeked={e => { const t = e.currentTarget.currentTime;
+                setScratchDraft(d => d ? { ...d, t, frame: Math.round(t * getFps()) } : d); }}
               onTimeUpdate={e => { if (e.currentTarget.currentTime >= endS) { e.currentTarget.pause(); setScratchDone(true); } }}
               style={{ width: "100%", maxWidth: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
           </div>
@@ -10140,7 +10166,8 @@ function ShotReviewTool() {
         ) : (
           <>
             <div style={{ fontSize: 12, color: C.textMid, marginBottom: 8 }}>
-              Marked at {fmtClock(scratchDraft.t, true)}. Fine-tune, then fill in the details below.
+              <strong>Step to the exact moment the paddle hits the ball</strong> — the video jumped back {REACTION_REWIND}s
+              so the hit is just ahead. Now at {fmtClock(scratchDraft.t, true)}. Then fill in the details below.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8, marginBottom: 12 }}>
               <button onClick={() => { stepScratchFrame(-5); setScratchDraft(d => ({ ...d, t: scratchVideoRef.current.currentTime, frame: Math.round(scratchVideoRef.current.currentTime * fps) })); }} style={ghostBtn}>◀◀ 5</button>
@@ -10407,6 +10434,105 @@ function ShotReviewTool() {
     );
   }
 
+  if (stage === "timing") {
+    const list = timingList();
+    const done = list.filter(x => x.r.time_confirmed).length;
+    const cur = list[timingIdx];
+    const v = videoRef.current;
+    const fps = 60;
+    const nudge = (sec) => { if (!v) return; v.pause(); stopAt.current = null; hitAt.current = null; v.currentTime = Math.max(0, v.currentTime + sec); };
+    const toggleSlow = () => {
+      if (!v) return;
+      if (!v.paused) { v.pause(); return; }
+      stopAt.current = null; hitAt.current = null;
+      v.playbackRate = 0.25; setSlowPlay(true); v.play().catch(() => {});
+    };
+    const replayAround = () => {
+      if (!v || !cur) return;
+      v.playbackRate = 1; v.currentTime = Math.max(0, cur.t - 2);
+      stopAt.current = cur.t + 0.5; hitAt.current = Math.max(0, cur.t - REACTION_REWIND);
+      v.play().catch(() => {});
+    };
+    const saveContact = async () => {
+      if (!v || !cur) return;
+      const t = Math.round(v.currentTime * 1000) / 1000;
+      setBusy(true); setError("");
+      try {
+        await reviewApi(`shot_reviews?session_id=eq.${session.id}&frame=eq.${cur.sh.frame}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ time_sec: t, time_confirmed: true, updated_at: new Date().toISOString() }),
+        });
+        const newShots = session.shots.map(sh => sh.frame === cur.sh.frame ? { ...sh, t } : sh);
+        await reviewApi(`review_sessions?id=eq.${session.id}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ shots: newShots }),
+        });
+        setSession(s0 => ({ ...s0, shots: newShots }));
+        setReviews(rv => ({ ...rv, [cur.sh.frame]: { ...rv[cur.sh.frame], time_sec: t, time_confirmed: true } }));
+        if (timingIdx < list.length - 1) setTimingIdx(timingIdx + 1);
+      } catch (e) { setError(e.message); }
+      setBusy(false);
+    };
+    const roleLabel = cur ? (REVIEW_ROLES.find(r => r.id === cur.r.player_role) || {}).label : "";
+    const delta = cur ? vt - cur.t : 0;
+    return (
+      <div style={{ maxWidth: 640, width: "100%", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+          <button onClick={() => { v && v.pause(); setStage("review"); }} style={ghostBtn}>← Back</button>
+          <div style={{ fontSize: 12, color: C.textMid, textAlign: "right" }}>
+            <strong style={{ color: C.mint }}>{done}</strong> of {list.length} shots set to exact contact
+          </div>
+        </div>
+        <div style={{ height: 4, background: C.border, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(done / Math.max(1, list.length)) * 100}%`, background: C.mint }} />
+        </div>
+        {videoEl}
+        {!cur ? <AEmpty>No logged shots to time yet.</AEmpty> : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <button onClick={() => timingIdx > 0 && setTimingIdx(timingIdx - 1)} style={ghostBtn} aria-label="Previous shot">‹</button>
+              <div style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, color: C.navy, letterSpacing: "0.04em", lineHeight: 1 }}>
+                  Shot {timingIdx + 1} of {list.length}
+                </div>
+                <div style={{ fontSize: 12, color: C.textMid, marginTop: 3 }}>
+                  {roleLabel} · {cur.r.shot_type || "shot"}{cur.r.time_confirmed ? " · already set" : ""}
+                </div>
+              </div>
+              <button onClick={() => timingIdx < list.length - 1 && setTimingIdx(timingIdx + 1)} style={ghostBtn} aria-label="Next shot">›</button>
+            </div>
+            <div style={{ fontSize: 13, color: C.text, textAlign: "center", marginBottom: 10 }}>
+              Now at <strong>{fmtClock(vt, true)}</strong>
+              <span style={{ color: C.textMid }}> ({delta >= 0 ? "+" : ""}{delta.toFixed(2)}s from your original tap)</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6, marginBottom: 8 }}>
+              <button onClick={() => nudge(-0.2)} style={ghostBtn}>−0.2s</button>
+              <button onClick={() => nudge(-1 / fps)} style={ghostBtn}>−1 frame</button>
+              <button onClick={() => nudge(1 / fps)} style={ghostBtn}>+1 frame</button>
+              <button onClick={() => nudge(0.2)} style={ghostBtn}>+0.2s</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6, marginBottom: 12 }}>
+              <button onClick={toggleSlow} style={{ ...ghostBtn, borderColor: slowPlay ? C.navy : C.border, color: C.navy }}>
+                {slowPlay ? "Pause here" : "Play slowly"}
+              </button>
+              <button onClick={replayAround} style={ghostBtn}>Replay the shot</button>
+            </div>
+            <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginBottom: 12 }}>
+              Get the frame where the paddle meets the ball. Fastest way: tap <strong>Play slowly</strong>, then
+              <strong> Pause here</strong> at contact, and fine-tune with the frame buttons.
+            </div>
+            {errorBox}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8 }}>
+              <button onClick={() => timingIdx < list.length - 1 && setTimingIdx(timingIdx + 1)} disabled={busy} style={ghostBtn}>Skip</button>
+              <button onClick={saveContact} disabled={busy} style={{ ...btn(C.pickle), width: "100%" }}>
+                {busy ? "Saving…" : "Contact here → next"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   if (stage === "rallies") {
     const ends = Object.values(reviews)
       .filter(r => r && r.status === "reviewed" && isRallyEnd(toHitterOutcome(r.rally_outcome, r.player_role)))
@@ -10626,6 +10752,15 @@ function ShotReviewTool() {
           setScratchActive(false); setScratchDone(false); setScratchDraft(null); setStage("scratch"); }}
           style={{ background: "none", border: "none", padding: 0, color: C.purple, fontFamily: "'Outfit'",
             fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Log a range from scratch</button>
+        <button onClick={() => {
+            setError("");
+            const list = timingList();
+            const first = list.findIndex(x => !x.r.time_confirmed);
+            setTimingIdx(first < 0 ? 0 : first);
+            setStage("timing");
+          }}
+          style={{ background: "none", border: "none", padding: 0, color: C.navy, fontFamily: "'Outfit'",
+            fontWeight: 600, fontSize: 12, cursor: "pointer" }}>Fix shot timing</button>
         <button onClick={() => {
             setError("");
             const ends = Object.values(reviews)
