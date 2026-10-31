@@ -11163,7 +11163,7 @@ function loadAnalytics() {
     const uid = getCurrentUserId();
     const [matches, sessions, profile] = await Promise.all([
       sb.query("matches", { filter: `user_id=eq.${uid}`, order: "created_at.desc" }).catch(() => []),
-      reviewApi(`review_sessions?user_id=eq.${uid}&select=id,video_name,match_id,match_type,people_names,created_at`).catch(() => []),
+      reviewApi(`review_sessions?user_id=eq.${uid}&select=id,video_name,video_url,match_id,match_type,people_names,created_at`).catch(() => []),
       sb.query("profile", { filter: `user_id=eq.${uid}`, single: true, select: "player_name" }).catch(() => null),
     ]);
     const sess = Array.isArray(sessions) ? sessions : [];
@@ -11301,7 +11301,7 @@ function AggTiles({ agg }) {
   );
 }
 
-function ShotTypeList({ agg, empty }) {
+function ShotTypeList({ agg, empty, onWatch }) {
   if (!agg.types.length) return <AEmpty>{empty}</AEmpty>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -11322,9 +11322,15 @@ function ShotTypeList({ agg, empty }) {
             )}
             <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5 }}>
               {rated > 0 ? `${pctOf(t.pos, rated)}% positive · ${pctOf(t.neg, rated)}% negative` : "Quality not rated"}
-              {(t.winners || t.errors) ? ` · ${t.winners} winner${t.winners !== 1 ? "s" : ""}, ${t.errors} error${t.errors !== 1 ? "s" : ""}` : ""}
+              {(t.winners || t.errors) ? ` · ${t.winners} winner${t.winners !== 1 ? "s" : ""}, ${t.errors} unforced error${t.errors !== 1 ? "s" : ""}` : ""}
               {(t.fh || t.bh) ? ` · FH ${t.fh} / BH ${t.bh}` : ""}
             </div>
+            {onWatch && (
+              <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+                <button onClick={() => onWatch(t.type, "all")} style={linkBtn}>Watch all {t.n} →</button>
+                {t.errors > 0 && <button onClick={() => onWatch(t.type, "error")} style={{ ...linkBtn, color: C.rose }}>Watch {t.errors} unforced error{t.errors !== 1 ? "s" : ""} →</button>}
+              </div>
+            )}
           </div>
         );
       })}
@@ -11332,21 +11338,21 @@ function ShotTypeList({ agg, empty }) {
   );
 }
 
-function WeaponLeak({ agg, who = "your" }) {
+function WeaponLeak({ agg, who = "your", onWatch }) {
   const weapon = topBy(agg, "winners");
   const leak = topBy(agg, "errors");
   if (!weapon && !leak) return null;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginBottom: 4 }}>
-      <div style={{ background: C.mintL, border: `1px solid ${C.mint}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+      <div onClick={() => weapon && onWatch && onWatch(weapon.type, "winner")} style={{ background: C.mintL, border: `1px solid ${C.mint}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0, cursor: weapon && onWatch ? "pointer" : "default" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: C.mint, textTransform: "uppercase", letterSpacing: "0.07em" }}><PiIcon name="trophy" size={15} color={C.amber} />Top weapon</div>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.navy, marginTop: 4 }}>{weapon ? weapon.type : "—"}</div>
-        <div style={{ fontSize: 11, color: C.textMid }}>{weapon ? `${weapon.winners} winner${weapon.winners !== 1 ? "s" : ""}` : `No winners logged`}</div>
+        <div style={{ fontSize: 11, color: C.textMid }}>{weapon ? `${weapon.winners} winner${weapon.winners !== 1 ? "s" : ""}${onWatch ? " · watch →" : ""}` : `No winners logged`}</div>
       </div>
-      <div style={{ background: C.roseL, border: `1px solid ${C.rose}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+      <div onClick={() => leak && onWatch && onWatch(leak.type, "error")} style={{ background: C.roseL, border: `1px solid ${C.rose}40`, borderRadius: 12, padding: "10px 12px", minWidth: 0, cursor: leak && onWatch ? "pointer" : "default" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, fontWeight: 800, color: C.rose, textTransform: "uppercase", letterSpacing: "0.07em" }}><PiIcon name="alert" size={15} color={C.rose} stroke={2} />Biggest leak</div>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.navy, marginTop: 4 }}>{leak ? leak.type : "—"}</div>
-        <div style={{ fontSize: 11, color: C.textMid }}>{leak ? `${leak.errors} error${leak.errors !== 1 ? "s" : ""}` : `No errors logged`}</div>
+        <div style={{ fontSize: 11, color: C.textMid }}>{leak ? `${leak.errors} unforced error${leak.errors !== 1 ? "s" : ""}${onWatch ? " · watch →" : ""}` : `No unforced errors logged`}</div>
       </div>
     </div>
   );
@@ -11371,6 +11377,10 @@ function StatsPage({ setPage }) {
   const untagged = data.sessions.filter(s => !s.type).length;
   const rows = sess.flatMap(s => s.reviews.filter(r => STAT_LENSES[lens].roles.includes(r.player_role)));
   const agg = aggShots(rows);
+  const watch = (type, filterId) => openClips({
+    title: `${STAT_LENSES[lens].label === "Me" ? "My" : STAT_LENSES[lens].label} · ${type}`,
+    clips: buildClips(sess, STAT_LENSES[lens].roles, type), initialFilter: filterId,
+  });
   const lensBlurb = {
     me: "Every shot you've hit.",
     partner: "Every shot hit by whoever partnered you — see People for one partner at a time.",
@@ -11385,9 +11395,9 @@ function StatsPage({ setPage }) {
       <ATabs tabs={Object.entries(STAT_LENSES).map(([id, l]) => ({ id, label: l.label }))} value={lens} onChange={setLens} />
       <div style={{ fontSize: 12, color: C.textMid, marginBottom: 10 }}>{lensBlurb}</div>
       <AggTiles agg={agg} />
-      <WeaponLeak agg={agg} />
+      <WeaponLeak agg={agg} onWatch={watch} />
       <ASection>By shot type</ASection>
-      <ShotTypeList agg={agg} empty="No shots logged for this view yet. Log a match in Matches → Log a match." />
+      <ShotTypeList agg={agg} onWatch={watch} empty="No shots logged for this view yet. Log a match in Matches → Log a match." />
       <div style={{ marginTop: 18, fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
         This page uses matches logged shot by shot. Your all-time totals, including matches logged the older way,
         are still here: <button onClick={() => setPage("shots")} style={linkBtn}>All-time shot history →</button>
@@ -11710,6 +11720,218 @@ function MatchesPage({ setPage }) {
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ── SHOT CLIPS ── tap any shot type to watch every one of those shots on video ──
+// ══════════════════════════════════════════════════════════════════════════════
+const CLIP_FILTERS = [
+  { id: "all",      label: "All",             test: () => true },
+  { id: "error",    label: "Unforced errors", test: c => c.outcome === "error" },
+  { id: "forced",   label: "Forced errors",   test: c => c.outcome === "forced" },
+  { id: "winner",   label: "Winners",         test: c => c.outcome === "winner" },
+  { id: "negative", label: "Negative",        test: c => c.quality === "negative" },
+  { id: "positive", label: "Positive",        test: c => c.quality === "positive" },
+];
+const CLIP_OUTCOME = { winner: "Winner", error: "Unforced error", forced: "Forced error" };
+
+// Every logged shot that matches: roles is an array, or a function (session) => array when the role varies by match
+function buildClips(sessions, roles, type) {
+  const out = [];
+  sessions.forEach(s => {
+    if (!s.video_url) return;
+    const rs = typeof roles === "function" ? roles(s) : roles;
+    s.reviews.forEach(r => {
+      if (!rs.includes(r.player_role) || (type && r.shot_type !== type) || r.time_sec == null) return;
+      out.push({
+        key: `${s.id}-${r.frame}`, url: s.video_url, t: Number(r.time_sec), type: r.shot_type, side: r.shot_side,
+        quality: r.hit_quality, outcome: toHitterOutcome(r.rally_outcome, r.player_role), role: r.player_role,
+        matchLabel: s.match ? `${s.match.date} · vs ${s.match.opponent || "—"}` : s.video_name,
+      });
+    });
+  });
+  return out;
+}
+
+let _clipOpener = null;
+function openClips(cfg) { if (_clipOpener) _clipOpener(cfg); }
+function ClipHost() {
+  const [cfg, setCfg] = useState(null);
+  useEffect(() => { _clipOpener = setCfg; return () => { _clipOpener = null; }; }, []);
+  return cfg ? <ClipViewer {...cfg} onClose={() => setCfg(null)} /> : null;
+}
+
+function ClipViewer({ title, clips, initialFilter = "all", onClose }) {
+  const startFilter = clips.some(c => (CLIP_FILTERS.find(f => f.id === initialFilter) || CLIP_FILTERS[0]).test(c)) ? initialFilter : "all";
+  const [filter, setFilter] = useState(startFilter);
+  const [idx, setIdx] = useState(0);
+  const [slow, setSlow] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const vref = useRef(null);
+  const stopAt = useRef(null);
+  const list = clips.filter((CLIP_FILTERS.find(f => f.id === filter) || CLIP_FILTERS[0]).test);
+  const cur = list[idx];
+  const multiMatch = new Set(clips.map(c => c.url)).size > 1;
+
+  const play = (c) => {
+    const v = vref.current;
+    if (!v || !c) return;
+    const go = () => {
+      v.playbackRate = slow ? 0.5 : 1;
+      v.currentTime = Math.max(0, c.t - 3);
+      stopAt.current = c.t + 1.5;
+      v.play().catch(() => {});
+    };
+    if (v.getAttribute("src") !== c.url) {
+      v.setAttribute("src", c.url);
+      v.addEventListener("loadedmetadata", go, { once: true });
+      v.load();
+    } else go();
+  };
+  useEffect(() => { if (cur) play(cur); }, [filter, idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (vref.current) vref.current.playbackRate = slow ? 0.5 : 1; }, [slow]);
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  const onTime = () => {
+    const v = vref.current;
+    if (v && stopAt.current != null && v.currentTime >= stopAt.current) {
+      v.pause(); stopAt.current = null;
+      if (auto && idx < list.length - 1) setIdx(idx + 1);
+    }
+  };
+  const ctl = { padding: "10px 0", borderRadius: 10, border: `1px solid ${C.border}`, background: C.cardBg,
+    fontFamily: "'Outfit'", fontWeight: 600, fontSize: 13, color: C.navy, cursor: "pointer" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 500, background: C.pageBg, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "max(14px, env(safe-area-inset-top)) 14px 40px", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color: C.navy, letterSpacing: "0.04em", lineHeight: 1 }}>{title}</div>
+            <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>{list.length ? `Clip ${idx + 1} of ${list.length}` : "No clips"}</div>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ ...ctl, padding: "8px 14px", flexShrink: 0 }}>Close</button>
+        </div>
+
+        <div style={{ borderRadius: 12, overflow: "hidden", background: "#000", marginBottom: 10 }}>
+          <video ref={vref} controls playsInline preload="metadata" onTimeUpdate={onTime}
+            style={{ width: "100%", display: "block", aspectRatio: "16/9", objectFit: "contain" }} />
+        </div>
+
+        {cur && (
+          <div style={{ fontSize: 13, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
+            <strong>{cur.type}{cur.side ? ` · ${cur.side === "forehand" ? "FH" : "BH"}` : ""}</strong>
+            {" · "}{fmtClock(cur.t, true)}
+            {CLIP_OUTCOME[cur.outcome] && <span style={{ color: cur.outcome === "winner" ? C.mint : C.rose }}> · {CLIP_OUTCOME[cur.outcome]}</span>}
+            {cur.quality && <span style={{ color: C.textMid }}> · {cur.quality}</span>}
+            {multiMatch && <div style={{ fontSize: 12, color: C.textMid }}>{cur.matchLabel}</div>}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6, marginBottom: 8 }}>
+          <button style={ctl} disabled={!cur || idx === 0} onClick={() => setIdx(i => Math.max(0, i - 1))}>‹ Previous</button>
+          <button style={ctl} disabled={!cur} onClick={() => play(cur)}>↺ Replay</button>
+          <button style={ctl} disabled={!cur || idx >= list.length - 1} onClick={() => setIdx(i => Math.min(list.length - 1, i + 1))}>Next ›</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6, marginBottom: 14 }}>
+          <button style={{ ...ctl, background: slow ? C.pickle : C.cardBg }} onClick={() => setSlow(v => !v)}>Slow motion {slow ? "on" : "off"}</button>
+          <button style={{ ...ctl, background: auto ? C.pickle : C.cardBg }} onClick={() => setAuto(v => !v)}>Play all {auto ? "on" : "off"}</button>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
+          {CLIP_FILTERS.map(f => {
+            const n = clips.filter(f.test).length;
+            if (f.id !== "all" && !n) return null;
+            const on = filter === f.id;
+            return (
+              <button key={f.id} onClick={() => { setFilter(f.id); setIdx(0); }} style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999,
+                border: `1.5px solid ${on ? C.navy : C.border}`, background: on ? C.navy : C.cardBg, color: on ? "white" : C.textMid,
+                fontFamily: "'Outfit'", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{f.label} ({n})</button>
+            );
+          })}
+        </div>
+
+        {!list.length ? (
+          <AEmpty>No clips here. Clips need the match video link and the shot's time, which every Shot Review match has.</AEmpty>
+        ) : list.map((c, i) => (
+          <button key={c.key} onClick={() => (i === idx ? play(c) : setIdx(i))} style={{ width: "100%", textAlign: "left", display: "flex",
+            justifyContent: "space-between", gap: 8, alignItems: "center", padding: "10px 12px", marginBottom: 6, borderRadius: 10, cursor: "pointer",
+            border: `1.5px solid ${i === idx ? C.navy : C.border}`, background: i === idx ? C.mintL : C.cardBg, fontFamily: "'Outfit'" }}>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>{fmtClock(c.t)}</span>
+              <span style={{ fontSize: 12, color: C.textMid }}> · {c.type}{c.side ? ` ${c.side === "forehand" ? "FH" : "BH"}` : ""}</span>
+              {multiMatch && <span style={{ display: "block", fontSize: 11, color: C.textLight }}>{c.matchLabel}</span>}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, flexShrink: 0,
+              color: c.outcome === "winner" ? C.mint : (c.outcome === "error" || c.outcome === "forced") ? C.rose : c.quality === "negative" ? C.rose : C.textLight }}>
+              {CLIP_OUTCOME[c.outcome] || (c.quality ? c.quality[0].toUpperCase() + c.quality.slice(1) : "")}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Who hit what: two players side by side, one compact row per shot type ────
+function ShareTable({ aName, aRows, bName, bRows, onWatch }) {
+  const a = aggShots(aRows), b = aggShots(bRows);
+  const total = a.total + b.total;
+  if (!total) return <AEmpty>No shots logged in this view yet.</AEmpty>;
+  const types = [...new Set([...a.types.map(t => t.type), ...b.types.map(t => t.type)])]
+    .map(type => ({ type, a: a.byType[type], b: b.byType[type] }))
+    .sort((x, y) => ((y.a?.n || 0) + (y.b?.n || 0)) - ((x.a?.n || 0) + (x.b?.n || 0)));
+  const aShare = pctOf(a.total, total);
+  const Cell = ({ t, who, type }) => {
+    if (!t) return <div style={{ textAlign: "center", color: C.textLight, fontSize: 13 }}>—</div>;
+    const rated = t.pos + t.neu + t.neg;
+    return (
+      <button onClick={() => onWatch && onWatch(who, type)} style={{ background: "transparent", border: "none", padding: "2px 0",
+        cursor: onWatch ? "pointer" : "default", textAlign: "center", fontFamily: "'Outfit'", width: "100%" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: C.navy, lineHeight: 1.1 }}>{t.n}</div>
+        <div style={{ fontSize: 10.5, color: C.textMid, lineHeight: 1.3 }}>{rated ? `${pctOf(t.pos, rated)}% pos` : "unrated"}</div>
+        {t.errors > 0 && <div style={{ fontSize: 10.5, color: C.rose, fontWeight: 700, lineHeight: 1.3 }}>{t.errors} UE</div>}
+      </button>
+    );
+  };
+  return (
+    <div style={{ background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 12px 6px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+        <span style={{ color: C.navy }}>{aName} {aShare}%</span>
+        <span style={{ color: C.purple }}>{bName} {100 - aShare}%</span>
+      </div>
+      <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", background: C.border, marginBottom: 4 }}>
+        <div style={{ width: `${aShare}%`, background: C.navy }} />
+        <div style={{ width: `${100 - aShare}%`, background: C.sage }} />
+      </div>
+      <div style={{ fontSize: 11, color: C.textLight, marginBottom: 8 }}>Share of the team's {total} shots · tap a number to watch those shots</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px", gap: 6, padding: "6px 0", borderTop: `1px solid ${C.border}`,
+        fontSize: 11, fontWeight: 800, color: C.textLight, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <span>Shot</span><span style={{ textAlign: "center" }}>{aName}</span><span style={{ textAlign: "center" }}>{bName}</span>
+      </div>
+      {types.map(({ type, a: ta, b: tb }) => {
+        const n = (ta?.n || 0) + (tb?.n || 0);
+        const share = pctOf(ta?.n || 0, n);
+        return (
+          <div key={type} style={{ display: "grid", gridTemplateColumns: "1fr 72px 72px", gap: 6, padding: "7px 0",
+            borderTop: `1px solid ${C.border}`, alignItems: "center" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{type}</div>
+              <div style={{ display: "flex", height: 4, borderRadius: 2, overflow: "hidden", background: C.border, marginTop: 4, maxWidth: 140 }}>
+                <div style={{ width: `${share}%`, background: C.navy }} />
+                <div style={{ width: `${100 - share}%`, background: C.sage }} />
+              </div>
+            </div>
+            <Cell t={ta} who="a" type={type} />
+            <Cell t={tb} who="b" type={type} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Number tile used on Home and People: big value, goal line, optional per-player breakdown
 function NumTile({ label, value, sub, ok, lines }) {
   return (
@@ -11801,6 +12023,7 @@ function PeoplePage() {
   const [f] = useTypeFilter();
   const { data, err } = useAnalytics();
   const [sel, setSel] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
   const [lens, setLens] = useState("against");
   if (!data) return <APage><ATitle title="People" /><ALoading err={err} /></APage>;
 
@@ -11842,11 +12065,41 @@ function PeoplePage() {
           </div>
         )}
         <TeamNumbers sessions={ss} person={p} lens={effLens} myName={data.myName} />
-        <ASection>{p.name.split(" ")[0]}'s shots</ASection>
-        <AggTiles agg={agg} />
-        <WeaponLeak agg={agg} />
-        <div style={{ height: 8 }} />
-        <ShotTypeList agg={agg} empty={`No shots logged for ${p.name} in this view.`} />
+        <ASection>Who hit what</ASection>
+        {(() => {
+          const first = p.name.split(" ")[0];
+          const personRoles = (s) => [p.roleIn[s.id]];
+          const mateRoles = (s) => effLens === "with" ? ["me"] : [p.roleIn[s.id] === "opp1" ? "opp2" : "opp1"];
+          const mateRows = ss.flatMap(s => s.reviews.filter(r => mateRoles(s).includes(r.player_role)));
+          const mateName = effLens === "with" ? "You" : "Partner";
+          const aIsMe = effLens === "with";
+          const watchCell = (who, type) => {
+            const isPerson = aIsMe ? who === "b" : who === "a";
+            openClips({ title: `${isPerson ? first : (aIsMe ? "My" : "Their partner")} · ${type}`,
+              clips: buildClips(ss, isPerson ? personRoles : mateRoles, type) });
+          };
+          return aIsMe
+            ? <ShareTable aName="You" aRows={mateRows} bName={first} bRows={effLens === "with" ? p.withRows : p.againstRows} onWatch={watchCell} />
+            : <ShareTable aName={first} aRows={p.againstRows} bName={mateName} bRows={mateRows} onWatch={watchCell} />;
+        })()}
+        <div style={{ textAlign: "center", margin: "14px 0 4px" }}>
+          <button onClick={() => setShowDetail(v => !v)} style={{ ...linkBtn, fontSize: 13 }}>
+            {showDetail ? "Hide" : "Show"} {p.name.split(" ")[0]}'s full shot breakdown
+          </button>
+        </div>
+        {showDetail && (() => {
+          const watchP = (type, filterId) => openClips({ title: `${p.name.split(" ")[0]} · ${type}`,
+            clips: buildClips(ss, (s) => [p.roleIn[s.id]], type), initialFilter: filterId });
+          return (
+            <>
+              <ASection>{p.name.split(" ")[0]}'s shots</ASection>
+              <AggTiles agg={agg} />
+              <WeaponLeak agg={agg} onWatch={watchP} />
+              <div style={{ height: 8 }} />
+              <ShotTypeList agg={agg} onWatch={watchP} empty={`No shots logged for ${p.name} in this view.`} />
+            </>
+          );
+        })()}
         <ASection>Matches</ASection>
         {ss.map(s => (
           <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, padding: "8px 0", borderTop: `1px solid ${C.border}` }}>
@@ -12475,6 +12728,7 @@ export default function App(){
     <>
       <style>{STYLES}</style>
       {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
+      <ClipHost/>
       <div style={{minHeight:"100vh",background:C.pageBg,display:"flex",flexDirection:"column",overflowX:"hidden",width:"100%"}}>
         <TopNav page={page} setPage={setPage} onSignOut={handleSignOut} authUser={authUser}/>
 
